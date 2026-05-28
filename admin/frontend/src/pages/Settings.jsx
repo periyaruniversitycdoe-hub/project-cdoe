@@ -73,7 +73,7 @@ const Settings = () => {
     const ref = useRef();
     const getUrl = (path) => {
       if (!path) return '#';
-      if (path.startsWith('/uploads')) return `(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001')${path}`;
+      if (path.startsWith('/uploads')) return (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + path;
       return path; // Standard relative assets like /images/...
     };
 

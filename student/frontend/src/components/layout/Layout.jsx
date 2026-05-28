@@ -162,7 +162,7 @@ const Layout = () => {
         <div className="sidebar-header">
           <div className="sidebar-brand">
             <img
-              src={univSettings?.logo?.startsWith('/uploads') ? `(import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + ''${univSettings.logo}` : univSettings?.logo || '/images/pu_logo.png'}
+              src={univSettings?.logo?.startsWith('/uploads') ? (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + univSettings.logo : univSettings?.logo || '/images/pu_logo.png'}
               alt="PU" className="sidebar-logo"
             />
             <div className="sidebar-brand-text">

@@ -121,7 +121,7 @@ export default function LandingPage() {
 
   const getLogoUrl = (path) => {
     if (!path) return '/images/pu_logo.png';
-    if (path.startsWith('/uploads')) return `(import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + ''${path}`;
+    if (path.startsWith('/uploads')) return (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + path;
     return path;
   };
 
@@ -132,7 +132,7 @@ export default function LandingPage() {
       if (path?.includes('center')) return 'https://images.unsplash.com/photo-1497366216548-37526070297c?q=80&w=600&auto=format&fit=crop';
       return 'https://images.unsplash.com/photo-1541339907198-e08756dedf3f?q=80&w=600&auto=format&fit=crop';
     }
-    if (path.startsWith('/uploads')) return `(import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + ''${path}`;
+    if (path.startsWith('/uploads')) return (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + path;
     return path;
   };
 

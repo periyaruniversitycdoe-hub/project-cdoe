@@ -29,7 +29,7 @@ const JoiningLetterPrint = () => {
   if (!data)  return <div className="p-5 text-muted">Loading joining letter…</div>;
 
   const logoSrc = settings?.logo_url?.startsWith('/uploads')
-    ? `(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001')${settings.logo_url}`
+    ? (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + settings.logo_url
     : settings?.logo_url || '/images/pu_logo.png';
 
   const today = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });

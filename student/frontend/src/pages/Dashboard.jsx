@@ -376,7 +376,7 @@ const Dashboard = () => {
       <section className="animate-fade-in d-flex flex-column flex-md-row align-items-center text-center text-md-start gap-3 p-3 p-md-4 bg-white rounded-4 shadow-sm mb-4 justify-content-center justify-content-md-start">
         <div style={{ display: 'flex' }}>
           <img
-            src={univSettings?.logo?.startsWith('/uploads') ? `(import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + ''${univSettings.logo}` : univSettings?.logo || '/images/pu_logo.png'}
+            src={univSettings?.logo?.startsWith('/uploads') ? (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + univSettings.logo : univSettings?.logo || '/images/pu_logo.png'}
             alt="University Logo"
             style={{ height: '90px', maxHeight: '110px', objectFit: 'contain' }}
           />

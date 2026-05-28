@@ -15,7 +15,7 @@ const Header = () => {
     if (!settings) return null;
 
     const logoUrl = settings.logo
-        ? (settings.logo.startsWith('http') ? settings.logo : `((import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '')${settings.logo}`)
+        ? (settings.logo.startsWith('http') ? settings.logo : (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + settings.logo)
         : '/images/pu_logo.png';
 
     return (

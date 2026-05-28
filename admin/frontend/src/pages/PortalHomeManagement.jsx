@@ -440,7 +440,7 @@ export default function PortalHomeManagement() {
                       <span className="fw-semibold" style={{ fontSize:13 }}>{prospectusInfo.name}</span>
                     </div>
                     <div className="d-flex gap-2 flex-wrap">
-                      <a href={`(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api/portal-home/prospectus/download`}
+                      <a href={(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api/portal-home/prospectus/download'}
                         target="_blank" rel="noreferrer"
                         className="btn btn-sm btn-success d-flex align-items-center gap-1">
                         <Download size={12}/> Download

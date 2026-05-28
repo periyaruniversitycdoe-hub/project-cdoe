@@ -108,7 +108,7 @@ export default function RegisterPage() {
         <div className="login-box">
           <div className="login-logo text-center">
             <img 
-              src={settings?.logo?.startsWith('/uploads') ? `((import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '')${settings.logo}` : settings?.logo || "/images/pu_logo.png"} 
+              src={settings?.logo?.startsWith('/uploads') ? (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + settings.logo : settings?.logo || "/images/pu_logo.png"} 
               alt="Logo" 
               style={{ height: '80px', marginBottom: '10px', objectFit: 'contain' }} 
             />

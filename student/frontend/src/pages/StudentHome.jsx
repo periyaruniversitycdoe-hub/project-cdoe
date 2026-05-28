@@ -87,8 +87,8 @@ export default function StudentHome() {
   }, [fetchAll]);
 
   // ── Helpers ─────────────────────────────────────────────────────────
-  const logoUrl  = (p) => !p ? '/images/pu_logo.png' : p.startsWith('/uploads') ? `(import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + ''${p}` : p;
-  const logo2Url = (p) => !p ? null : p.startsWith('/uploads') ? `(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001')${p}` : p;
+  const logoUrl  = (p) => !p ? '/images/pu_logo.png' : p.startsWith('/uploads') ? (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + p : p;
+  const logo2Url = (p) => !p ? null : p.startsWith('/uploads') ? (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + p : p;
 
   const registrationOpen = sessionStatus?.registration_open;
   const admissionNotifs  = notifications.filter(n => n.type === 'notification');

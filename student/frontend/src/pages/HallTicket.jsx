@@ -10,7 +10,7 @@ const getPhotoUrl = (path) => {
     if (!path) return '';
     if (path.startsWith('http://') || path.startsWith('https://')) return path;
     const cleanPath = path.startsWith('/') ? path.substring(1) : path;
-    return `((import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '')/${cleanPath}`;
+    return (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/' + cleanPath;
 };
 
 const HallTicket = () => {
@@ -91,7 +91,7 @@ const HallTicket = () => {
                     <div className="ht-header" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
                         <div className="ht-logo" style={{ display: 'flex', gap: '10px' }}>
                             <img 
-                                src={settings?.logo?.startsWith('/uploads') ? `((import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '')${settings.logo}` : settings?.logo || '/images/pu_logo.png'} 
+                                src={settings?.logo?.startsWith('/uploads') ? (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + settings.logo : settings?.logo || '/images/pu_logo.png'} 
                                 alt="University Logo" 
                                 style={{ height: '75px', width: 'auto', objectFit: 'contain' }} 
                             />
