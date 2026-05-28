@@ -49,6 +49,8 @@ app.use(cors({
         const allowed =
             !origin ||
             origin.startsWith('http://localhost') ||
+            origin.startsWith('http://127.0.0.1') ||
+            origin.endsWith('netlify.app') ||
             productionOrigins.includes(origin);
 
         if (allowed) callback(null, true);
