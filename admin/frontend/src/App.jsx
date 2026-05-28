@@ -78,7 +78,7 @@ const ProtectedPrintRoute = ({ children }) => {
 function App() {
   return (
     <SessionProvider>
-    <Router>
+    <Router basename={import.meta.env.BASE_URL}>
       <Toaster position="top-right" />
       <Routes>
         <Route path="/login" element={<Login />} />
