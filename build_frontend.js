@@ -71,7 +71,12 @@ builds.forEach(build => {
       stdio: 'inherit',
       env: {
         ...process.env,
-        VITE_BASE_PATH: build.basePath
+        VITE_BASE_PATH: build.basePath,
+        VITE_STUDENT_API_URL: 'https://project-cdoe-backend.onrender.com/student',
+        VITE_ADMIN_API_URL: 'https://project-cdoe-backend.onrender.com/admin',
+        VITE_SUPERVISOR_API_URL: 'https://project-cdoe-backend.onrender.com/supervisor',
+        VITE_CENTER_API_URL: 'https://project-cdoe-backend.onrender.com/center',
+        VITE_API_URL: 'https://project-cdoe-backend.onrender.com/student'
       }
     });
 
