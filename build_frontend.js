@@ -31,6 +31,22 @@ builds.forEach(build => {
     return;
   }
 
+  // Auto-install dependencies if node_modules is missing (critical for Netlify monorepo deployment)
+  const nodeModulesPath = path.join(buildDir, 'node_modules');
+  if (!fs.existsSync(nodeModulesPath)) {
+    console.log(`\n📦 Dependencies missing in ${build.dir}. Running 'npm install' first...`);
+    try {
+      execSync('npm install', {
+        cwd: buildDir,
+        stdio: 'inherit'
+      });
+      console.log(`✅ Dependencies installed successfully!`);
+    } catch (err) {
+      console.error(`❌ Error installing dependencies for ${build.name}:`, err.message);
+      process.exit(1);
+    }
+  }
+
   // Execute build command with dynamic environment base path
   try {
     execSync('npm run build', {
