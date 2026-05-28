@@ -6,7 +6,7 @@ import useAuthStore from '../store/authStore';
 import Header from '../components/Header';
 import { GraduationCap, Plus, Trash2, Send, CheckCircle, Lock, Clock } from 'lucide-react';
 
-const API = import.meta.env.VITE_API_URL || `(import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api`;
+const API = import.meta.env.VITE_API_URL || (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api';
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 

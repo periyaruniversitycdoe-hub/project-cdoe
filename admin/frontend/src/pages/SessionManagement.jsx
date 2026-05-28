@@ -9,7 +9,7 @@ import {
   AlertTriangle, Layers, FileCheck
 } from 'lucide-react';
 
-const API_URL = `(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api`;
+const API_URL = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',

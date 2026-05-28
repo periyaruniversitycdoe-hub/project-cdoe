@@ -216,7 +216,7 @@ export default function PortalManagement() {
 
   const getImageUrl = (path) => {
     if (!path) return '—';
-    if (path.startsWith('/uploads')) return `((import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '')${path}`;
+    if (path.startsWith('/uploads')) return `((import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001'))${path}`;
     return path;
   };
 

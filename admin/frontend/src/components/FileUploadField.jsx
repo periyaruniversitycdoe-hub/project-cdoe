@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 
-const ADMIN_BASE = ((import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '');
+const ADMIN_BASE = ((import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001'));
 
 export default function FileUploadField({
     name,

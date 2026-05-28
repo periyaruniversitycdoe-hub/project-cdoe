@@ -4,7 +4,7 @@ import axios from 'axios';
 import useAuthStore from '../store/authStore';
 import { Printer, X, Loader2, AlertCircle, ShieldCheck, CheckCircle2, DollarSign, Calendar, Hash, Globe, Building } from 'lucide-react';
 
-const API = import.meta.env.VITE_API_URL || `(import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api`;
+const API = import.meta.env.VITE_API_URL || (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api';
 
 export default function ReceiptView() {
   const { orderId, appId } = useParams();

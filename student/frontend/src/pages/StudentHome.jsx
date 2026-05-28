@@ -4,8 +4,8 @@ import axios from 'axios';
 import { Download, Info, LogIn, GraduationCap, Bell, Calendar, BookOpen, X } from 'lucide-react';
 import useAuthStore from '../store/authStore';
 
-const API      = `(import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api`;
-const ADMIN_API = `(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api`;
+const API      = (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api';
+const ADMIN_API = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
 const POLL_MS  = 15000; // 15-second real-time sync
 
 /* ── Announcement badge — shared between scrolling & static modes ──────────
@@ -88,7 +88,7 @@ export default function StudentHome() {
 
   // ── Helpers ─────────────────────────────────────────────────────────
   const logoUrl  = (p) => !p ? '/images/pu_logo.png' : p.startsWith('/uploads') ? `(import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + ''${p}` : p;
-  const logo2Url = (p) => !p ? null : p.startsWith('/uploads') ? `(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + ''${p}` : p;
+  const logo2Url = (p) => !p ? null : p.startsWith('/uploads') ? `(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001')${p}` : p;
 
   const registrationOpen = sessionStatus?.registration_open;
   const admissionNotifs  = notifications.filter(n => n.type === 'notification');

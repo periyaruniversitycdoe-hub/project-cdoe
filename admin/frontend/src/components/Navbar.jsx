@@ -133,7 +133,7 @@ const Navbar = ({ onMenuClick }) => {
             </div>
             <div className="bg-white rounded-circle d-flex align-items-center justify-content-center border shadow-sm" style={{ width: 38, height: 38, overflow: 'hidden' }}>
               <img 
-                src={settings?.logo?.startsWith('/uploads') ? `((import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '')${settings.logo}` : settings?.logo || '/images/pu_logo.png'} 
+                src={settings?.logo?.startsWith('/uploads') ? `((import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001'))${settings.logo}` : settings?.logo || '/images/pu_logo.png'} 
                 alt="Periyar University Logo" 
                 style={{ width: '100%', height: '100%', objectFit: 'contain', padding: '3px' }} 
               />

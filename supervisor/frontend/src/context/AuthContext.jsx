@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
-const API = `(import.meta.env.VITE_SUPERVISOR_API_URL || 'http://localhost:5002') + '/api`;
+const API = (import.meta.env.VITE_SUPERVISOR_API_URL || 'http://localhost:5002') + '/api';
 const AuthContext = createContext(null);
 
 // Global Axios Interceptor — Enterprise Error Handling

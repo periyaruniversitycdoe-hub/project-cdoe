@@ -6,7 +6,7 @@ import { Mail, Lock } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useSession } from '../contexts/SessionContext';
 
-const API_URL = `(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api`;
+const API_URL = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -58,7 +58,7 @@ const Login = () => {
         <div className="text-center mb-4">
           <div style={{ display: 'inline-flex', gap: '8px', marginBottom: 16 }}>
             <img 
-              src={settings?.logo?.startsWith('/uploads') ? `(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + ''${settings.logo}` : settings?.logo || '/images/pu_logo.png'} 
+              src={settings?.logo?.startsWith('/uploads') ? `(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001')${settings.logo}` : settings?.logo || '/images/pu_logo.png'} 
               alt="Logo" 
               style={{ height: '70px', width: 'auto', objectFit: 'contain' }} 
             />

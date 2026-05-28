@@ -4,7 +4,7 @@ import axios from 'axios';
 import * as Icons from 'lucide-react';
 import { motion } from 'framer-motion';
 
-const API = `(import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api`;
+const API = (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api';
 
 const DynamicIcon = ({ name, className, size = 24, style }) => {
   const IconComponent = Icons[name] || Icons.HelpCircle;

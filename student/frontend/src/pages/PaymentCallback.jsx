@@ -5,7 +5,7 @@ import axios from 'axios';
 import { CheckCircle, AlertCircle, Loader2, Clock, Download, ArrowRight, Printer } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
-const API = import.meta.env.VITE_API_URL || `(import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api`;
+const API = import.meta.env.VITE_API_URL || (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api';
 
 /**
  * PaymentCallback — handles the return redirect from any payment gateway.

@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
-const API = `(import.meta.env.VITE_CENTER_API_URL || 'http://localhost:5003') + '/api`;
+const API = (import.meta.env.VITE_CENTER_API_URL || 'http://localhost:5003') + '/api';
 const AuthContext = createContext(null);
 
 const _interceptorIds = { req: null, res: null };

@@ -4,7 +4,7 @@ import { toast } from 'react-hot-toast';
 import { Link } from 'react-router-dom';
 import { Plus, Edit2, Trash2, MapPin, Map, RefreshCw, ChevronRight } from 'lucide-react';
 
-const API_URL = `(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api`;
+const API_URL = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
 
 const LocationManagement = () => {
   const token = localStorage.getItem('adminToken');

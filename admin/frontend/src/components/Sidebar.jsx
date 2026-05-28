@@ -102,7 +102,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       <div className="sidebar-logo" style={{ padding: '15px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <img 
-            src={settings?.logo?.startsWith('/uploads') ? `((import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '')${settings.logo}` : settings?.logo || '/images/pu_logo.png'} 
+            src={settings?.logo?.startsWith('/uploads') ? `((import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001'))${settings.logo}` : settings?.logo || '/images/pu_logo.png'} 
             alt="University Logo" 
             style={{ width: 35, height: 35, objectFit: 'contain' }} 
           />

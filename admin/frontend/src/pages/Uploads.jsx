@@ -4,7 +4,7 @@ import { UploadCloud, ShieldAlert, Save, RefreshCw, Info } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { Link } from 'react-router-dom';
 
-const API_URL = `(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api`;
+const API_URL = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
 
 const FILE_TYPE_ICONS = {
   'Photo':                 '🖼️',

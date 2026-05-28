@@ -106,7 +106,7 @@ const CounsellingCountdown = ({ startDate, endDate, windowActive }) => {
   return null;
 };
 
-const API = import.meta.env.VITE_API_URL || `(import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api`;
+const API = import.meta.env.VITE_API_URL || (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api';
 
 // ─── Pending Payment Card (deferred payment workflow) ────────────────────────
 // Shown on dashboard when payment_decision='pay_later' and payment not yet done.

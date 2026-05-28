@@ -4,7 +4,7 @@ import DynamicDropdown from '@admin/components/DynamicDropdown';
 import FileUploadField from '@admin/components/FileUploadField';
 import DisciplineRepeater from '../components/DisciplineRepeater';
 
-const API = `(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api`;
+const API = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
 
 function getToken() { return localStorage.getItem('adminToken') || ''; }
 function authHeaders() { return { Authorization: `Bearer ${getToken()}` }; }
@@ -187,13 +187,13 @@ function SupervisorList({ onAdd, onEdit }) {
                                                         </button>
                                                         <ul className="dropdown-menu shadow">
                                                             {s.profile_image && (
-                                                                <li><a className="dropdown-item" href={`(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + ''${s.profile_image}`} target="_blank" rel="noreferrer">Photo</a></li>
+                                                                <li><a className="dropdown-item" href={`(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001')${s.profile_image}`} target="_blank" rel="noreferrer">Photo</a></li>
                                                             )}
                                                             {s.dob_evidence && (
-                                                                <li><a className="dropdown-item" href={`(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + ''${s.dob_evidence}`} target="_blank" rel="noreferrer">DOB Evidence</a></li>
+                                                                <li><a className="dropdown-item" href={`(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001')${s.dob_evidence}`} target="_blank" rel="noreferrer">DOB Evidence</a></li>
                                                             )}
                                                             {s.recognition_certificate && (
-                                                                <li><a className="dropdown-item" href={`(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + ''${s.recognition_certificate}`} target="_blank" rel="noreferrer">Recognition Cert</a></li>
+                                                                <li><a className="dropdown-item" href={`(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001')${s.recognition_certificate}`} target="_blank" rel="noreferrer">Recognition Cert</a></li>
                                                             )}
                                                             {!s.profile_image && !s.dob_evidence && !s.recognition_certificate && (
                                                                 <li><span className="dropdown-item disabled">No docs uploaded</span></li>

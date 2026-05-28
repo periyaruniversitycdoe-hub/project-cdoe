@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE = `(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api`;
+const API_BASE = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
 
 const getAuthHeader = () => ({
     headers: { Authorization: `Bearer ${localStorage.getItem('adminToken')}` }

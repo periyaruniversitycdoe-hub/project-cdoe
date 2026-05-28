@@ -5,8 +5,8 @@ import toast from 'react-hot-toast';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Save, Send, ChevronRight, ChevronLeft, CheckCircle } from 'lucide-react';
 
-const API_URL     = `(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api`;
-const STUDENT_API = `(import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api`;
+const API_URL     = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
+const STUDENT_API = (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api';
 
 const STEPS = ['Exam & Personal Details', 'Communication & Identity', 'PG & Mark Sheet'];
 
@@ -180,7 +180,7 @@ const AdminApplicationForm = () => {
         // Load documents
         const docs = {};
         (res.data.documents || []).forEach(doc => {
-          docs[doc.document_type] = { preview: `(import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + ''/${doc.file_path}`, isExisting: true };
+          docs[doc.document_type] = { preview: `${import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000'}/${doc.file_path}`, isExisting: true };
         });
         setPhotos(docs);
 

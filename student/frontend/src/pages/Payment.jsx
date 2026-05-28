@@ -9,7 +9,7 @@ import {
   Smartphone, Wallet, AlertTriangle, Clock,
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_API_URL || `(import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api`;
+const API = import.meta.env.VITE_API_URL || (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api';
 
 // ── Payment methods — all route through Paytm's hosted checkout ───────────────
 // The tab selection is informational UX; on Paytm's page the user picks the

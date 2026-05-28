@@ -4,7 +4,7 @@ import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import { Plus, Trash2, Edit2, Check, X, Download, RefreshCw } from 'lucide-react';
 
-const API = `(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api`;
+const API = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
 const getHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('adminToken')}` });
 
 // ─── Shared helpers ────────────────────────────────────────────────────────────

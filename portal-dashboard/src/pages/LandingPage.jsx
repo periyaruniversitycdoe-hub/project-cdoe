@@ -3,8 +3,7 @@ import axios from 'axios';
 import * as Icons from 'lucide-react';
 import { motion } from 'framer-motion';
 
-// Queries are aimed at student backend served on port 5000
-const API = `(import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api`;
+const API = (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api';
 
 const DynamicIcon = ({ name, className, size = 24, style }) => {
   const IconComponent = Icons[name] || Icons.HelpCircle;

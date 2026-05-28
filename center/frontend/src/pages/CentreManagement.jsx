@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import DynamicDropdown from '@admin/components/DynamicDropdown';
 import FileUploadField from '@admin/components/FileUploadField';
 
-const API = `(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api`;
+const API = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
 
 function getToken() { return localStorage.getItem('adminToken') || ''; }
 function authHeaders() { return { Authorization: `Bearer ${getToken()}` }; }
@@ -158,10 +158,10 @@ function CentreList({ onAdd, onEdit }) {
                                                         </button>
                                                         <ul className="dropdown-menu shadow">
                                                             {c.recognition_certificate && (
-                                                                <li><a className="dropdown-item" href={`(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + ''${c.recognition_certificate}`} target="_blank" rel="noreferrer">Recognition Cert</a></li>
+                                                                <li><a className="dropdown-item" href={`(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001')${c.recognition_certificate}`} target="_blank" rel="noreferrer">Recognition Cert</a></li>
                                                             )}
                                                             {c.logo && (
-                                                                <li><a className="dropdown-item" href={`(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + ''${c.logo}`} target="_blank" rel="noreferrer">Logo</a></li>
+                                                                <li><a className="dropdown-item" href={`(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001')${c.logo}`} target="_blank" rel="noreferrer">Logo</a></li>
                                                             )}
                                                             {!c.recognition_certificate && !c.logo && (
                                                                 <li><span className="dropdown-item disabled">No docs uploaded</span></li>

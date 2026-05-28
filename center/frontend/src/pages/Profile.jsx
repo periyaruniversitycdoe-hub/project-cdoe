@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 
-const API = `(import.meta.env.VITE_CENTER_API_URL || 'http://localhost:5003') + '/api`;
+const API = (import.meta.env.VITE_CENTER_API_URL || 'http://localhost:5003') + '/api';
 
 const S = {
   section: { background: '#fff', borderRadius: 12, padding: 28, boxShadow: '0 2px 8px rgba(0,0,0,0.06)', marginBottom: 20 },

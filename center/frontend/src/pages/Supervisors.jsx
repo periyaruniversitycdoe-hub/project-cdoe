@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 
-const API = `(import.meta.env.VITE_CENTER_API_URL || 'http://localhost:5003') + '/api`;
+const API = (import.meta.env.VITE_CENTER_API_URL || 'http://localhost:5003') + '/api';
 
 const S = {
   section: { background: '#fff', borderRadius: 12, padding: 24, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },

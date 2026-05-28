@@ -10,7 +10,7 @@ import {
 import './Dashboard.css';
 import './Profile.css';
 
-const API = import.meta.env.VITE_API_URL || `(import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api`;
+const API = import.meta.env.VITE_API_URL || (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api';
 
 const Profile = () => {
     const { user, logout, token } = useAuthStore();

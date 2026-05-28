@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-const API = `(import.meta.env.VITE_CENTER_API_URL || 'http://localhost:5003') + '/api`;
+const API = (import.meta.env.VITE_CENTER_API_URL || 'http://localhost:5003') + '/api';
 
 const card = (bg, color = '#fff') => ({
   background: bg, borderRadius: 16, padding: '24px 28px', color,

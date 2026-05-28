@@ -4,7 +4,7 @@ import axios from 'axios';
 import { Lock, Eye, EyeOff, ArrowLeft, CheckCircle2, XCircle, Building2 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
-const API_URL = `(import.meta.env.VITE_CENTER_API_URL || 'http://localhost:5003') + '/api`;
+const API_URL = (import.meta.env.VITE_CENTER_API_URL || 'http://localhost:5003') + '/api';
 
 export default function ResetPassword() {
   const navigate = useNavigate();

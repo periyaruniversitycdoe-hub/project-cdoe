@@ -5,7 +5,7 @@ import { toast } from 'react-hot-toast';
 import { useSession } from '../contexts/SessionContext';
 import { Upload, Download, FileSpreadsheet, CheckCircle, AlertTriangle, Clock } from 'lucide-react';
 
-const API_URL = `(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api`;
+const API_URL = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
 
 const ATT_BADGE = {
   Present: 'bg-success text-white',

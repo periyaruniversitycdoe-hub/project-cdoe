@@ -9,7 +9,7 @@ import {
   Lock, XCircle, FileText, Phone, Mail
 } from 'lucide-react';
 
-const API = `(import.meta.env.VITE_CENTER_API_URL || 'http://localhost:5003') + '/api`;
+const API = (import.meta.env.VITE_CENTER_API_URL || 'http://localhost:5003') + '/api';
 
 const STEPS = [
   { label: 'Centre Information', icon: Building, desc: 'Name, type & recognition details' },
@@ -377,7 +377,7 @@ export default function ApplicationForm() {
                   <div style={{ marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
                     <FileText size={15} color="#0891b2" />
                     <a
-                      href={`((import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '')${formData.recognition_certificate}`}
+                      href={`((import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001'))${formData.recognition_certificate}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       style={{ fontSize: 12, color: '#0891b2', fontWeight: 600, textDecoration: 'underline' }}

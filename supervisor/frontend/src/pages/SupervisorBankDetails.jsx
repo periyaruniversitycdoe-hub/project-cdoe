@@ -3,7 +3,7 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import { INDIAN_BANKS } from '../constants/banks';
 
-const API = `(import.meta.env.VITE_SUPERVISOR_API_URL || 'http://localhost:5002') + '/api`;
+const API = (import.meta.env.VITE_SUPERVISOR_API_URL || 'http://localhost:5002') + '/api';
 
 const S = {
   container: { maxWidth: 800, margin: '0 auto', animation: 'fadeIn 0.4s ease-out' },

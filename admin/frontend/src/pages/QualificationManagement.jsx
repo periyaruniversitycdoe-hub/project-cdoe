@@ -6,7 +6,7 @@ import {
   Shield, ShieldOff, RefreshCw, Users, AlertCircle, Check
 } from 'lucide-react';
 
-const API = `(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api`;
+const API = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
 
 const getToken = () => localStorage.getItem('adminToken');
 

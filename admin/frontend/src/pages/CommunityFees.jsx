@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 
-const API = `(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api`;
+const API = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
 const authHeader = () => ({ Authorization: `Bearer ${localStorage.getItem('adminToken')}` });
 
 const CommunityFees = () => {

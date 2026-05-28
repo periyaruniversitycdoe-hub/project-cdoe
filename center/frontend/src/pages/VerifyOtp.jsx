@@ -4,7 +4,7 @@ import axios from 'axios';
 import { ShieldCheck, ArrowLeft, RefreshCw, Building2 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
-const API_URL = `(import.meta.env.VITE_CENTER_API_URL || 'http://localhost:5003') + '/api`;
+const API_URL = (import.meta.env.VITE_CENTER_API_URL || 'http://localhost:5003') + '/api';
 
 export default function VerifyOtp() {
   const navigate = useNavigate();

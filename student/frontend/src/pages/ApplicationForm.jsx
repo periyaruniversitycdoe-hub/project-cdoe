@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
 import { Save, Send, ChevronRight, ChevronLeft, CheckCircle, ArrowLeft, Eye, ChevronDown, ChevronUp } from 'lucide-react';
 
-const API = import.meta.env.VITE_API_URL || `(import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api`;
+const API = import.meta.env.VITE_API_URL || (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api';
 
 const STEPS = [
   'Personal Details',
@@ -630,7 +630,7 @@ const ApplicationForm = () => {
         if (data.documents) {
           data.documents.forEach(doc => {
             docs[doc.document_type] = {
-              preview: `(import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + ''/${doc.file_path}`,
+              preview: `${import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000'}/${doc.file_path}`,
               isExisting: true
             };
           });

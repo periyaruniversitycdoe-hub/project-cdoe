@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { INDIAN_BANKS } from '../constants/banks';
 
-const API = `(import.meta.env.VITE_SUPERVISOR_API_URL || 'http://localhost:5002') + '/api`;
+const API = (import.meta.env.VITE_SUPERVISOR_API_URL || 'http://localhost:5002') + '/api';
 
 const STEPS = [
   { label: 'General Info', icon: User, desc: 'Personal & designation details' },
@@ -202,7 +202,7 @@ export default function ApplicationForm() {
           date_of_joining: d.date_of_joining ? d.date_of_joining.split('T')[0] : '',
           date_of_superannuation: d.date_of_superannuation ? d.date_of_superannuation.split('T')[0] : '',
         }));
-        if (d.profile_image) setPreviews(p => ({ ...p, profile_image: `(import.meta.env.VITE_SUPERVISOR_API_URL || 'http://localhost:5002') + ''/${d.profile_image}` }));
+        if (d.profile_image) setPreviews(p => ({ ...p, profile_image: `${import.meta.env.VITE_SUPERVISOR_API_URL || 'http://localhost:5002'}/${d.profile_image}` }));
         if (d.bank_name) setBankSearch(d.bank_name);
         if (d.ifsc_code && d.bank_name) {
           const ifscRegex = /^[A-Z]{4}0[A-Z0-9]{6}$/;

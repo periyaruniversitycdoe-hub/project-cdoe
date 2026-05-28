@@ -6,7 +6,7 @@ import {
   BookOpen, GraduationCap, ListChecks, Building2
 } from 'lucide-react';
 
-const API = `(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api`;
+const API = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
 
 const token = () => localStorage.getItem('adminToken');
 const authHeader = () => ({ Authorization: `Bearer ${token()}` });

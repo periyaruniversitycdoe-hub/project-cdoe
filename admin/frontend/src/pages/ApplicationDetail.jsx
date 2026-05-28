@@ -5,7 +5,7 @@ import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import { ArrowLeft, CheckCircle, XCircle, Clock, Save, Edit3, Printer, Award, CreditCard, ShieldCheck } from 'lucide-react';
 
-const API_URL = `(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api`;
+const API_URL = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
 const SEMESTERS = ['First Semester', 'Second Semester', 'Third Semester', 'Fourth Semester', 'Fifth Semester', 'Sixth Semester'];
 const DIRECT_EXAMS = ['NET', 'SET', 'JRF', 'SLET'];
 

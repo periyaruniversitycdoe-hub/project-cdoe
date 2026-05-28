@@ -4,7 +4,7 @@ import { useParams } from 'react-router-dom';
 import axios from 'axios';
 import './HallTicketPrint.css';
 
-const API_URL = `(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api`;
+const API_URL = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
 
 const getPhotoUrl = (path) => {
   if (!path) return '';
@@ -64,7 +64,7 @@ const HallTicketPrint = () => {
         <div className="ht-header" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
           <div className="ht-logo" style={{ display: 'flex', gap: '10px' }}>
             <img 
-              src={settings?.logo?.startsWith('/uploads') ? `(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + ''${settings.logo}` : settings?.logo || '/images/pu_logo.png'} 
+              src={settings?.logo?.startsWith('/uploads') ? `(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001')${settings.logo}` : settings?.logo || '/images/pu_logo.png'} 
               alt="University Logo" 
               style={{ height: '75px', width: 'auto', objectFit: 'contain' }} 
             />

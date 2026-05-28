@@ -5,8 +5,8 @@ import toast from 'react-hot-toast';
 import { useNavigate, Link } from 'react-router-dom';
 import { Send, ChevronRight, ChevronLeft, CheckCircle, ChevronDown, ChevronUp } from 'lucide-react';
 
-const API_URL     = `(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api`;
-const STUDENT_API = `(import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api`; // used only for read-only dropdown/state/district lookups
+const API_URL     = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
+const STUDENT_API = (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api'; // used only for read-only dropdown/state/district lookups
 
 const STEPS = [
   'Account Setup',
