@@ -53,14 +53,29 @@ export default function LandingPage() {
   const handlePortalNavigation = (portal) => {
     if (!portal.login_route) return;
 
+    let route = portal.login_route;
+
+    // Dynamically adapt localhost URLs in production to use the current live origin and subpaths
+    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      if (route.includes('localhost:5173') || route.includes(':5173')) {
+        route = route.replace(/https?:\/\/[^\/]+:5173/, window.location.origin + '/student');
+      } else if (route.includes('localhost:5174') || route.includes(':5174')) {
+        route = route.replace(/https?:\/\/[^\/]+:5174/, window.location.origin + '/admin');
+      } else if (route.includes('localhost:5175') || route.includes(':5175')) {
+        route = route.replace(/https?:\/\/[^\/]+:5175/, window.location.origin + '/supervisor');
+      } else if (route.includes('localhost:5176') || route.includes(':5176')) {
+        route = route.replace(/https?:\/\/[^\/]+:5176/, window.location.origin + '/center');
+      }
+    }
+
     // Student portal → home page (smart auth detection happens there)
     if (portal.slug === 'student') {
-      const studentBase = portal.login_route.replace(/\/login$/, '').replace(/\/home$/, '');
+      const studentBase = route.replace(/\/login$/, '').replace(/\/home$/, '');
       window.location.href = `${studentBase}/home`;
       return;
     }
 
-    window.location.href = portal.login_route;
+    window.location.href = route;
   };
 
   const navLinks = [];
