@@ -1,0 +1,446 @@
+
+const express = require('express');
+const router = express.Router();
+const pool = require('../config/db');
+const { verifyToken, isAdmin } = require('../middleware/auth');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+// Strip path separators and dangerous characters from uploaded filenames
+const sanitizeFilename = (name) => path.basename(name).replace(/[^a-zA-Z0-9._-]/g, '_');
+
+// Multer for images
+const imageStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const dest = path.join(__dirname, '../uploads/settings');
+        if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
+        cb(null, dest);
+    },
+    filename: (req, file, cb) => cb(null, `${Date.now()}-${sanitizeFilename(file.originalname)}`)
+});
+
+// Multer for PDFs + images
+const fileStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const dest = path.join(__dirname, '../uploads/settings');
+        if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
+        cb(null, dest);
+    },
+    filename: (req, file, cb) => cb(null, `${Date.now()}-${sanitizeFilename(file.originalname)}`)
+});
+
+const uploadImage = multer({
+    storage: imageStorage,
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        if (/jpeg|jpg|png|webp/.test(file.mimetype)) return cb(null, true);
+        cb(new Error('Only images allowed'));
+    }
+});
+
+const uploadFile = multer({
+    storage: fileStorage,
+    limits: { fileSize: 20 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        if (/jpeg|jpg|png|webp|pdf/.test(file.mimetype)) return cb(null, true);
+        cb(new Error('Only images/PDFs allowed'));
+    }
+});
+
+// ─── GET SETTINGS ──────────────────────────────────────────────────────
+router.get('/', async (req, res) => {
+    try {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        const [rows] = await pool.execute('SELECT * FROM university_settings LIMIT 1');
+        if (!rows[0]) return res.json({ success: true, data: {} });
+        
+        // Map the fields so the frontend gets exactly what it expects
+        const mapped = {
+            ...rows[0],
+            university_name_english: rows[0].university_name_english || rows[0].university_name_en || rows[0].header_line1,
+            university_name_tamil: rows[0].university_name_ta || rows[0].university_name_ta,
+            logo: rows[0].logo_url,
+            logo2: rows[0].logo2
+        };
+        res.json({ success: true, data: mapped });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// ─── ENTRANCE SETTINGS ────────────────────────────────────────────────
+router.get('/entrance-settings', async (req, res) => {
+    try {
+        const [rows] = await pool.execute('SELECT * FROM entrance_settings LIMIT 1');
+        res.json({ success: true, data: rows[0] || { passing_mark: 50, total_mark: 100 } });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+
+
+router.put('/entrance-settings', verifyToken, isAdmin, async (req, res) => {
+    try {
+        const { passing_mark, total_mark } = req.body;
+        const [rows] = await pool.execute('SELECT id FROM entrance_settings LIMIT 1');
+        if (rows.length === 0) {
+            await pool.execute('INSERT INTO entrance_settings (passing_mark, total_mark) VALUES (?, ?)', [passing_mark, total_mark]);
+        } else {
+            await pool.execute('UPDATE entrance_settings SET passing_mark=?, total_mark=?, updated_at=NOW() WHERE id=?', [passing_mark, total_mark, rows[0].id]);
+        }
+        res.json({ success: true, message: 'Updated entrance settings.' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// ─── UPDATE SETTINGS ───────────────────────────────────────────────────
+router.put('/update', verifyToken, isAdmin, async (req, res) => {
+    const raw = req.body;
+    
+    // Always enforce that English & Tamil names are populated
+    let uniEn = raw.university_name_english || raw.university_name_en;
+    let uniTa = raw.university_name_tamil || raw.university_name_ta;
+    if (!uniEn || !uniEn.toString().trim()) uniEn = 'PERIYAR UNIVERSITY';
+    if (!uniTa || !uniTa.toString().trim()) uniTa = 'பெரியார் பல்கலைக்கழகம்';
+
+    const SETTINGS_COLUMNS = new Set([
+        'university_name_en', 'university_name_ta', 'subtitle', 'naac_details', 
+        'address', 'phone', 'email', 'website', 'logo_url', 'founder_image_url', 
+        'founder_name', 'payment_button_text', 'payment_gateway_name', 'payment_gateway_key', 
+        'smtp_host', 'smtp_port', 'smtp_email', 'smtp_password', 'footer_text',
+        'copyright_text', 'interview_result_publish', 'entrance_result_publish',
+        'header_line1', 'header_line2', 'header_line3', 'header_title', 
+        'info_text1', 'info_text2', 'logo2', 'prospectus', 'instruction_file', 
+        'syllabus_file', 'apply_now_enabled', 'apply_now_open', 'apply_now_close', 
+        'applicant_login_enabled', 'applicant_login_open', 'applicant_login_close', 
+        'hall_ticket_enabled', 'hall_ticket_open', 'hall_ticket_close', 
+        'last_payment_date', 'exam_date', 'exam_time', 'interview_date', 
+        'interview_time', 'certificate_validity', 'certificate_date', 
+        'entrance_max_mark', 'entrance_calculated_to', 'entrance_min_mark', 
+        'interview_max_mark', 'interview_calculated_to', 'home_page_pdf', 
+        'home_page_content', 'home_page_type', 'online_app_link', 
+        'online_app_enabled', 'merit_list_link', 'merit_list_enabled', 
+        'eligible_list_enabled',
+        'about_us_title', 'about_us_link', 'about_us_open_mode', 'about_us_enabled', 'about_us_order',
+        'policies_title', 'policies_link', 'policies_open_mode', 'policies_enabled', 'policies_order',
+        'contact_title', 'contact_link', 'contact_open_mode', 'contact_enabled', 'contact_order'
+    ]);
+
+    const DATE_FIELDS = [
+        'apply_now_open', 'apply_now_close',
+        'applicant_login_open', 'applicant_login_close',
+        'hall_ticket_open', 'hall_ticket_close',
+        'last_payment_date', 'exam_date',
+        'interview_date', 'certificate_date'
+    ];
+
+    const dbData = {};
+    for (const [k, v] of Object.entries(raw)) {
+        let key = k;
+        if (k === 'university_name_english') key = 'university_name_en';
+        if (k === 'university_name_tamil') key = 'university_name_ta';
+        if (k === 'logo') key = 'logo_url';
+
+        if (SETTINGS_COLUMNS.has(key)) {
+            let val = (v === '' || v === 'null' || v === 'undefined') ? null : v;
+            if (val === 'true') val = 1;
+            if (val === 'false') val = 0;
+            if (DATE_FIELDS.includes(key) && val) {
+                val = String(val).slice(0, 10);
+            }
+            dbData[key] = val;
+        }
+    }
+
+    dbData.university_name_en = uniEn;
+    dbData.university_name_ta = uniTa;
+    dbData.header_line1 = uniEn;
+
+    try {
+        const [oldSettings] = await pool.execute('SELECT id FROM university_settings LIMIT 1');
+
+        if (oldSettings.length === 0) {
+            const fields = Object.keys(dbData);
+            const placeholders = fields.map(() => '?').join(', ');
+            await pool.execute(
+                `INSERT INTO university_settings (${fields.map(f => `\`${f}\``).join(', ')}) VALUES (${placeholders})`,
+                Object.values(dbData)
+            );
+        } else {
+            const fields = Object.keys(dbData);
+            const setClause = fields.map(f => `\`${f}\` = ?`).join(', ');
+            const values = Object.values(dbData);
+            await pool.query(
+                `UPDATE university_settings SET ${setClause} WHERE id = ?`,
+                [...values, oldSettings[0].id]
+            );
+        }
+        
+        // Audit Log (non-critical)
+        try {
+            await pool.execute(
+                'INSERT INTO settings_audit_logs (admin_id, action, ip_address, user_agent) VALUES (?, ?, ?, ?)',
+                [req.user.id || null, 'Updated University Settings', req.ip || null, req.headers['user-agent'] || null]
+            );
+        } catch (_) {}
+
+        res.json({ success: true, message: 'Settings updated successfully' });
+    } catch (err) {
+        console.error('SETTINGS UPDATE ERROR:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// ─── UPLOAD LOGO / FOUNDER / FILE ──────────────────────────────────────
+router.post('/upload-image', verifyToken, isAdmin, uploadImage.single('image'), async (req, res) => {
+    if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
+    const { field } = req.body;
+    const allowedFields = ['logo', 'logo2', 'founder_image'];
+    if (!allowedFields.includes(field)) return res.status(400).json({ success: false, message: 'Invalid field' });
+    const filePath = `/uploads/settings/${req.file.filename}`;
+    try {
+        const [rows] = await pool.execute('SELECT id FROM university_settings LIMIT 1');
+        
+        let dbField = field;
+        if (field === 'logo') dbField = 'logo_url';
+        if (field === 'founder_image') dbField = 'founder_image_url';
+
+        if (rows.length === 0) {
+            await pool.execute(`INSERT INTO university_settings (${dbField}) VALUES (?)`, [filePath]);
+        } else {
+            await pool.execute(`UPDATE university_settings SET ${dbField} = ? WHERE id = ?`, [filePath, rows[0].id]);
+        }
+        res.json({ success: true, path: filePath });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+router.post('/upload-file', verifyToken, isAdmin, uploadFile.single('file'), async (req, res) => {
+    if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
+    const { field } = req.body;
+    const allowedFields = ['prospectus', 'instruction_file', 'syllabus_file', 'home_page_pdf'];
+    if (!allowedFields.includes(field)) return res.status(400).json({ success: false, message: 'Invalid field' });
+    const filePath = `/uploads/settings/${req.file.filename}`;
+    try {
+        const [rows] = await pool.execute('SELECT id FROM university_settings LIMIT 1');
+        if (rows.length === 0) {
+            await pool.execute(`INSERT INTO university_settings (${field}) VALUES (?)`, [filePath]);
+        } else {
+            await pool.execute(`UPDATE university_settings SET ${field} = ? WHERE id = ?`, [filePath, rows[0].id]);
+        }
+        res.json({ success: true, path: filePath });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// ─── COMMUNITY FEES CRUD ───────────────────────────────────────────────
+router.get('/community-fees', async (req, res) => {
+    try {
+        const [rows] = await pool.execute('SELECT * FROM community_fees ORDER BY sort_order ASC');
+        res.json({ success: true, data: rows });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+router.post('/community-fees', verifyToken, isAdmin, async (req, res) => {
+    const { community, pg_min_mark, fee_general, fee_diff_abled, sort_order } = req.body;
+    try {
+        const [result] = await pool.execute(
+            'INSERT INTO community_fees (community, pg_min_mark, fee_general, fee_diff_abled, sort_order) VALUES (?, ?, ?, ?, ?)',
+            [community, pg_min_mark || null, fee_general || null, fee_diff_abled || null, sort_order || 0]
+        );
+        res.json({ success: true, id: result.insertId });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+router.put('/community-fees/:id', verifyToken, isAdmin, async (req, res) => {
+    const { community, pg_min_mark, fee_general, fee_diff_abled, sort_order } = req.body;
+    try {
+        await pool.execute(
+            'UPDATE community_fees SET community=?, pg_min_mark=?, fee_general=?, fee_diff_abled=?, sort_order=? WHERE id=?',
+            [community, pg_min_mark || null, fee_general || null, fee_diff_abled || null, sort_order || 0, req.params.id]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+router.delete('/community-fees/:id', verifyToken, isAdmin, async (req, res) => {
+    try {
+        await pool.execute('DELETE FROM community_fees WHERE id = ?', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// ─── MASTER DROPDOWN CRUD ──────────────────────────────────────────────
+const VALID_DROPDOWN_TABLES = ['dropdown_subjects', 'dropdown_exam_centers', 'dropdown_districts', 'dropdown_categories', 'dropdown_genders', 'dropdown_communities', 'dropdown_departments'];
+
+router.get('/master-data/:table', async (req, res) => {
+    const { table } = req.params;
+    if (!VALID_DROPDOWN_TABLES.includes(table)) return res.status(400).json({ success: false, message: 'Invalid table' });
+    try {
+        const [rows] = await pool.execute(`SELECT * FROM ${table} ORDER BY name ASC`);
+        res.json({ success: true, data: rows });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+router.post('/master-data/:table', verifyToken, isAdmin, async (req, res) => {
+    const { table } = req.params;
+    const { name } = req.body;
+    if (!VALID_DROPDOWN_TABLES.includes(table)) return res.status(400).json({ success: false, message: 'Invalid table' });
+    try {
+        const [result] = await pool.execute(`INSERT INTO ${table} (name) VALUES (?)`, [name]);
+        res.json({ success: true, id: result.insertId });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+router.delete('/master-data/:table/:id', verifyToken, isAdmin, async (req, res) => {
+    const { table, id } = req.params;
+    if (!VALID_DROPDOWN_TABLES.includes(table)) return res.status(400).json({ success: false, message: 'Invalid table' });
+    try {
+        await pool.execute(`DELETE FROM ${table} WHERE id = ?`, [id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+
+// ─── PORTAL HEADER LINK MANAGEMENT APIs ──────────────────────────────────────
+
+// 1. Get Portal Header Links
+router.get('/header-links', async (req, res) => {
+    try {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        const [rows] = await pool.execute(
+            `SELECT 
+                about_us_title, about_us_link, about_us_open_mode, about_us_enabled, about_us_order,
+                policies_title, policies_link, policies_open_mode, policies_enabled, policies_order,
+                contact_title, contact_link, contact_open_mode, contact_enabled, contact_order
+             FROM university_settings LIMIT 1`
+        );
+        res.json({ success: true, data: rows[0] || {} });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Helper for validating URL format
+const isValidUrl = (url) => {
+    if (!url) return true; // allowed empty
+    // allow internal relative paths like /contact or /pdf/...
+    if (url.startsWith('/')) return true;
+    try {
+        new URL(url);
+        return true;
+    } catch (_) {
+        return false;
+    }
+};
+
+// Helper for saving a specific link section
+async function updateLinkSection(section, req, res) {
+    const { title, link, open_mode, enabled, order } = req.body;
+
+    if (link && !isValidUrl(link)) {
+        return res.status(400).json({ success: false, message: 'Invalid URL/link format' });
+    }
+
+    try {
+        const [rows] = await pool.execute('SELECT id FROM university_settings LIMIT 1');
+        if (rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'University settings not initialized' });
+        }
+
+        const isEnabled = enabled ? 1 : 0;
+        const openMode = ['_blank', '_self'].includes(open_mode) ? open_mode : '_blank';
+        const displayOrder = parseInt(order) || 0;
+
+        await pool.execute(
+            `UPDATE university_settings 
+             SET ${section}_title = ?, ${section}_link = ?, ${section}_open_mode = ?, ${section}_enabled = ?, ${section}_order = ?
+             WHERE id = ?`,
+            [title || null, link || null, openMode, isEnabled, displayOrder, rows[0].id]
+        );
+
+        // Audit Log
+        try {
+            await pool.execute(
+                'INSERT INTO settings_audit_logs (admin_id, action, ip_address, user_agent) VALUES (?, ?, ?, ?)',
+                [req.user.id || null, `Updated ${section} Link`, req.ip || null, req.headers['user-agent'] || null]
+            );
+        } catch (_) {}
+
+        res.json({ success: true, message: `${section} link settings updated successfully` });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+}
+
+// 2. Update About Us Link
+router.put('/header-links/about-us', verifyToken, isAdmin, async (req, res) => {
+    await updateLinkSection('about_us', req, res);
+});
+
+// 3. Update Policies Link
+router.put('/header-links/policies', verifyToken, isAdmin, async (req, res) => {
+    await updateLinkSection('policies', req, res);
+});
+
+// 4. Update Contact Link
+router.put('/header-links/contact', verifyToken, isAdmin, async (req, res) => {
+    await updateLinkSection('contact', req, res);
+});
+
+// 5. Enable/Disable Header Links
+router.patch('/header-links/toggle', verifyToken, isAdmin, async (req, res) => {
+    const { field, enabled } = req.body;
+    const allowedFields = ['about_us', 'policies', 'contact'];
+    
+    if (!allowedFields.includes(field)) {
+        return res.status(400).json({ success: false, message: 'Invalid settings field' });
+    }
+
+    try {
+        const [rows] = await pool.execute('SELECT id FROM university_settings LIMIT 1');
+        if (rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Settings not initialized' });
+        }
+
+        const isEnabled = enabled ? 1 : 0;
+        await pool.execute(
+            `UPDATE university_settings SET ${field}_enabled = ? WHERE id = ?`,
+            [isEnabled, rows[0].id]
+        );
+
+        // Audit Log
+        try {
+            await pool.execute(
+                'INSERT INTO settings_audit_logs (admin_id, action, ip_address, user_agent) VALUES (?, ?, ?, ?)',
+                [req.user.id || null, `Toggled ${field} link visibility`, req.ip || null, req.headers['user-agent'] || null]
+            );
+        } catch (_) {}
+
+        res.json({ success: true, message: `Toggled ${field} link visibility successfully` });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+module.exports = router;
+

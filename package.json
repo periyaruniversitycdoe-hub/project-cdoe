@@ -1,0 +1,42 @@
+{
+  "name": "phd-management-system",
+  "version": "2.0.0",
+  "description": "Periyar University PhD Admission Management System — Enterprise Monorepo",
+  "private": true,
+  "scripts": {
+    "start": "concurrently \"node gateway.js\" \"node student/backend/server.js\" \"node admin/backend/server.js\" \"node supervisor/backend/server.js\" \"node center/backend/server.js\"",
+    "build": "node build_frontend.js",
+    "dev": "concurrently \"npm run dev:student-fe\" \"npm run dev:admin-fe\" \"npm run dev:supervisor-fe\" \"npm run dev:center-fe\" \"npm run dev:portal-fe\"",
+    "dev:all": "concurrently \"npm run start:student-be\" \"npm run start:admin-be\" \"npm run start:supervisor-be\" \"npm run start:center-be\" \"npm run dev:student-fe\" \"npm run dev:admin-fe\" \"npm run dev:supervisor-fe\" \"npm run dev:center-fe\" \"npm run dev:portal-fe\"",
+    "start:student-be": "cd student/backend    && npm run dev",
+    "start:admin-be": "cd admin/backend      && npm run dev",
+    "start:supervisor-be": "cd supervisor/backend && npm run dev",
+    "start:center-be": "cd center/backend     && npm run dev",
+    "dev:student-fe": "cd student/frontend    && npm run dev",
+    "dev:admin-fe": "cd admin/frontend      && npm run dev",
+    "dev:supervisor-fe": "cd supervisor/frontend && npm run dev",
+    "dev:center-fe": "cd center/frontend     && npm run dev",
+    "dev:portal-fe": "cd portal-dashboard      && npm run dev",
+    "install:all": "npm run install:student && npm run install:admin && npm run install:supervisor && npm run install:center && npm run install:portal",
+    "install:student": "cd student/backend    && npm install && cd ../frontend && npm install",
+    "install:admin": "cd admin/backend      && npm install && cd ../frontend && npm install",
+    "install:supervisor": "cd supervisor/backend && npm install && cd ../frontend && npm install",
+    "install:center": "cd center/backend     && npm install && cd ../frontend && npm install",
+    "install:portal": "cd portal-dashboard      && npm install"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "http-proxy-middleware": "^4.0.0",
+    "jsonwebtoken": "^9.0.3",
+    "mysql2": "^3.22.3",
+    "nodemailer": "^8.0.7"
+  }
+}

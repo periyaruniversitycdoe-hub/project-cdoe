@@ -1,0 +1,12 @@
+{
+  "name": "phd-student-module",
+  "version": "2.0.0",
+  "description": "Student Portal — PhD Management System",
+  "private": true,
+  "scripts": {
+    "start": "cd backend && npm start",
+    "dev:be": "cd backend && npm run dev",
+    "dev:fe": "cd frontend && npm run dev",
+    "install:all": "cd backend && npm install && cd ../frontend && npm install"
+  }
+}

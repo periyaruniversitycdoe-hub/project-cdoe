@@ -1,0 +1,32 @@
+# Environment — NEVER commit real credentials
+.env
+.env.local
+.env.production
+
+# Build output
+dist/
+build/
+
+# Dependencies
+node_modules/
+
+# Prisma generated client
+node_modules/.prisma/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Test coverage
+coverage/

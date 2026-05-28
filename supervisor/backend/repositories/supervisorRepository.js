@@ -1,0 +1,119 @@
+const pool = require('../../../admin/backend/config/db');
+
+const SELECT_JOINED = `
+    SELECT
+        s.*,
+        d.name  AS designation_name,
+        sd.name AS special_designation_name,
+        dept.name AS department_name,
+        inst.name AS serving_institute_name,
+        dist.name AS district_name
+    FROM supervisors s
+    LEFT JOIN master_designations        d    ON s.designation_id         = d.id
+    LEFT JOIN master_special_designations sd   ON s.special_designation_id  = sd.id
+    LEFT JOIN master_departments          dept ON s.department_id            = dept.id
+    LEFT JOIN master_institutes           inst ON s.serving_institute_id     = inst.id
+    LEFT JOIN master_districts            dist ON s.district_id              = dist.id
+`;
+
+async function findAll({ status, search, page = 1, limit = 20 }) {
+    const conditions = [];
+    const vals = [];
+
+    if (status) { conditions.push('s.status = ?'); vals.push(status); }
+    if (search) {
+        conditions.push('(s.name LIKE ? OR s.email LIKE ? OR s.mobile LIKE ? OR s.supervisor_no LIKE ?)');
+        const like = `%${search}%`;
+        vals.push(like, like, like, like);
+    }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const offset = (page - 1) * limit;
+
+    const [[{ total }]] = await pool.execute(
+        `SELECT COUNT(*) AS total FROM supervisors s ${where}`, vals
+    );
+    const [rows] = await pool.execute(
+        `${SELECT_JOINED} ${where} ORDER BY s.name ASC LIMIT ${limit} OFFSET ${offset}`,
+        vals
+    );
+    return { rows, total, page, limit };
+}
+
+async function findById(id) {
+    const [[row]] = await pool.execute(`${SELECT_JOINED} WHERE s.id = ?`, [id]);
+    return row || null;
+}
+
+async function getDisciplines(supervisorId) {
+    const [rows] = await pool.execute(
+        `SELECT sd.*, d.name AS discipline_name, rc.name AS centre_name
+         FROM supervisor_disciplines sd
+         LEFT JOIN master_disciplines d  ON sd.discipline_id = d.id
+         LEFT JOIN research_centres   rc ON sd.centre_id     = rc.id
+         WHERE sd.supervisor_id = ?
+         ORDER BY sd.type ASC, sd.sort_order ASC`,
+        [supervisorId]
+    );
+    return rows;
+}
+
+async function create(data) {
+    const cols = Object.keys(data);
+    const placeholders = cols.map(() => '?').join(', ');
+    const vals = cols.map(c => data[c]);
+    const [result] = await pool.execute(
+        `INSERT INTO supervisors (${cols.join(', ')}) VALUES (${placeholders})`,
+        vals
+    );
+    return result.insertId;
+}
+
+async function update(id, data) {
+    const sets = Object.keys(data).map(c => `${c} = ?`).join(', ');
+    const vals = [...Object.values(data), id];
+    await pool.execute(`UPDATE supervisors SET ${sets} WHERE id = ?`, vals);
+}
+
+async function upsertDisciplines(supervisorId, disciplines, connection) {
+    const conn = connection || pool;
+    await conn.execute('DELETE FROM supervisor_disciplines WHERE supervisor_id = ?', [supervisorId]);
+    for (let i = 0; i < disciplines.length; i++) {
+        const { type, discipline_id, centre_id, recognition_date } = disciplines[i];
+        await conn.execute(
+            `INSERT INTO supervisor_disciplines (supervisor_id, type, discipline_id, centre_id, recognition_date, sort_order)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [supervisorId, type || 'Primary', discipline_id || null, centre_id || null, recognition_date || null, i]
+        );
+    }
+}
+
+async function updateStatus(id, { status, rejection_reason, approved_by }) {
+    const sets = ['status = ?'];
+    const vals = [status];
+
+    if (rejection_reason !== undefined) { sets.push('rejection_reason = ?'); vals.push(rejection_reason); }
+    if (approved_by !== undefined) { 
+        sets.push('approved_by = ?'); vals.push(approved_by); 
+        sets.push('approved_at = NOW()');
+    }
+
+    vals.push(id);
+    await pool.execute(`UPDATE supervisors SET ${sets.join(', ')} WHERE id = ?`, vals);
+}
+
+async function remove(id) {
+    const [result] = await pool.execute('DELETE FROM supervisors WHERE id = ?', [id]);
+    return result.affectedRows;
+}
+
+async function isEmailTaken(email, excludeId = null) {
+    const q = excludeId
+        ? 'SELECT id FROM supervisors WHERE email = ? AND id != ?'
+        : 'SELECT id FROM supervisors WHERE email = ?';
+    const params = excludeId ? [email, excludeId] : [email];
+    const [[row]] = await pool.execute(q, params);
+    return !!row;
+}
+
+module.exports = { findAll, findById, getDisciplines, create, update, upsertDisciplines, updateStatus, remove, isEmailTaken };

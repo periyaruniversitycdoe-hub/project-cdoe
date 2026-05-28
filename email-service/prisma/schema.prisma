@@ -1,0 +1,67 @@
+// ============================================================
+// Periyar University ERP — Email Service — Prisma Schema
+// Database: rsm_db (MySQL) — shared with main ERP
+// This service owns: email_users, email_audit_logs
+// ============================================================
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ── Email Service User ────────────────────────────────────────
+// Separate from the main `users` table — stores email auth state
+model User {
+  id                     String    @id @default(cuid()) @db.VarChar(30)
+  email                  String    @unique(map: "email") @db.VarChar(254)
+  passwordHash           String    @db.VarChar(255)
+  fullName               String    @db.VarChar(255)
+  role                   UserRole  @default(STUDENT)
+
+  isEmailVerified        Boolean   @default(false)
+  emailVerifyToken       String?   @unique(map: "emailVerifyToken") @db.VarChar(512)
+  emailVerifyTokenExpiry DateTime?
+
+  lastLoginAt            DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @default(now()) @updatedAt
+
+  auditLogs              AuditLog[]
+
+  @@index([email],             map: "idx_email_users_email")
+  @@index([emailVerifyToken],  map: "idx_email_users_verify_token")
+  @@map("email_users")
+}
+
+enum UserRole {
+  STUDENT
+  FACULTY
+  ADMIN
+  SUPER_ADMIN
+}
+
+// ── Email Service Audit Log ───────────────────────────────────
+model AuditLog {
+  id        String   @id @default(cuid()) @db.VarChar(30)
+  action    String   @db.VarChar(100)
+
+  userId    String?  @db.VarChar(30)
+  email     String?  @db.VarChar(254)
+  metadata  Json?
+  ipAddress String?  @db.VarChar(45)
+  userAgent String?  @db.Text
+
+  createdAt DateTime @default(now())
+
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_audit_user")
+
+  @@index([action],    map: "idx_email_audit_action")
+  @@index([userId],    map: "idx_email_audit_userId")
+  @@index([email],     map: "idx_email_audit_email")
+  @@index([createdAt], map: "idx_email_audit_createdAt")
+  @@map("email_audit_logs")
+}

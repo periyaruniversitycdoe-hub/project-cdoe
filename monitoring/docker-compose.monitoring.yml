@@ -1,0 +1,125 @@
+# ═════════════════════════════════════════════════════════════════════════════
+# PhD ERP — Optional Monitoring Stack
+# Lightweight observability using Prometheus + Grafana + cAdvisor
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml up -d
+#
+# Access:
+#   Grafana:    http://localhost:3001  (admin / $GRAFANA_ADMIN_PASSWORD)
+#   Prometheus: http://localhost:9090  (internal)
+# ═════════════════════════════════════════════════════════════════════════════
+
+services:
+
+  # Container metrics exporter
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.0
+    container_name: phd_cadvisor
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    expose:
+      - "8080"
+    networks:
+      - monitoring_net
+    labels:
+      - "service=cadvisor"
+
+  # MySQL metrics exporter
+  mysql-exporter:
+    image: prom/mysqld-exporter:v0.15.0
+    container_name: phd_mysql_exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: "${DB_USER}:${DB_PASSWORD}@(mysql:3306)/${DB_NAME}"
+    expose:
+      - "9104"
+    networks:
+      - monitoring_net
+      - phd_db_net
+    labels:
+      - "service=mysql-exporter"
+
+  # Redis metrics exporter
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.55.0
+    container_name: phd_redis_exporter
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR:     redis://redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    expose:
+      - "9121"
+    networks:
+      - monitoring_net
+      - phd_db_net
+    labels:
+      - "service=redis-exporter"
+
+  # Prometheus — scrapes all exporters + Docker healthchecks
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: phd_prometheus
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+    expose:
+      - "9090"
+    ports:
+      - "9090:9090"
+    networks:
+      - monitoring_net
+    labels:
+      - "service=prometheus"
+
+  # Grafana — dashboards
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: phd_grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER:     admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP:     "false"
+      GF_SERVER_ROOT_URL:         http://localhost:3001
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/phd-overview.json
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana-dashboards:/var/lib/grafana/dashboards:ro
+      - ./monitoring/grafana-provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "3001:3000"
+    networks:
+      - monitoring_net
+    depends_on:
+      - prometheus
+    labels:
+      - "service=grafana"
+
+networks:
+  monitoring_net:
+    driver: bridge
+    name: phd_monitoring_net
+
+  # Attach to existing app/db networks so exporters can reach services
+  phd_db_net:
+    external: true
+
+volumes:
+  prometheus_data:
+    name: phd_prometheus_data
+  grafana_data:
+    name: phd_grafana_data

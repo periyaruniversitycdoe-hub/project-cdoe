@@ -1,0 +1,73 @@
+# ═════════════════════════════════════════════════════════════════════════════
+# Development Overrides — docker-compose.override.yml
+# Docker Compose auto-merges this with docker-compose.yml in dev mode.
+# DO NOT use in production. In production: docker compose -f docker-compose.yml up
+# ═════════════════════════════════════════════════════════════════════════════
+
+services:
+
+  # Expose MySQL port for local DB tools (TablePlus, DBeaver, etc.)
+  mysql:
+    ports:
+      - "3306:3306"
+
+  # Expose Redis port for local debugging
+  redis:
+    ports:
+      - "6379:6379"
+
+  # Expose backend ports for direct API testing (Postman, curl, etc.)
+  student-backend:
+    ports:
+      - "5000:5000"
+    environment:
+      NODE_ENV: development
+
+  admin-backend:
+    ports:
+      - "5001:5001"
+    environment:
+      NODE_ENV: development
+
+  supervisor-backend:
+    ports:
+      - "5002:5002"
+    environment:
+      NODE_ENV: development
+
+  center-backend:
+    ports:
+      - "5003:5003"
+    environment:
+      NODE_ENV: development
+
+  notification-service:
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+
+  # In dev, frontends are accessible directly too
+  student-ui:
+    ports:
+      - "5173:8080"
+
+  admin-ui:
+    ports:
+      - "5174:8080"
+
+  supervisor-ui:
+    ports:
+      - "5175:8080"
+
+  center-ui:
+    ports:
+      - "5176:8080"
+
+  # Relax nginx depends_on in dev so it starts even if UIs aren't ready
+  nginx:
+    depends_on:
+      - student-backend
+      - admin-backend
+      - supervisor-backend
+      - center-backend

@@ -1,0 +1,616 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# PhD Admission Management System — Production Docker Compose
+# University: Periyar University, Salem
+#
+# Architecture:
+#   Frontends  (student-ui, admin-ui, supervisor-ui, center-ui)    → app_net
+#   Backends   (student, admin, supervisor, center, notification)  → app_net + db_net
+#   Database   (mysql, redis)                                      → db_net ONLY
+#   Proxy      (nginx)                                             → app_net ONLY
+#   Backup                                                         → db_net ONLY
+#
+# Database ports are NEVER exposed to the host in production.
+# Only nginx exposes ports 80 and 443.
+#
+# Usage:
+#   docker compose up -d --build          # First run
+#   docker compose up -d                   # Subsequent starts
+#   docker compose down                    # Stop all
+#   docker compose logs -f [service]       # Tail logs
+# ═══════════════════════════════════════════════════════════════════════════════
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+    labels: "service"
+
+x-restart: &default-restart
+  restart: unless-stopped
+
+x-backend-env: &backend-env
+  DB_HOST:     ${DB_HOST:-mysql}
+  DB_PORT:     ${DB_PORT:-3306}
+  DB_USER:     ${DB_USER}
+  DB_PASSWORD: ${DB_PASSWORD}
+  DB_NAME:     ${DB_NAME}
+  REDIS_HOST:  ${REDIS_HOST:-redis}
+  REDIS_PORT:  ${REDIS_PORT:-6379}
+  REDIS_PASSWORD: ${REDIS_PASSWORD}
+  NODE_ENV:    production
+
+services:
+
+  # ════════════════════════════════════════════════════════════════
+  # INFRASTRUCTURE — MySQL Database
+  # Isolated in db_net — no external port binding in production
+  # ════════════════════════════════════════════════════════════════
+  mysql:
+    image: mysql:8.0
+    container_name: phd_mysql
+    <<: *default-restart
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --innodb-buffer-pool-size=256M
+      --max-connections=200
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --slow-query-log=ON
+      --slow-query-log-file=/var/log/mysql/slow.log
+      --long-query-time=2
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MYSQL_DATABASE:      ${DB_NAME}
+      MYSQL_USER:          ${DB_USER}
+      MYSQL_PASSWORD:      ${DB_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - mysql_logs:/var/log/mysql
+      # Init scripts: runs ONCE on fresh volume
+      - ./database/init/01-init.sh:/docker-entrypoint-initdb.d/01-init.sh:ro
+      # All SQL migrations available to the init script
+      - ./database/migrations:/migrations:ro
+    # NO ports: section — database is internal-only
+    networks:
+      - db_net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost",
+             "-u", "${DB_USER}", "-p${DB_PASSWORD}"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    logging: *default-logging
+    labels:
+      - "service=database"
+      - "tier=infrastructure"
+
+  # ════════════════════════════════════════════════════════════════
+  # INFRASTRUCTURE — Redis
+  # Session store, OTP cache, rate limiting, BullMQ queues
+  # ════════════════════════════════════════════════════════════════
+  redis:
+    image: redis:7-alpine
+    container_name: phd_redis
+    <<: *default-restart
+    command: >
+      redis-server /usr/local/etc/redis/redis.conf
+      --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    # NO ports: section
+    networks:
+      - db_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging: *default-logging
+    labels:
+      - "service=cache"
+      - "tier=infrastructure"
+
+  # ════════════════════════════════════════════════════════════════
+  # BACKEND — Student API  (port 5000)
+  # ════════════════════════════════════════════════════════════════
+  student-backend:
+    build:
+      context: .
+      dockerfile: student/backend/Dockerfile
+      target: production
+    image: phd/student-backend:${TAG:-latest}
+    container_name: phd_student_backend
+    <<: *default-restart
+    environment:
+      <<: *backend-env
+      PORT: 5000
+      STUDENT_BACKEND_PORT: 5000
+      STUDENT_FRONTEND_URL: ${STUDENT_FRONTEND_URL}
+      STUDENT_JWT_SECRET:   ${STUDENT_JWT_SECRET}
+      SMTP_HOST:       ${SMTP_HOST}
+      SMTP_PORT:       ${SMTP_PORT}
+      SMTP_USER:       ${SMTP_USER}
+      SMTP_PASS:       ${SMTP_PASS}
+      SMTP_FROM:       ${SMTP_FROM}
+      SMTP_SECURE:     ${SMTP_SECURE:-true}
+      PAYTM_MID:       ${PAYTM_MID}
+      PAYTM_KEY:       ${PAYTM_KEY}
+      PAYTM_WEBSITE:   ${PAYTM_WEBSITE:-WEBSTAGING}
+      PAYMENT_CALLBACK_URL: ${PAYMENT_CALLBACK_URL}
+      PAYMENT_RETURN_URL:   ${PAYMENT_RETURN_URL}
+    volumes:
+      - uploads_data:/app/shared/uploads
+      - student_logs:/app/student/backend/logs
+    # Internal port only — nginx proxies externally
+    expose:
+      - "5000"
+    networks:
+      - app_net
+      - db_net
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5000/ 2>&1 | grep -qv ECONNREFUSED || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+    logging: *default-logging
+    labels:
+      - "service=student-backend"
+      - "tier=backend"
+
+  # ════════════════════════════════════════════════════════════════
+  # BACKEND — Admin API  (port 5001)
+  # Also serves supervisor/center routes via shared imports
+  # ════════════════════════════════════════════════════════════════
+  admin-backend:
+    build:
+      context: .
+      dockerfile: admin/backend/Dockerfile
+      target: production
+    image: phd/admin-backend:${TAG:-latest}
+    container_name: phd_admin_backend
+    <<: *default-restart
+    environment:
+      <<: *backend-env
+      PORT: 5001
+      ADMIN_BACKEND_PORT: 5001
+      ADMIN_FRONTEND_URL:    ${ADMIN_FRONTEND_URL}
+      STUDENT_FRONTEND_URL:  ${STUDENT_FRONTEND_URL}
+      ADMIN_JWT_SECRET:      ${ADMIN_JWT_SECRET}
+      SMTP_HOST:   ${SMTP_HOST}
+      SMTP_PORT:   ${SMTP_PORT}
+      SMTP_USER:   ${SMTP_USER}
+      SMTP_PASS:   ${SMTP_PASS}
+      SMTP_FROM:   ${SMTP_FROM}
+      SMTP_SECURE: ${SMTP_SECURE:-true}
+    volumes:
+      - uploads_data:/app/shared/uploads
+      - admin_logs:/app/admin/backend/logs
+    expose:
+      - "5001"
+    networks:
+      - app_net
+      - db_net
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5001/ 2>&1 | grep -qv ECONNREFUSED || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+    logging: *default-logging
+    labels:
+      - "service=admin-backend"
+      - "tier=backend"
+
+  # ════════════════════════════════════════════════════════════════
+  # BACKEND — Supervisor Portal API  (port 5002)
+  # ════════════════════════════════════════════════════════════════
+  supervisor-backend:
+    build:
+      context: .
+      dockerfile: supervisor/backend/Dockerfile
+      target: production
+    image: phd/supervisor-backend:${TAG:-latest}
+    container_name: phd_supervisor_backend
+    <<: *default-restart
+    environment:
+      <<: *backend-env
+      PORT: 5002
+      SUPERVISOR_BACKEND_PORT: 5002
+      SUPERVISOR_FRONTEND_URL: ${SUPERVISOR_FRONTEND_URL}
+      ADMIN_FRONTEND_URL:      ${ADMIN_FRONTEND_URL}
+      SUPERVISOR_JWT_SECRET:   ${SUPERVISOR_JWT_SECRET}
+      SMTP_HOST:   ${SMTP_HOST}
+      SMTP_PORT:   ${SMTP_PORT}
+      SMTP_USER:   ${SMTP_USER}
+      SMTP_PASS:   ${SMTP_PASS}
+      SMTP_FROM:   ${SMTP_FROM}
+      SMTP_SECURE: ${SMTP_SECURE:-true}
+    volumes:
+      - uploads_data:/app/shared/uploads
+      - supervisor_logs:/app/supervisor/backend/logs
+    expose:
+      - "5002"
+    networks:
+      - app_net
+      - db_net
+    depends_on:
+      mysql:
+        condition: service_healthy
+      admin-backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5002/ 2>&1 | grep -qv ECONNREFUSED || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+    logging: *default-logging
+    labels:
+      - "service=supervisor-backend"
+      - "tier=backend"
+
+  # ════════════════════════════════════════════════════════════════
+  # BACKEND — Center Portal API  (port 5003)
+  # ════════════════════════════════════════════════════════════════
+  center-backend:
+    build:
+      context: .
+      dockerfile: center/backend/Dockerfile
+      target: production
+    image: phd/center-backend:${TAG:-latest}
+    container_name: phd_center_backend
+    <<: *default-restart
+    environment:
+      <<: *backend-env
+      PORT: 5003
+      CENTER_BACKEND_PORT: 5003
+      CENTER_FRONTEND_URL: ${CENTER_FRONTEND_URL}
+      ADMIN_FRONTEND_URL:  ${ADMIN_FRONTEND_URL}
+      CENTER_JWT_SECRET:   ${CENTER_JWT_SECRET}
+      SMTP_HOST:   ${SMTP_HOST}
+      SMTP_PORT:   ${SMTP_PORT}
+      SMTP_USER:   ${SMTP_USER}
+      SMTP_PASS:   ${SMTP_PASS}
+      SMTP_FROM:   ${SMTP_FROM}
+      SMTP_SECURE: ${SMTP_SECURE:-true}
+    volumes:
+      - uploads_data:/app/shared/uploads
+      - center_logs:/app/center/backend/logs
+    expose:
+      - "5003"
+    networks:
+      - app_net
+      - db_net
+    depends_on:
+      mysql:
+        condition: service_healthy
+      admin-backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5003/ 2>&1 | grep -qv ECONNREFUSED || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+    logging: *default-logging
+    labels:
+      - "service=center-backend"
+      - "tier=backend"
+
+  # ════════════════════════════════════════════════════════════════
+  # NOTIFICATION SERVICE — NestJS + BullMQ + Redis
+  # Handles transactional email via Redis queue
+  # ════════════════════════════════════════════════════════════════
+  notification-service:
+    build:
+      context: ./email-service
+      dockerfile: Dockerfile
+      target: production
+    image: phd/notification-service:${TAG:-latest}
+    container_name: phd_notification_service
+    <<: *default-restart
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      REDIS_HOST:     ${REDIS_HOST:-redis}
+      REDIS_PORT:     ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      DATABASE_URL: mysql://${DB_USER}:${DB_PASSWORD}@${DB_HOST:-mysql}:3306/${DB_NAME}
+      JWT_SECRET:    ${STUDENT_JWT_SECRET}
+      SMTP_HOST:     ${SMTP_HOST}
+      SMTP_PORT:     ${SMTP_PORT}
+      SMTP_USER:     ${SMTP_USER}
+      SMTP_PASS:     ${SMTP_PASS}
+      SMTP_FROM:     ${SMTP_FROM}
+      SMTP_SECURE:   ${SMTP_SECURE:-true}
+      APP_NAME:      "Periyar University PhD ERP"
+      FRONTEND_URL:  ${STUDENT_FRONTEND_URL}
+    volumes:
+      - notification_logs:/app/logs
+    expose:
+      - "3000"
+    networks:
+      - app_net
+      - db_net
+    depends_on:
+      redis:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/v1/health 2>/dev/null | grep -q ok || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    logging: *default-logging
+    labels:
+      - "service=notification"
+      - "tier=backend"
+
+  # ════════════════════════════════════════════════════════════════
+  # FRONTEND — Student Portal  (static nginx:8080)
+  # ════════════════════════════════════════════════════════════════
+  student-ui:
+    build:
+      context: ./student/frontend
+      dockerfile: Dockerfile
+      target: production
+      args:
+        VITE_API_URL:     ${STUDENT_FRONTEND_URL}/api
+        VITE_STUDENT_URL: ${STUDENT_FRONTEND_URL}
+    image: phd/student-ui:${TAG:-latest}
+    container_name: phd_student_ui
+    <<: *default-restart
+    expose:
+      - "8080"
+    networks:
+      - app_net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health | grep -q ok || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging: *default-logging
+    labels:
+      - "service=student-ui"
+      - "tier=frontend"
+
+  # ════════════════════════════════════════════════════════════════
+  # FRONTEND — Admin Portal  (static nginx:8080)
+  # Build context is project root (cross-module imports)
+  # ════════════════════════════════════════════════════════════════
+  admin-ui:
+    build:
+      context: .
+      dockerfile: admin/frontend/Dockerfile
+      target: production
+      args:
+        VITE_API_URL:   ${ADMIN_FRONTEND_URL}/api
+        VITE_ADMIN_URL: ${ADMIN_FRONTEND_URL}
+    image: phd/admin-ui:${TAG:-latest}
+    container_name: phd_admin_ui
+    <<: *default-restart
+    expose:
+      - "8080"
+    networks:
+      - app_net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health | grep -q ok || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging: *default-logging
+    labels:
+      - "service=admin-ui"
+      - "tier=frontend"
+
+  # ════════════════════════════════════════════════════════════════
+  # FRONTEND — Supervisor Portal
+  # ════════════════════════════════════════════════════════════════
+  supervisor-ui:
+    build:
+      context: ./supervisor/frontend
+      dockerfile: Dockerfile
+      target: production
+      args:
+        VITE_API_URL:        ${SUPERVISOR_FRONTEND_URL}/api
+        VITE_SUPERVISOR_URL: ${SUPERVISOR_FRONTEND_URL}
+    image: phd/supervisor-ui:${TAG:-latest}
+    container_name: phd_supervisor_ui
+    <<: *default-restart
+    expose:
+      - "8080"
+    networks:
+      - app_net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health | grep -q ok || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging: *default-logging
+    labels:
+      - "service=supervisor-ui"
+      - "tier=frontend"
+
+  # ════════════════════════════════════════════════════════════════
+  # FRONTEND — Center Portal
+  # ════════════════════════════════════════════════════════════════
+  center-ui:
+    build:
+      context: ./center/frontend
+      dockerfile: Dockerfile
+      target: production
+      args:
+        VITE_API_URL:     ${CENTER_FRONTEND_URL}/api
+        VITE_CENTER_URL:  ${CENTER_FRONTEND_URL}
+    image: phd/center-ui:${TAG:-latest}
+    container_name: phd_center_ui
+    <<: *default-restart
+    expose:
+      - "8080"
+    networks:
+      - app_net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health | grep -q ok || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging: *default-logging
+    labels:
+      - "service=center-ui"
+      - "tier=frontend"
+
+  # ════════════════════════════════════════════════════════════════
+  # PROXY — Nginx Reverse Proxy
+  # ONLY service with public-facing ports (80 + 443)
+  # ════════════════════════════════════════════════════════════════
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: phd_nginx
+    <<: *default-restart
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - uploads_data:/var/www/uploads:ro
+      - nginx_logs:/var/log/nginx
+      - ssl_certs:/etc/nginx/ssl:ro
+      - nginx_cache:/var/cache/nginx
+    networks:
+      - app_net
+    depends_on:
+      student-ui:
+        condition: service_healthy
+      admin-ui:
+        condition: service_healthy
+      supervisor-ui:
+        condition: service_healthy
+      center-ui:
+        condition: service_healthy
+      student-backend:
+        condition: service_healthy
+      admin-backend:
+        condition: service_healthy
+      supervisor-backend:
+        condition: service_healthy
+      center-backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/nginx-health | grep -q ok || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging: *default-logging
+    labels:
+      - "service=nginx"
+      - "tier=proxy"
+
+  # ════════════════════════════════════════════════════════════════
+  # BACKUP SERVICE — Automated MySQL backups
+  # Runs on db_net only; no external exposure
+  # ════════════════════════════════════════════════════════════════
+  backup:
+    image: mysql:8.0
+    container_name: phd_backup
+    <<: *default-restart
+    environment:
+      MYSQL_HOST:          ${DB_HOST:-mysql}
+      MYSQL_USER:          ${DB_USER}
+      MYSQL_PASSWORD:      ${DB_PASSWORD}
+      MYSQL_DATABASE:      ${DB_NAME}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+    volumes:
+      - backup_data:/backups
+      - ./scripts/backup-cron.sh:/usr/local/bin/backup-cron.sh:ro
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        chmod +x /usr/local/bin/backup-cron.sh
+        echo "0 2 * * * /usr/local/bin/backup-cron.sh >> /var/log/backup.log 2>&1" | crontab -
+        crond -f -l 2
+    networks:
+      - db_net
+    depends_on:
+      mysql:
+        condition: service_healthy
+    logging: *default-logging
+    labels:
+      - "service=backup"
+      - "tier=infrastructure"
+
+
+# ════════════════════════════════════════════════════════════════
+# NETWORKS
+# app_net  — nginx + all frontends + all backends
+# db_net   — backends + mysql + redis + backup (NO nginx, NO frontends)
+# ════════════════════════════════════════════════════════════════
+networks:
+  app_net:
+    driver: bridge
+    name: phd_app_net
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+
+  db_net:
+    driver: bridge
+    name: phd_db_net
+    internal: true          # Completely isolated — no internet egress
+    ipam:
+      config:
+        - subnet: 172.21.0.0/24
+
+
+# ════════════════════════════════════════════════════════════════
+# VOLUMES — all named, Docker-managed, persistent
+# ════════════════════════════════════════════════════════════════
+volumes:
+  mysql_data:
+    name: phd_mysql_data
+  mysql_logs:
+    name: phd_mysql_logs
+  redis_data:
+    name: phd_redis_data
+  uploads_data:
+    name: phd_uploads_data
+  ssl_certs:
+    name: phd_ssl_certs
+  nginx_logs:
+    name: phd_nginx_logs
+  nginx_cache:
+    name: phd_nginx_cache
+  backup_data:
+    name: phd_backup_data
+  student_logs:
+    name: phd_student_logs
+  admin_logs:
+    name: phd_admin_logs
+  supervisor_logs:
+    name: phd_supervisor_logs
+  center_logs:
+    name: phd_center_logs
+  notification_logs:
+    name: phd_notification_logs

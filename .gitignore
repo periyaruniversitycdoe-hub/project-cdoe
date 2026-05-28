@@ -1,0 +1,58 @@
+# ── Dependencies ──────────────────────────────────────────────────────────────
+node_modules/
+**/node_modules/
+
+# ── Environment ───────────────────────────────────────────────────────────────
+.env
+# Keep .env.example (safe to commit — no secrets)
+
+# ── Build Outputs ─────────────────────────────────────────────────────────────
+dist/
+build/
+**/dist/
+**/build/
+
+# ── OS & Editor ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.log
+*.suo
+.vscode/
+.idea/
+
+# ── MySQL Local Data & Temp Files ─────────────────────────────────────────────
+db_data/
+my_temp.ini
+mysql_error.txt
+mysqld_out.txt
+net_start_out.txt
+service_error.txt
+
+# ── Uploaded Runtime Files (keep directory, ignore contents) ──────────────────
+shared/uploads/students/*
+shared/uploads/supervisors/*
+shared/uploads/centres/*
+shared/uploads/attendance/*
+shared/uploads/settings/*
+!shared/uploads/**/.gitkeep
+
+# Legacy upload dirs (kept in admin/backend for existing functionality)
+admin/backend/uploads/attendance/*
+admin/backend/uploads/supervisors/*
+admin/backend/uploads/centres/*
+admin/backend/uploads/settings/*
+!admin/backend/uploads/**/.gitkeep
+
+student/backend/uploads/*
+!student/backend/uploads/.gitkeep
+
+# ── Scratch / Brain / Temp ────────────────────────────────────────────────────
+brain/
+scratch/
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+logs/*.log
+!logs/.gitkeep
+
+# ── Local Database Data Directory ──
+database/mysql-data/

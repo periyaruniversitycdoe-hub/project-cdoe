@@ -1,0 +1,152 @@
+* {
+  transition: none !important;
+  animation: none !important;
+  scroll-behavior: auto !important;
+}
+
+/* Override the global no-transition rule for the Work Experience accordion.
+   Uses !important to win against the wildcard rule above. */
+.work-experience-section {
+  transition: max-height 0.45s ease-in-out, opacity 0.35s ease-in-out !important;
+}
+
+/* ── Moving Announcement Marquee ─────────────────────────────────────────────
+   The wildcard rule above (`* { animation: none !important }`) kills every CSS
+   animation on the page.  These rules explicitly restore only the marquee track.
+   --marquee-duration is set as a CSS custom property on the element itself so
+   the admin-configured speed flows through without needing inline animation.    */
+@keyframes pu-marquee {
+  0%   { transform: translate3d(0,    0, 0); }
+  100% { transform: translate3d(-50%, 0, 0); }
+}
+.pu-marquee-track {
+  animation: pu-marquee var(--marquee-duration, 15s) linear infinite !important;
+  will-change: transform;
+}
+.pu-marquee-track:hover {
+  /* Higher specificity + !important beats the shorthand above → pauses on hover */
+  animation-play-state: paused !important;
+}
+
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+.login-bg-slide {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  transition: opacity 1s ease-in-out;
+  z-index: 0;
+}
+.login-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 1;
+}
+.login-content {
+  position: relative;
+  z-index: 10;
+  width: 100%;
+  max-width: 400px;
+}
+.login-box {
+  background: #fff;
+  border-radius: 8px;
+  padding: 40px;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+}
+.login-logo { text-align: center; margin-bottom: 30px; }
+.login-logo h3 { margin: 0; font-size: 20px; font-weight: 700; color: #364150; }
+
+.text-teal { color: #32C5D2 !important; }
+.form-label { font-size: 13px; color: #8290a3; margin-bottom: 5px; }
+.form-control { background-color: #ffffff; border: 1px solid #ced4da; border-radius: 4px; padding: 10px; }
+.form-control:focus { background-color: #ffffff; border-color: #32C5D2; box-shadow: 0 0 0 0.2rem rgba(50, 197, 210, 0.25); outline: 0; }
+.form-error { color: #e73d4a; font-size: 12px; margin-top: 5px; }
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.animate-spin { animation: spin 1s linear infinite; }
+
+/* Responsive Typography for Periyar University Header */
+.responsive-h1 {
+  font-size: 2.4rem;
+}
+.responsive-sub {
+  font-size: 1.2rem;
+}
+.responsive-h2 {
+  font-size: 2.6rem;
+}
+.responsive-text {
+  font-size: 1rem;
+}
+
+@media (max-width: 991.98px) {
+  .responsive-h1 {
+    font-size: 1.8rem;
+  }
+  .responsive-sub {
+    font-size: 1rem;
+  }
+  .responsive-h2 {
+    font-size: 2rem;
+  }
+  .responsive-text {
+    font-size: 0.9rem;
+  }
+}
+
+@media (max-width: 575.98px) {
+  .responsive-h1 {
+    font-size: 1.3rem;
+    line-height: 1.3;
+  }
+  .responsive-sub {
+    font-size: 0.85rem;
+  }
+  .responsive-h2 {
+    font-size: 1.4rem;
+    line-height: 1.3;
+  }
+  .responsive-text {
+    font-size: 0.75rem;
+    line-height: 1.3;
+  }
+}
+
+/* Custom styled select fields */
+.form-select {
+  background-color: #ffffff;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  padding: 6px 12px;
+  color: #333;
+}
+
+.form-select:focus {
+  background-color: #ffffff;
+  border-color: #32C5D2;
+  box-shadow: 0 0 0 0.2rem rgba(50, 197, 210, 0.25);
+  outline: 0;
+}
+
+/* Header Hover Click Styles */
+.hover-opacity {
+  opacity: 1;
+  transition: opacity 0.25s ease-in-out !important;
+}
+.hover-opacity:hover {
+  opacity: 0.85 !important;
+}
+
+

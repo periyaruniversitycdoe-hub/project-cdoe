@@ -1,0 +1,31 @@
+{
+    "folders": [
+        {
+            "name": "Student Portal",
+            "path": "student"
+        },
+        {
+            "name": "Admin Portal",
+            "path": "admin"
+        },
+        {
+            "name": "Supervisor Portal",
+            "path": "supervisor"
+        },
+        {
+            "name": "Center Portal",
+            "path": "center"
+        },
+        {
+            "name": "Root (phd-demo)",
+            "path": "."
+        }
+    ],
+    "settings": {
+        "explorer.sortOrder": "default",
+        "files.exclude": {
+            "**/node_modules": true,
+            "**/.git": true
+        }
+    }
+}

@@ -1,0 +1,81 @@
+# ── Never include in any Docker build context ─────────────────────────────────
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+
+# Dependencies (each Dockerfile installs its own)
+**/node_modules/
+**/npm-debug.log*
+**/yarn-error.log*
+
+# Build outputs
+**/dist/
+**/.next/
+**/build/
+**/out/
+
+# Dev tools
+**/.git/
+**/.gitignore
+**/.github/
+**/.vscode/
+**/.idea/
+
+# Test artifacts
+**/coverage/
+**/*.test.js
+**/*.spec.ts
+**/jest.config.*
+**/cypress/
+**/__tests__/
+**/__mocks__/
+
+# Logs
+**/logs/
+**/*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Docker files (not needed inside images)
+**/Dockerfile*
+**/docker-compose*.yml
+.dockerignore
+
+# Documentation
+*.md
+!README.md
+DOCKER.md
+
+# Temporary / backup files
+**/tmp/
+**/*.bak
+**/*.swp
+**/*.swo
+*~
+
+# Python virtualenv (if any scripts)
+**/__pycache__/
+**/*.pyc
+**/venv/
+
+# Windows scripts (handled separately)
+scripts/*.bat
+
+# Database dumps (never in image)
+**/*.sql.gz
+**/*.dump
+
+# Monitoring
+monitoring/
+
+# Backups directory
+backups/
