@@ -13,7 +13,6 @@ if (fs.existsSync(rootDist)) {
 }
 fs.mkdirSync(rootDist);
 
-// 2. Build each frontend portal
 const builds = [
   { name: 'Portal Dashboard', dir: 'portal-dashboard', basePath: '/', dest: '' },
   { name: 'Student Portal', dir: 'student/frontend', basePath: '/student/', dest: 'student' },
@@ -22,6 +21,40 @@ const builds = [
   { name: 'Center Portal', dir: 'center/frontend', basePath: '/center/', dest: 'center' }
 ];
 
+// PHASE 1: Install dependencies for ALL portals first.
+// This is critical because the Admin Panel references files in Supervisor & Center,
+// meaning their respective node_modules folders must be present to resolve imports like 'react'!
+console.log('\n==================================================');
+console.log('PHASE 1: Installing dependencies for all frontends...');
+console.log('==================================================');
+
+builds.forEach(build => {
+  const buildDir = path.join(__dirname, build.dir);
+  if (!fs.existsSync(buildDir)) return;
+
+  const nodeModulesPath = path.join(buildDir, 'node_modules');
+  if (!fs.existsSync(nodeModulesPath)) {
+    console.log(`\n📦 Installing dependencies for ${build.name} in ${build.dir}...`);
+    try {
+      execSync('npm install', {
+        cwd: buildDir,
+        stdio: 'inherit'
+      });
+      console.log(`✅ ${build.name} dependencies installed successfully!`);
+    } catch (err) {
+      console.error(`❌ Error installing dependencies for ${build.name}:`, err.message);
+      process.exit(1);
+    }
+  } else {
+    console.log(`✅ ${build.name} dependencies are already present.`);
+  }
+});
+
+// PHASE 2: Build each frontend portal sequentially
+console.log('\n==================================================');
+console.log('PHASE 2: Compiling and consolidating frontends...');
+console.log('==================================================');
+
 builds.forEach(build => {
   console.log(`\n--- Building ${build.name} (Base path: ${build.basePath}) ---`);
   
@@ -29,22 +62,6 @@ builds.forEach(build => {
   if (!fs.existsSync(buildDir)) {
     console.warn(`Warning: Directory ${build.dir} does not exist. Skipping...`);
     return;
-  }
-
-  // Auto-install dependencies if node_modules is missing (critical for Netlify monorepo deployment)
-  const nodeModulesPath = path.join(buildDir, 'node_modules');
-  if (!fs.existsSync(nodeModulesPath)) {
-    console.log(`\n📦 Dependencies missing in ${build.dir}. Running 'npm install' first...`);
-    try {
-      execSync('npm install', {
-        cwd: buildDir,
-        stdio: 'inherit'
-      });
-      console.log(`✅ Dependencies installed successfully!`);
-    } catch (err) {
-      console.error(`❌ Error installing dependencies for ${build.name}:`, err.message);
-      process.exit(1);
-    }
   }
 
   // Execute build command with dynamic environment base path
