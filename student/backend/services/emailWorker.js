@@ -7,7 +7,7 @@ const { transporter } = require('../config/mailConfig');
 const { logSent, logFailed } = require('../utils/emailLogger');
 
 const FROM_NAME    = process.env.MAIL_FROM_NAME || 'Periyar University PhD Portal';
-const FROM_ADDRESS = process.env.MAIL_FROM      || process.env.MAIL_USER;
+const FROM_ADDRESS = process.env.MAIL_FROM      || process.env.SMTP_FROM || process.env.MAIL_USER || process.env.SMTP_USER;
 const FROM         = `"${FROM_NAME}" <${FROM_ADDRESS}>`;
 
 async function getLogoDetails() {

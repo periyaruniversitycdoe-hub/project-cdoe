@@ -9,7 +9,7 @@ const applicationSubmittedTemplate  = require('../templates/applicationSubmitted
 const applicationStatusTemplate     = require('../templates/applicationStatusTemplate');
 
 const FROM_NAME    = process.env.MAIL_FROM_NAME || 'Periyar University PhD Portal';
-const FROM_ADDRESS = process.env.MAIL_FROM      || process.env.MAIL_USER;
+const FROM_ADDRESS = process.env.MAIL_FROM      || process.env.SMTP_FROM || process.env.MAIL_USER || process.env.SMTP_USER;
 const FROM         = `"${FROM_NAME}" <${FROM_ADDRESS}>`;
 
 const db = require('../config/db');

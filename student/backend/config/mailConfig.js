@@ -17,17 +17,17 @@ require('dotenv').config({ path: path.join(__dirname, '../../../.env') });
 
 // ─── Build transporter ────────────────────────────────────────────────────────
 
-const port   = parseInt(process.env.MAIL_PORT || '587', 10);
+const port   = parseInt(process.env.MAIL_PORT || process.env.SMTP_PORT || '587', 10);
 const secure = port === 465; // true only for port 465 (SSL); STARTTLS uses false
 
 const transporter = nodemailer.createTransport({
-  host: process.env.MAIL_HOST,
+  host: process.env.MAIL_HOST || process.env.SMTP_HOST,
   port,
   secure,
   requireTLS: !secure, // force STARTTLS upgrade on port 587/25
   auth: {
-    user: process.env.MAIL_USER,
-    pass: process.env.MAIL_PASS,
+    user: process.env.MAIL_USER || process.env.SMTP_USER,
+    pass: process.env.MAIL_PASS || process.env.SMTP_PASS,
   },
 
   // Connection pool — reuse SMTP connections for burst sending
