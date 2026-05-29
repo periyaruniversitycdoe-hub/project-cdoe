@@ -1,7 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const db = require('../../../../config/db'); // Using existing db pool
-const { transporter } = require('./transporter.service');
+const { sendTransacEmail } = require('../../../../../../backend/src/services/emailService');
 const { compileTemplate } = require('../utils/handlebars.util');
 
 async function getLogoDetails() {
@@ -102,8 +102,7 @@ const sendDynamicEmail = async ({ serviceKey, to, variables }) => {
 
         // 3. Send via Nodemailer
         try {
-            const info = await transporter.sendMail({
-                from: `"${process.env.MAIL_FROM_NAME || 'Periyar University'}" <${process.env.SMTP_USER}>`,
+            const info = await sendTransacEmail({
                 to,
                 subject,
                 html: htmlBody,

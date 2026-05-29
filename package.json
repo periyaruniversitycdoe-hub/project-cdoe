@@ -24,19 +24,17 @@
     "install:center": "cd center/backend     && npm install && cd ../frontend && npm install",
     "install:portal": "cd portal-dashboard      && npm install"
   },
-  "devDependencies": {
-  },
   "engines": {
     "node": ">=18.0.0",
     "npm": ">=9.0.0"
   },
   "dependencies": {
+    "@getbrevo/brevo": "^5.0.4",
     "concurrently": "^8.2.0",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "http-proxy-middleware": "^4.0.0",
     "jsonwebtoken": "^9.0.3",
-    "mysql2": "^3.22.3",
-    "nodemailer": "^8.0.7"
+    "mysql2": "^3.22.3"
   }
 }

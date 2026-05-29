@@ -14,68 +14,20 @@
  *   credSvc.notify({ db, name, email, password, portalType, loginUrl }).catch(() => {});
  */
 
-const nodemailer = require('nodemailer');
 const path = require('path');
 const fs   = require('fs');
+const { sendTransacEmail } = require('../../backend/src/services/emailService');
 
-// ── Resolve university logo for inline email attachment ────────────────────────
-function getLogoAttachment() {
-    const logosDir  = path.join(__dirname, '../../admin/backend/uploads/logos');
-    const fallback  = path.join(__dirname, '../../admin/backend/uploads/settings/pu_logo.png');
-    let logoPath    = null;
-
-    try {
-        // Pick the most recently modified file in the logos/ folder
-        const files = fs.readdirSync(logosDir)
-            .filter(f => /\.(png|jpg|jpeg|gif|webp)$/i.test(f))
-            .map(f => ({ f, mtime: fs.statSync(path.join(logosDir, f)).mtimeMs }))
-            .sort((a, b) => b.mtime - a.mtime);
-        if (files.length) logoPath = path.join(logosDir, files[0].f);
-    } catch (_) {}
-
-    if (!logoPath && fs.existsSync(fallback)) logoPath = fallback;
-    if (!logoPath) return null;
-
-    return {
-        filename:    'university-logo.png',
-        path:        logoPath,
-        cid:         'pu_university_logo',
-        contentDisposition: 'inline',
-    };
+function getBackendBaseUrl() {
+  const studentApiUrl = process.env.VITE_STUDENT_API_URL || process.env.STUDENT_API_URL;
+  if (studentApiUrl) {
+    return studentApiUrl.replace(/\/student\/?$/, '');
+  }
+  return 'https://project-cdoe-backend.onrender.com';
 }
 
-// ── Resolve nodemailer from whichever portal's node_modules is available ──────
-// All portals have nodemailer; require from the caller's own node_modules via
-// standard Node resolution — this file lives at shared/credential/ so Node
-// walks up to find node_modules in student|supervisor|center|admin backend.
+const logoUrl = `${getBackendBaseUrl()}/student/uploads/settings/pu_logo.png`;
 
-// ── SMTP transporter (reads same env vars as shared/auth/services/emailService) ─
-let _port = parseInt(process.env.SMTP_PORT || process.env.MAIL_PORT || '587', 10);
-// On Render production, force port 587 (STARTTLS) instead of port 465 (SSL) to prevent connection timeouts
-if (process.env.RENDER === 'true' && _port === 465) {
-  _port = 587;
-}
-const _secure = _port === 465;
-
-const transporter = nodemailer.createTransport({
-    host:    process.env.SMTP_HOST || process.env.MAIL_HOST,
-    port:    _port,
-    secure:  _secure,
-    family:  4, // Force IPv4 to prevent ENETUNREACH in cloud environments (Render)
-    requireTLS: !_secure,
-    auth: {
-        user: process.env.SMTP_USER || process.env.MAIL_USER,
-        pass: process.env.SMTP_PASS || process.env.MAIL_PASS,
-    },
-    pool:           true,
-    maxConnections: 3,
-    maxMessages:    50,
-    tls: { rejectUnauthorized: process.env.MAIL_REJECT_UNAUTHORIZED !== 'false' }
-});
-
-const FROM_NAME    = process.env.MAIL_FROM_NAME || 'Periyar University PhD Admissions';
-const FROM_ADDRESS = process.env.SMTP_FROM || process.env.MAIL_FROM || process.env.SMTP_USER || process.env.MAIL_USER;
-const FROM         = `"${FROM_NAME}" <${FROM_ADDRESS}>`;
 const ADMIN_EMAIL  = process.env.ADMIN_NOTIFICATION_EMAIL || process.env.ADMIN_EMAIL || null;
 
 // ── HTML Templates ─────────────────────────────────────────────────────────────
@@ -96,7 +48,7 @@ function userCredentialTemplate({ name, email, password, portalType, loginUrl })
       <!-- Header -->
       <tr>
         <td style="background:linear-gradient(135deg,#1a3c5e 0%,#2d6a9f 100%);padding:28px 36px;text-align:center;">
-          <img src="cid:pu_university_logo" alt="Periyar University" style="height:64px;width:auto;object-fit:contain;margin-bottom:12px;display:block;margin-left:auto;margin-right:auto;" />
+          <img src="${logoUrl}" alt="Periyar University" style="height:64px;width:auto;object-fit:contain;margin-bottom:12px;display:block;margin-left:auto;margin-right:auto;" />
           <div style="font-size:22px;font-weight:700;color:#ffffff;letter-spacing:0.5px;">Periyar University</div>
           <div style="font-size:13px;color:rgba(255,255,255,0.8);margin-top:4px;">PhD Portal — Account Created</div>
         </td>
@@ -267,13 +219,10 @@ async function notify({ db, name, email, password, portalType, loginUrl = '' }) 
     // 3. Send credential email to user
     try {
         const html        = userCredentialTemplate({ name, email, password, portalType, loginUrl });
-        const logoAttach  = getLogoAttachment();
-        await transporter.sendMail({
-            from:        FROM,
+        await sendTransacEmail({
             to:          email,
             subject:     `Your ${portalType} Portal Account Details — Periyar University`,
             html,
-            attachments: logoAttach ? [logoAttach] : [],
         });
         emailSent = 1;
         console.log(`[CredentialSvc] ✅ Credential email sent to ${email} (${portalType})`);
@@ -293,8 +242,7 @@ async function notify({ db, name, email, password, portalType, loginUrl = '' }) 
     if (ADMIN_EMAIL) {
         try {
             const adminHtml = adminNotificationTemplate({ name, email, password, portalType, registeredAt: now });
-            await transporter.sendMail({
-                from:    FROM,
+            await sendTransacEmail({
                 to:      ADMIN_EMAIL,
                 subject: `[PhD Admin] New ${portalType} Registration — ${name} <${email}>`,
                 html:    adminHtml,
@@ -318,7 +266,7 @@ function passwordChangedTemplate({ name, email, portalType, changedAt, ipAddress
     <table width="540" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);">
       <tr>
         <td style="background:linear-gradient(135deg,#1a3c5e,#d97706);padding:28px 36px;text-align:center;">
-          <img src="cid:pu_university_logo" alt="Periyar University" style="height:60px;width:auto;object-fit:contain;margin-bottom:12px;display:block;margin-left:auto;margin-right:auto;" />
+          <img src="${logoUrl}" alt="Periyar University" style="height:60px;width:auto;object-fit:contain;margin-bottom:12px;display:block;margin-left:auto;margin-right:auto;" />
           <div style="font-size:20px;font-weight:700;color:#fff;">Periyar University</div>
           <div style="font-size:12px;color:rgba(255,255,255,0.8);margin-top:4px;">PhD Portal — Password Changed</div>
         </td>
@@ -405,13 +353,10 @@ async function notifyPasswordChange({ db, email, newPassword, portalType, ipAddr
     // Send email to user
     try {
         const html       = passwordChangedTemplate({ name, email, portalType, changedAt: now, ipAddress, loginUrl });
-        const logoAttach = getLogoAttachment();
-        await transporter.sendMail({
-            from:        FROM,
+        await sendTransacEmail({
             to:          email,
             subject:     `Your ${portalType} Portal Password Was Changed — Periyar University`,
             html,
-            attachments: logoAttach ? [logoAttach] : [],
         });
         console.log(`[CredentialSvc] ✅ Password-change email sent to ${email} (${portalType})`);
     } catch (mailErr) {
@@ -421,8 +366,7 @@ async function notifyPasswordChange({ db, email, newPassword, portalType, ipAddr
     // Notify admin
     if (ADMIN_EMAIL) {
         try {
-            await transporter.sendMail({
-                from:    FROM,
+            await sendTransacEmail({
                 to:      ADMIN_EMAIL,
                 subject: `[PhD Admin] Password Changed — ${portalType}: ${name} <${email}>`,
                 html: `<p style="font-family:sans-serif;font-size:14px;">

@@ -1,31 +1,10 @@
 const path = require('path');
 const fs = require('fs');
-const nodemailer = require('nodemailer');
 const db = require('../../../../config/db'); // Using existing db pool
 const EmailTemplateModel = require('../models/emailTemplate.model');
 const PreviewService = require('./preview.service');
 const HtmlGeneratorService = require('./htmlGenerator.service');
-
-// Transporter cache
-let transporter = null;
-
-const getTransporter = () => {
-    if (transporter) return transporter;
-    
-    transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST,
-        port: parseInt(process.env.SMTP_PORT || '465'),
-        secure: process.env.SMTP_PORT == 465,
-        auth: {
-            user: process.env.SMTP_USER,
-            pass: process.env.SMTP_PASS,
-        },
-        tls: {
-            rejectUnauthorized: process.env.MAIL_REJECT_UNAUTHORIZED !== 'false'
-        }
-    });
-    return transporter;
-};
+const { sendTransacEmail } = require('../../../../../../backend/src/services/emailService');
 
 async function getLogoDetails() {
     try {
@@ -126,12 +105,8 @@ class EmailTemplateService {
                 }
             }
 
-            // 3. Obtain SMTP transporter
-            const client = getTransporter();
-            
-            // 4. Dispatch email directly (live SMTP)
-            const info = await client.sendMail({
-                from: `"${process.env.MAIL_FROM_NAME || 'Periyar University PhD Admission'}" <${process.env.SMTP_USER}>`,
+            // 3 & 4. Dispatch email directly via Brevo
+            const info = await sendTransacEmail({
                 to: targetEmail,
                 subject: `[TEST] ${templateConfig.subject || 'University Notification'}`,
                 html: compiledHtml,

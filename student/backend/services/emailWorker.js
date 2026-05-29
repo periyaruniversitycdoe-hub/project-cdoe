@@ -3,7 +3,7 @@
 const path = require('path');
 const fs = require('fs');
 const db = require('../config/db');
-const { transporter } = require('../config/mailConfig');
+const { sendTransacEmail } = require('../../../backend/src/services/emailService');
 const { logSent, logFailed } = require('../utils/emailLogger');
 
 const FROM_NAME    = process.env.MAIL_FROM_NAME || 'Periyar University PhD Portal';
@@ -119,8 +119,7 @@ class EmailWorker {
                     }
                 }
 
-                const info = await transporter.sendMail({
-                    from: FROM,
+                const info = await sendTransacEmail({
                     to: emailJob.to_email,
                     subject: emailJob.subject,
                     html: html,

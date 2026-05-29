@@ -1,52 +1,21 @@
 'use strict';
 
-const nodemailer = require('nodemailer');
 const path = require('path');
+const { sendTransacEmail } = require('../../../backend/src/services/emailService');
 
 const otpEmailTemplate = require('../templates/otpEmailTemplate');
 const passwordChangedTemplate = require('../templates/passwordChangedTemplate');
 
-let port = parseInt(process.env.SMTP_PORT || process.env.MAIL_PORT || '587', 10);
-// On Render production, force port 587 (STARTTLS) instead of port 465 (SSL) to prevent connection timeouts
-if (process.env.RENDER === 'true' && port === 465) {
-  port = 587;
-}
-const secure = port === 465;
-
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || process.env.MAIL_HOST,
-  port,
-  secure,
-  family: 4, // Force IPv4 to prevent ENETUNREACH in cloud environments (Render)
-  requireTLS: !secure,
-  auth: {
-    user: process.env.SMTP_USER || process.env.MAIL_USER,
-    pass: process.env.SMTP_PASS || process.env.MAIL_PASS,
-  },
-  pool: true,
-  maxConnections: 5,
-  maxMessages: 100,
-  tls: {
-    rejectUnauthorized: process.env.MAIL_REJECT_UNAUTHORIZED !== 'false',
-  }
-});
-
-const fromName = process.env.MAIL_FROM_NAME || 'Periyar University PhD Admissions';
-const fromAddress = process.env.SMTP_FROM || process.env.MAIL_FROM || process.env.SMTP_USER || process.env.MAIL_USER;
-const FROM = `"${fromName}" <${fromAddress}>`;
-
 /**
- * Verifies SMTP connection
+ * Verifies connection (now checking Brevo API Key)
  */
 async function verifyConnection() {
-  try {
-    await transporter.verify();
-    console.log('[Shared Mail] ✅ SMTP successfully connected.');
-    return true;
-  } catch (err) {
-    console.error('[Shared Mail] ❌ SMTP connection failed:', err.message);
+  if (!process.env.BREVO_API_KEY) {
+    console.warn('[Shared Mail Stub] ⚠️ BREVO_API_KEY is not set — email delivery will fail.');
     return false;
   }
+  console.log('[Shared Mail Stub] ✅ Brevo TransacEmail service configured (HTTPS Port 443).');
+  return true;
 }
 
 /**
@@ -55,14 +24,11 @@ async function verifyConnection() {
 async function sendOtpEmail({ email, otp, portalName, expiresIn = 5 }) {
   try {
     const html = otpEmailTemplate({ email, otp, portalName, expiresIn });
-    const mailOptions = {
-      from: FROM,
+    const info = await sendTransacEmail({
       to: email,
       subject: `Password Reset OTP Verification — Periyar University`,
       html
-    };
-
-    const info = await transporter.sendMail(mailOptions);
+    });
     console.log(`[Shared Mail] OTP sent to ${email}. MessageId: ${info.messageId}`);
     return true;
   } catch (err) {
@@ -77,14 +43,11 @@ async function sendOtpEmail({ email, otp, portalName, expiresIn = 5 }) {
 async function sendPasswordChangedEmail({ email, portalName }) {
   try {
     const html = passwordChangedTemplate({ email, portalName });
-    const mailOptions = {
-      from: FROM,
+    const info = await sendTransacEmail({
       to: email,
       subject: `Security Alert: Password Changed Successfully — Periyar University`,
       html
-    };
-
-    const info = await transporter.sendMail(mailOptions);
+    });
     console.log(`[Shared Mail] Password changed confirmation sent to ${email}. MessageId: ${info.messageId}`);
     return true;
   } catch (err) {

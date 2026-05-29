@@ -3825,6 +3825,45 @@ notificationRouter.put('/mark-all-read', authenticateToken, async (req, res) => 
 
 app.use('/api/notifications', notificationRouter);
 
+// ── Test Email Endpoint (Brevo Verification) ──────────────────────────────────
+app.get('/api/test-email', async (req, res) => {
+    try {
+        const targetEmail = req.query.to || req.query.email;
+        if (!targetEmail) {
+            return res.status(400).json({ success: false, message: 'Missing target email address. Please supply "?to=email@example.com"' });
+        }
+        
+        console.log(`[Test Email Endpoint] Initiating test to ${targetEmail}`);
+        
+        const { sendTransacEmail } = require('../../backend/src/services/emailService');
+        const info = await sendTransacEmail({
+            to: targetEmail,
+            subject: 'Brevo Transactional Test Email — PhD Portal',
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+                    <h2 style="color: #2563eb;">⚡ Brevo Transactional Email Active</h2>
+                    <p>Congratulations! This test email has been successfully sent via the **Brevo (Sendinblue)** Transactional API over secure HTTPS (Port 443).</p>
+                    <p style="margin-top: 20px; color: #666; font-size: 13px;">This verifies that your Render deployment is completely production-ready and bypasses SMTP port blocking!</p>
+                </div>
+            `,
+            text: 'Brevo Transactional Email Test Successful!'
+        });
+        
+        res.json({
+            success: true,
+            message: `Test email sent successfully to ${targetEmail}!`,
+            messageId: info.messageId
+        });
+    } catch (err) {
+        console.error('[Test Email Endpoint] Error:', err.message);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to send test email.',
+            error: err.message
+        });
+    }
+});
+
 // ── Payment System ────────────────────────────────────────────────────────────
 const paymentRoutes = require('./routes/payment');
 app.use('/api/payment', paymentRoutes);
