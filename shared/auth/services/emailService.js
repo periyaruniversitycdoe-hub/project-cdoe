@@ -6,7 +6,11 @@ const path = require('path');
 const otpEmailTemplate = require('../templates/otpEmailTemplate');
 const passwordChangedTemplate = require('../templates/passwordChangedTemplate');
 
-const port = parseInt(process.env.SMTP_PORT || process.env.MAIL_PORT || '587', 10);
+let port = parseInt(process.env.SMTP_PORT || process.env.MAIL_PORT || '587', 10);
+// On Render production, force port 587 (STARTTLS) instead of port 465 (SSL) to prevent connection timeouts
+if (process.env.RENDER === 'true' && port === 465) {
+  port = 587;
+}
 const secure = port === 465;
 
 const transporter = nodemailer.createTransport({

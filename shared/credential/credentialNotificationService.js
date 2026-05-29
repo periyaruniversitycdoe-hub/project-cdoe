@@ -50,7 +50,11 @@ function getLogoAttachment() {
 // walks up to find node_modules in student|supervisor|center|admin backend.
 
 // ── SMTP transporter (reads same env vars as shared/auth/services/emailService) ─
-const _port = parseInt(process.env.SMTP_PORT || process.env.MAIL_PORT || '587', 10);
+let _port = parseInt(process.env.SMTP_PORT || process.env.MAIL_PORT || '587', 10);
+// On Render production, force port 587 (STARTTLS) instead of port 465 (SSL) to prevent connection timeouts
+if (process.env.RENDER === 'true' && _port === 465) {
+  _port = 587;
+}
 const _secure = _port === 465;
 
 const transporter = nodemailer.createTransport({

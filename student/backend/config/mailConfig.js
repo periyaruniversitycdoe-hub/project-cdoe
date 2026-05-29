@@ -17,7 +17,11 @@ require('dotenv').config({ path: path.join(__dirname, '../../../.env') });
 
 // ─── Build transporter ────────────────────────────────────────────────────────
 
-const port   = parseInt(process.env.MAIL_PORT || process.env.SMTP_PORT || '587', 10);
+let port = parseInt(process.env.MAIL_PORT || process.env.SMTP_PORT || '587', 10);
+// On Render production, force port 587 (STARTTLS) instead of port 465 (SSL) to prevent connection timeouts
+if (process.env.RENDER === 'true' && port === 465) {
+  port = 587;
+}
 const secure = port === 465; // true only for port 465 (SSL); STARTTLS uses false
 
 const transporter = nodemailer.createTransport({
