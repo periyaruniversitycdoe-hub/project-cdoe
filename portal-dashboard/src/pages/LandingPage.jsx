@@ -68,13 +68,6 @@ export default function LandingPage() {
       }
     }
 
-    // Student portal → home page (smart auth detection happens there)
-    if (portal.slug === 'student') {
-      const studentBase = route.replace(/\/login$/, '').replace(/\/home$/, '');
-      window.location.href = `${studentBase}/home`;
-      return;
-    }
-
     window.location.href = route;
   };
 
