@@ -18,6 +18,7 @@ const { getPageAccess } = require('./services/workflowEngine');
 const CommunityFeeCalculationService = require('./services/CommunityFeeCalculationService');
 
 const app = express();
+app.set('trust proxy', 1); // Trust reverse proxy (Render/Netlify) for accurate rate limiting
 
 // Capture raw body for payment webhook signature verification (MUST be before express.json)
 app.use('/api/payment/webhook', (req, _res, next) => {

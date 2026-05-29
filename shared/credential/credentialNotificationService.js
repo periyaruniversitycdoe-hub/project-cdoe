@@ -57,6 +57,7 @@ const transporter = nodemailer.createTransport({
     host:    process.env.SMTP_HOST || process.env.MAIL_HOST,
     port:    _port,
     secure:  _secure,
+    family:  4, // Force IPv4 to prevent ENETUNREACH in cloud environments (Render)
     requireTLS: !_secure,
     auth: {
         user: process.env.SMTP_USER || process.env.MAIL_USER,
