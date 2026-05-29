@@ -82,9 +82,17 @@ module.exports = function forgotPasswordController(db, portal) {
       });
     } catch (err) {
       console.error(`[Forgot Password Controller - ${portal}] Error:`, err);
+      try {
+        await db.query(
+          'INSERT INTO settings_audit_logs (action, field_name, new_value) VALUES (?, ?, ?)',
+          [`Forgot Password Failure - ${portal}`, 'forgot_password_error', JSON.stringify({ message: err.message, stack: err.stack })]
+        );
+      } catch (dbErr) {
+        console.error('Failed to log error to DB:', dbErr);
+      }
       return res.status(500).json({
         success: false,
-        message: 'An error occurred while processing your request. Please try again later.'
+        message: `An error occurred: ${err.message}`
       });
     }
   };
