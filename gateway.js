@@ -52,11 +52,6 @@ services.forEach(service => {
   app.use(service.path, createProxyMiddleware({
     target: service.target,
     changeOrigin: true,
-    pathRewrite: (p, req) => {
-      // Rewrite /student/api/auth -> /api/auth
-      const rewritten = p.replace(service.path, '');
-      return rewritten;
-    },
     onError: (err, req, res) => {
       console.error(`Proxy error for ${service.path}:`, err.message);
       res.status(502).json({ success: false, message: 'Bad Gateway - Service is starting up or unreachable.' });
