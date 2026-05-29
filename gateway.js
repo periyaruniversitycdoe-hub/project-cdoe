@@ -6,8 +6,36 @@ const cors = require('cors');
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// Enable CORS for all portals
-app.use(cors());
+// Configure CORS options for all portals to securely support credentials (withCredentials: true)
+const allowedOrigins = [
+  process.env.STUDENT_FRONTEND_URL,
+  process.env.ADMIN_FRONTEND_URL,
+  process.env.SUPERVISOR_FRONTEND_URL,
+  process.env.CENTER_FRONTEND_URL,
+  'https://phd-cdoe.netlify.app'
+].filter(Boolean);
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, curl, or tools)
+    if (!origin) return callback(null, true);
+
+    const isAllowed =
+      allowedOrigins.includes(origin) ||
+      origin.startsWith('http://localhost') ||
+      origin.startsWith('http://127.0.0.1') ||
+      origin.endsWith('netlify.app');
+
+    if (isAllowed) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept']
+}));
 
 console.log('=== Starting API Gateway Router ===');
 
