@@ -114,7 +114,7 @@ const sanitizeFilename = (name) => path.basename(name).replace(/[^a-zA-Z0-9._-]/
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        const dest = path.join(__dirname, '../uploads/portals');
+        const dest = path.join(__dirname, '../../../uploads/portals');
         if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
         cb(null, dest);
     },
@@ -139,7 +139,7 @@ const upload = multer({
 // Helper to double-save to student uploads directory for local dev symmetry
 function copyToStudentUploads(filename) {
     try {
-        const adminSrc = path.join(__dirname, '../uploads/portals', filename);
+        const adminSrc = path.join(__dirname, '../../../uploads/portals', filename);
         const studentDestFolder = path.join(__dirname, '../../../student/backend/uploads/portals');
         if (!fs.existsSync(studentDestFolder)) {
             fs.mkdirSync(studentDestFolder, { recursive: true });

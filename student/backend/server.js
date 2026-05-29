@@ -94,7 +94,7 @@ app.use('/api/', apiLimiter);
 app.use('/uploads', (req, res, next) => {
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     next();
-}, express.static(path.join(__dirname, 'uploads')));
+}, express.static(path.join(__dirname, '../../uploads')));
 
 // MySQL Connection Pool (Production Standard)
 const db = mysqlPromise.createPool({
@@ -1036,7 +1036,11 @@ app.get('/api/eligibility/programs/:id/hints', async (req, res) => {
 const sanitizeFilename = (name) => path.basename(name).replace(/[^a-zA-Z0-9._-]/g, '_');
 
 const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, 'uploads/'),
+    destination: (req, file, cb) => {
+        const dest = path.join(__dirname, '../../uploads');
+        if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
+        cb(null, dest);
+    },
     // Use user_id from JWT (always available) as the file prefix; this is safe
     // before application_id is generated and continues to work after submission.
     filename: (req, file, cb) => cb(null, `uid${req.user?.id || 'unknown'}_${Date.now()}_${sanitizeFilename(file.originalname)}`)

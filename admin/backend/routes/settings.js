@@ -13,7 +13,7 @@ const sanitizeFilename = (name) => path.basename(name).replace(/[^a-zA-Z0-9._-]/
 // Multer for images
 const imageStorage = multer.diskStorage({
     destination: (req, file, cb) => {
-        const dest = path.join(__dirname, '../uploads/settings');
+        const dest = path.join(__dirname, '../../../uploads/settings');
         if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
         cb(null, dest);
     },
@@ -23,7 +23,7 @@ const imageStorage = multer.diskStorage({
 // Multer for PDFs + images
 const fileStorage = multer.diskStorage({
     destination: (req, file, cb) => {
-        const dest = path.join(__dirname, '../uploads/settings');
+        const dest = path.join(__dirname, '../../../uploads/settings');
         if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
         cb(null, dest);
     },

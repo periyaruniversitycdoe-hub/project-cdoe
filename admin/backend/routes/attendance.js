@@ -9,7 +9,7 @@ const path     = require('path');
 const fs       = require('fs');
 const Engine   = require('../services/EntranceWorkflowEngine');
 
-const uploadDir = path.join(__dirname, '../uploads/attendance');
+const uploadDir = path.join(__dirname, '../../../uploads/attendance');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 const sanitizeFilename = (name) => path.basename(name).replace(/[^a-zA-Z0-9._-]/g, '_');

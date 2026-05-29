@@ -9,7 +9,7 @@ const path    = require('path');
 const fs      = require('fs');
 
 // ── Upload storage for prospectus PDF ────────────────────────────────────────
-const prospectusDir = path.join(__dirname, '../uploads/prospectus');
+const prospectusDir = path.join(__dirname, '../../../uploads/prospectus');
 if (!fs.existsSync(prospectusDir)) fs.mkdirSync(prospectusDir, { recursive: true });
 
 const storage = multer.diskStorage({

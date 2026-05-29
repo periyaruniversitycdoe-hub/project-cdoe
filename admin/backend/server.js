@@ -59,7 +59,7 @@ app.use('/api/auth', authLimiter);
 app.use('/api/', limiter);
 
 // Serve Static Files
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(path.join(__dirname, '../../uploads')));
 
 // Routes
 const authRoutes = require('./routes/auth');
