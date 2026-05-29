@@ -76,7 +76,7 @@ builds.forEach(build => {
         VITE_ADMIN_API_URL: 'https://project-cdoe-backend.onrender.com/admin',
         VITE_SUPERVISOR_API_URL: 'https://project-cdoe-backend.onrender.com/supervisor',
         VITE_CENTER_API_URL: 'https://project-cdoe-backend.onrender.com/center',
-        VITE_API_URL: 'https://project-cdoe-backend.onrender.com/student'
+        VITE_API_URL: 'https://project-cdoe-backend.onrender.com/student/api'
       }
     });
 

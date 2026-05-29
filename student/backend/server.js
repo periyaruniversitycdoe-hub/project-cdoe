@@ -474,6 +474,22 @@ const initDB = async () => {
         `);
         console.log("email_queue table deployed successfully.");
 
+        // Ensure password_reset_otps table exists
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS password_reset_otps (
+                id          INT AUTO_INCREMENT PRIMARY KEY,
+                email       VARCHAR(255) NOT NULL,
+                portal      ENUM('student','admin','supervisor','center') NOT NULL,
+                otp         VARCHAR(6) NOT NULL,
+                expires_at  DATETIME NOT NULL,
+                verified    TINYINT(1) DEFAULT 0,
+                attempts    INT DEFAULT 0,
+                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_email_portal (email, portal)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        `);
+        console.log("✅ password_reset_otps table verified.");
+
         // ── Delayed Application ID Generation schema (run-once guards) ─────────
         // Make users.application_id nullable (CETPHD format is longer than 20 chars)
         try {
