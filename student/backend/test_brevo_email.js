@@ -6,7 +6,7 @@ const { sendTransacEmail } = require('../../backend/src/services/emailService');
     console.log('Sending live test email via Brevo HTTPS API...');
     try {
         const info = await sendTransacEmail({
-            to: 'afzal22122004@gmail.com',
+            to: 'majeed74905@gmail.com',
             subject: '⭐ Brevo HTTPS Transactional Delivery Verification Check',
             html: `
                 <div style="font-family: 'Inter', -apple-system, sans-serif; padding: 30px; max-width: 600px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">

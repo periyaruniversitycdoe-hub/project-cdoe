@@ -2,10 +2,14 @@
 
 const fs = require('fs');
 const path = require('path');
-const Brevo = require('@getbrevo/brevo');
+const { BrevoClient } = require('@getbrevo/brevo');
 
 // Load environment variables if not loaded
-require('dotenv').config({ path: path.join(__dirname, '../../../.env') });
+try {
+    require('dotenv').config({ path: path.join(__dirname, '../../../.env') });
+} catch (err) {
+    // Suppress; dotenv might already be loaded by the environment or caller
+}
 
 const apiKey = process.env.BREVO_API_KEY;
 const senderEmail = process.env.BREVO_SENDER_EMAIL || process.env.SMTP_USER || process.env.MAIL_USER || 'noreply@yourdomain.com';
@@ -15,14 +19,13 @@ if (!apiKey) {
     console.warn('[Brevo Service] ⚠️ BREVO_API_KEY is not defined in environment variables. Email sending may fail.');
 }
 
-// Configure API key authorization: apiKey
-const defaultClient = Brevo.ApiClient.instance;
-const apiKeyAuth = defaultClient.authentications['api-key'];
-if (apiKeyAuth) {
-    apiKeyAuth.apiKey = apiKey;
+// Initialize BrevoClient
+let brevo = null;
+if (apiKey) {
+    brevo = new BrevoClient({
+        apiKey: apiKey
+    });
 }
-
-const apiInstance = new Brevo.TransactionalEmailsApi();
 
 /**
  * Sends a transactional email using Brevo HTTP API.
@@ -36,12 +39,10 @@ const apiInstance = new Brevo.TransactionalEmailsApi();
  */
 async function sendTransacEmail({ to, subject, html, text, attachments = [] }) {
     try {
-        if (!apiKey) {
+        if (!apiKey || !brevo) {
             throw new Error('BREVO_API_KEY is not configured in .env');
         }
 
-        const sendSmtpEmail = new Brevo.SendSmtpEmail();
-        
         // 1. Resolve recipients
         let toList = [];
         if (typeof to === 'string') {
@@ -60,22 +61,23 @@ async function sendTransacEmail({ to, subject, html, text, attachments = [] }) {
             throw new Error('No valid recipients specified');
         }
 
-        sendSmtpEmail.to = toList;
-        sendSmtpEmail.subject = subject;
-        sendSmtpEmail.htmlContent = html;
-        if (text) {
-            sendSmtpEmail.textContent = text;
-        }
-
-        // Sender configuration
-        sendSmtpEmail.sender = {
-            email: senderEmail,
-            name: senderName
+        const payload = {
+            to: toList,
+            subject: subject,
+            htmlContent: html,
+            sender: {
+                email: senderEmail,
+                name: senderName
+            }
         };
+
+        if (text) {
+            payload.textContent = text;
+        }
 
         // 2. Resolve attachments (Nodemailer compatibility layer)
         if (attachments && attachments.length > 0) {
-            sendSmtpEmail.attachment = attachments.map(att => {
+            payload.attachment = attachments.map(att => {
                 // If direct content (base64 string) is supplied
                 if (att.content && att.filename) {
                     return {
@@ -115,13 +117,13 @@ async function sendTransacEmail({ to, subject, html, text, attachments = [] }) {
         }
 
         console.log(`[Brevo Service] Dispatching email to: ${JSON.stringify(toList)} | Subject: "${subject}"`);
-        const data = await apiInstance.sendTransacEmail(sendSmtpEmail);
+        const result = await brevo.transactionalEmails.sendTransacEmail(payload);
         
-        console.log(`[Brevo Service] ✅ Email successfully dispatched. Response:`, JSON.stringify(data));
+        console.log(`[Brevo Service] ✅ Email successfully dispatched. Response:`, JSON.stringify(result));
         return {
             success: true,
-            messageId: data.messageId || (data.body && data.body.messageId),
-            response: data
+            messageId: result.messageId || (result.body && result.body.messageId) || (result.data && result.data.messageId),
+            response: result
         };
     } catch (err) {
         console.error(`[Brevo Service] ❌ Failed to send transactional email:`, err.message || err);
