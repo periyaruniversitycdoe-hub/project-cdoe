@@ -33,8 +33,15 @@ async function findById(type, id) {
     return row || null;
 }
 
-async function create(type, { name, abbreviation }) {
+async function create(type, { name, abbreviation, max_capacity }) {
     const { table, hasAbbrev } = getConfig(type);
+    if (type === 'designations') {
+        const [result] = await pool.execute(
+            `INSERT INTO ${table} (name, max_capacity) VALUES (?, ?)`,
+            [name, max_capacity || 0]
+        );
+        return result.insertId;
+    }
     if (hasAbbrev) {
         const [result] = await pool.execute(
             `INSERT INTO ${table} (name, abbreviation) VALUES (?, ?)`,
@@ -48,11 +55,17 @@ async function create(type, { name, abbreviation }) {
     return result.insertId;
 }
 
-async function update(type, id, { name, abbreviation, is_active }) {
+async function update(type, id, { name, abbreviation, max_capacity, is_active }) {
     const { table, hasAbbrev } = getConfig(type);
     const sets = ['name = ?', 'is_active = ?'];
     const vals = [name, is_active ?? 1];
-    if (hasAbbrev) { sets.push('abbreviation = ?'); vals.push(abbreviation || null); }
+    if (type === 'designations') {
+        sets.push('max_capacity = ?');
+        vals.push(max_capacity || 0);
+    } else if (hasAbbrev) {
+        sets.push('abbreviation = ?');
+        vals.push(abbreviation || null);
+    }
     vals.push(id);
     await pool.execute(`UPDATE ${table} SET ${sets.join(', ')} WHERE id = ?`, vals);
 }
@@ -68,4 +81,21 @@ async function remove(type, id) {
     return result.affectedRows;
 }
 
-module.exports = { findAll, findById, create, update, toggleActive, remove, MASTER_TABLES };
+async function logDesignationAudit(designationId, designationName, action, fieldChanged, oldValue, newValue, adminUser) {
+    await pool.execute(
+        `INSERT INTO supervisor_designation_audit_logs 
+         (designation_id, designation_name, action, field_changed, old_value, new_value, admin_user)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+            designationId,
+            designationName,
+            action,
+            fieldChanged,
+            oldValue !== null && oldValue !== undefined ? String(oldValue) : null,
+            newValue !== null && newValue !== undefined ? String(newValue) : null,
+            adminUser || 'admin'
+        ]
+    );
+}
+
+module.exports = { findAll, findById, create, update, toggleActive, remove, logDesignationAudit, MASTER_TABLES };

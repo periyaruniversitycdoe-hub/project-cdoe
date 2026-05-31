@@ -20,6 +20,14 @@ async function create(body, files) {
     const errors = validateCentre(body);
     if (errors.length) throw Object.assign(new Error(errors.join('; ')), { status: 422 });
 
+    if (body.college_code) {
+        const [[inst]] = await pool.execute(
+            'SELECT id FROM master_institutes WHERE college_code = ? AND is_active = 1 LIMIT 1',
+            [body.college_code.trim()]
+        );
+        if (inst) body.institute_id = inst.id;
+    }
+
     if (body.centre_ref_no) {
         const taken = await repo.isRefNoTaken(body.centre_ref_no);
         if (taken) throw Object.assign(new Error('Centre reference number already exists'), { status: 409 });
@@ -37,6 +45,14 @@ async function update(id, body, files) {
     const errors = validateCentre(body, true);
     if (errors.length) throw Object.assign(new Error(errors.join('; ')), { status: 422 });
 
+    if (body.college_code) {
+        const [[inst]] = await pool.execute(
+            'SELECT id FROM master_institutes WHERE college_code = ? AND is_active = 1 LIMIT 1',
+            [body.college_code.trim()]
+        );
+        if (inst) body.institute_id = inst.id;
+    }
+
     if (body.centre_ref_no && body.centre_ref_no !== existing.centre_ref_no) {
         const taken = await repo.isRefNoTaken(body.centre_ref_no, id);
         if (taken) throw Object.assign(new Error('Centre reference number already in use'), { status: 409 });
@@ -51,7 +67,7 @@ const { enqueueEmail } = require('../../../shared/utils/notification');
 const pool = require('../config/db');
 
 async function updateStatus(id, { status, rejection_reason, approved_by }) {
-    const valid = ['Approved', 'Rejected', 'Pending'];
+    const valid = ['Approved', 'Rejected', 'Pending', 'Suspended'];
     if (!valid.includes(status)) throw Object.assign(new Error('Invalid status'), { status: 400 });
 
     const centre = await repo.findById(id);
@@ -59,12 +75,22 @@ async function updateStatus(id, { status, rejection_reason, approved_by }) {
 
     await repo.updateStatus(id, { status, rejection_reason, approved_by });
 
-    // Enqueue notification if approved or rejected
-    if (status === 'Approved' || status === 'Rejected') {
-        const subject = status === 'Approved' ? 'Research Centre Application Approved' : 'Research Centre Application Update';
-        const title = status === 'Approved' ? 'Centre Verification Successful' : 'Application Update';
+    // Enqueue notification if approved, rejected, or suspended
+    if (status === 'Approved' || status === 'Rejected' || status === 'Suspended') {
+        const subject = status === 'Approved' 
+            ? 'Research Centre Application Approved' 
+            : status === 'Suspended'
+            ? 'Research Centre Suspended'
+            : 'Research Centre Application Update';
+        const title = status === 'Approved' 
+            ? 'Centre Verification Successful' 
+            : status === 'Suspended'
+            ? 'Centre Status Suspended'
+            : 'Application Update';
         const message = status === 'Approved' 
             ? `The application for <b>${centre.name}</b> has been <b>Approved</b> as a recognized PhD Research Centre. You can now use the portal for supervisor and candidate management.`
+            : status === 'Suspended'
+            ? `The Research Centre recognition for <b>${centre.name}</b> has been <b>Suspended</b> by university administration. Access to supervisor and candidate portal features is temporarily locked.`
             : `The application for <b>${centre.name}</b> has been <b>Rejected</b>.${rejection_reason ? `<br><br><b>Reason:</b> ${rejection_reason}` : ''}<br><br>Please review the remarks and contact the university for clarification.`;
 
         if (centre.email) {

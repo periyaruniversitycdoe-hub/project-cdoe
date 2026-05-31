@@ -21,9 +21,12 @@ router.get('/:table', async (req, res) => {
     try {
         const where = hasActiveFlag.includes(table) ? 'WHERE is_active = 1' : '';
         // For institutes also return college_code so the form can display it
-        const select = table === 'master_institutes'
-            ? 'id, name, college_code, abbreviation'
-            : 'id, name';
+        let select = 'id, name';
+        if (table === 'master_institutes') {
+            select = 'id, name, college_code, abbreviation';
+        } else if (table === 'master_designations') {
+            select = 'id, name, max_capacity, is_active';
+        }
         const [rows] = await pool.query(`SELECT ${select} FROM ${table} ${where} ORDER BY name`);
         res.json(rows);
     } catch (err) {

@@ -241,7 +241,7 @@ router.post('/upload-file', verifyToken, isAdmin, uploadFile.single('file'), asy
 // ─── COMMUNITY FEES CRUD ───────────────────────────────────────────────
 router.get('/community-fees', async (req, res) => {
     try {
-        const [rows] = await pool.execute('SELECT * FROM community_fees ORDER BY sort_order ASC');
+        const [rows] = await pool.execute('SELECT * FROM community_fees ORDER BY id ASC');
         res.json({ success: true, data: rows });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
@@ -249,11 +249,11 @@ router.get('/community-fees', async (req, res) => {
 });
 
 router.post('/community-fees', verifyToken, isAdmin, async (req, res) => {
-    const { community, pg_min_mark, fee_general, fee_diff_abled, sort_order } = req.body;
+    const { community_name, pg_min_mark, general_fee, differently_abled_fee, roster_percentage, status, sort_order } = req.body;
     try {
         const [result] = await pool.execute(
-            'INSERT INTO community_fees (community, pg_min_mark, fee_general, fee_diff_abled, sort_order) VALUES (?, ?, ?, ?, ?)',
-            [community, pg_min_mark || null, fee_general || null, fee_diff_abled || null, sort_order || 0]
+            'INSERT INTO community_fees (community_name, pg_min_mark, general_fee, differently_abled_fee, roster_percentage, status, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [community_name, pg_min_mark || null, general_fee || null, differently_abled_fee || null, roster_percentage || 0.00, status || 'active', sort_order || 0]
         );
         res.json({ success: true, id: result.insertId });
     } catch (err) {
@@ -262,11 +262,11 @@ router.post('/community-fees', verifyToken, isAdmin, async (req, res) => {
 });
 
 router.put('/community-fees/:id', verifyToken, isAdmin, async (req, res) => {
-    const { community, pg_min_mark, fee_general, fee_diff_abled, sort_order } = req.body;
+    const { community_name, pg_min_mark, general_fee, differently_abled_fee, roster_percentage, status, sort_order } = req.body;
     try {
         await pool.execute(
-            'UPDATE community_fees SET community=?, pg_min_mark=?, fee_general=?, fee_diff_abled=?, sort_order=? WHERE id=?',
-            [community, pg_min_mark || null, fee_general || null, fee_diff_abled || null, sort_order || 0, req.params.id]
+            'UPDATE community_fees SET community_name=?, pg_min_mark=?, general_fee=?, differently_abled_fee=?, roster_percentage=?, status=?, sort_order=? WHERE id=?',
+            [community_name, pg_min_mark || null, general_fee || null, differently_abled_fee || null, roster_percentage || 0.00, status || 'active', sort_order || 0, req.params.id]
         );
         res.json({ success: true });
     } catch (err) {
@@ -284,7 +284,7 @@ router.delete('/community-fees/:id', verifyToken, isAdmin, async (req, res) => {
 });
 
 // ─── MASTER DROPDOWN CRUD ──────────────────────────────────────────────
-const VALID_DROPDOWN_TABLES = ['dropdown_subjects', 'dropdown_exam_centers', 'dropdown_districts', 'dropdown_categories', 'dropdown_genders', 'dropdown_communities', 'dropdown_departments'];
+const VALID_DROPDOWN_TABLES = ['dropdown_subjects', 'dropdown_exam_centers', 'dropdown_districts', 'dropdown_categories', 'dropdown_genders', 'dropdown_departments'];
 
 router.get('/master-data/:table', async (req, res) => {
     const { table } = req.params;

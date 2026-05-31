@@ -213,14 +213,37 @@ router.get('/print/:id', verifyToken, isAdmin, async (req, res) => {
 
 /**
  * POST /api/hall-tickets/send/:id
+ * Send a single hall ticket (enqueues dashboard notification + physical email)
  */
 router.post('/send/:id', verifyToken, isAdmin, async (req, res) => {
   try {
+    const [[ticket]] = await pool.execute(`
+      SELECT ht.id, ht.application_id, ht.hall_ticket_number, ht.exam_date, ht.exam_time, ht.exam_venue,
+             a.user_id
+      FROM hall_tickets ht
+      JOIN applications a ON ht.application_id = a.application_id
+      WHERE ht.id = ?
+    `, [req.params.id]);
+
+    if (!ticket) {
+      return res.status(404).json({ success: false, message: 'Hall Ticket not found' });
+    }
+
     await pool.execute(
       'UPDATE hall_tickets SET is_sent = 1, sent_at = CURRENT_TIMESTAMP WHERE id = ?',
       [req.params.id]
     );
-    res.json({ success: true, message: 'Hall Ticket sent to student dashboard' });
+
+    if (ticket.user_id) {
+      const { notifyUser } = require('../services/notifyUser');
+      await notifyUser(pool, ticket.user_id,
+        'Hall Ticket Dispatched ✓',
+        `Your hall ticket (${ticket.hall_ticket_number}) has been sent. Exam: ${ticket.exam_date} at ${ticket.exam_time}, Venue: ${ticket.exam_venue}. You can download/print it from your dashboard.`,
+        'hall_ticket'
+      );
+    }
+
+    res.json({ success: true, message: 'Hall Ticket sent to student dashboard and email enqueued.' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -234,11 +257,81 @@ router.post('/send-bulk', verifyToken, isAdmin, async (req, res) => {
   if (!venue_id)
     return res.status(400).json({ success: false, message: 'venue_id required' });
   try {
-    const [result] = await pool.execute(
+    const [unsentTickets] = await pool.execute(`
+      SELECT ht.id, ht.application_id, ht.hall_ticket_number, ht.exam_date, ht.exam_time, ht.exam_venue,
+             a.user_id
+      FROM hall_tickets ht
+      JOIN applications a ON ht.application_id = a.application_id
+      WHERE ht.venue_id = ? AND ht.is_sent = 0
+    `, [venue_id]);
+
+    if (unsentTickets.length === 0) {
+      return res.json({ success: true, message: 'No pending tickets in this venue to send.' });
+    }
+
+    await pool.execute(
       'UPDATE hall_tickets SET is_sent = 1, sent_at = CURRENT_TIMESTAMP WHERE venue_id = ? AND is_sent = 0',
       [venue_id]
     );
-    res.json({ success: true, message: `${result.affectedRows} ticket(s) sent to students` });
+
+    for (const ticket of unsentTickets) {
+      if (!ticket.user_id) continue;
+      const { notifyUser } = require('../services/notifyUser');
+      await notifyUser(pool, ticket.user_id,
+        'Hall Ticket Dispatched ✓',
+        `Your hall ticket (${ticket.hall_ticket_number}) has been sent. Exam: ${ticket.exam_date} at ${ticket.exam_time}, Venue: ${ticket.exam_venue}. You can download/print it from your dashboard.`,
+        'hall_ticket'
+      );
+    }
+
+    res.json({ success: true, message: `${unsentTickets.length} ticket(s) sent to student dashboards and emails.` });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/**
+ * POST /api/hall-tickets/send-all
+ * Send all hall tickets globally for the active session (enqueues dashboard notifications + physical emails)
+ */
+router.post('/send-all', verifyToken, isAdmin, async (req, res) => {
+  try {
+    const activeId = await getActiveSessionId();
+    if (!activeId) {
+      return res.status(400).json({ success: false, message: 'No active session found.' });
+    }
+
+    const [tickets] = await pool.execute(`
+      SELECT ht.id, ht.application_id, ht.hall_ticket_number, ht.exam_date, ht.exam_time, ht.exam_venue,
+             a.user_id
+      FROM hall_tickets ht
+      JOIN applications a ON ht.application_id = a.application_id
+      WHERE ht.session_id = ?
+    `, [activeId]);
+
+    if (tickets.length === 0) {
+      return res.json({ success: true, message: 'No hall tickets found to send.' });
+    }
+
+    const ticketIds = tickets.map(t => t.id);
+    const placeholders = ticketIds.map(() => '?').join(',');
+
+    await pool.execute(
+      `UPDATE hall_tickets SET is_sent = 1, sent_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`,
+      ticketIds
+    );
+
+    for (const ticket of tickets) {
+      if (!ticket.user_id) continue;
+      const { notifyUser } = require('../services/notifyUser');
+      await notifyUser(pool, ticket.user_id,
+        'Hall Ticket Dispatched ✓',
+        `Your hall ticket (${ticket.hall_ticket_number}) has been sent. Exam: ${ticket.exam_date} at ${ticket.exam_time}, Venue: ${ticket.exam_venue}. You can download/print it from your dashboard.`,
+        'hall_ticket'
+      );
+    }
+
+    res.json({ success: true, message: `Successfully sent/re-sent ${tickets.length} hall ticket(s) to student dashboards and emails.` });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -265,12 +358,31 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
 // ─── NEW ROUTES ───────────────────────────────────────────────────────────────
 
 /**
- * GET /api/hall-tickets/students?session_id=&department=
+ * GET /api/hall-tickets/offered-courses
+ * Fetch unique offered courses (programs) from applications
+ */
+router.get('/offered-courses', verifyToken, isAdmin, async (req, res) => {
+  try {
+    const [rows] = await pool.execute(`
+      SELECT DISTINCT program_offered_name
+      FROM applications
+      WHERE program_offered_name IS NOT NULL AND program_offered_name != ''
+      ORDER BY program_offered_name ASC
+    `);
+    const courses = rows.map(r => r.program_offered_name);
+    res.json({ success: true, data: courses });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/**
+ * GET /api/hall-tickets/students?session_id=&department=&offered_course=
  * All eligible students with allocation status for bulk-generator
  */
 router.get('/students', verifyToken, isAdmin, async (req, res) => {
   try {
-    const { session_id, department } = req.query;
+    const { session_id, department, offered_course } = req.query;
 
     let resolvedSessionId = session_id;
     if (!resolvedSessionId || resolvedSessionId === 'active') {
@@ -284,6 +396,7 @@ router.get('/students', verifyToken, isAdmin, async (req, res) => {
 
     if (resolvedSessionId) { conditions.push('COALESCE(a.session_id, u.session_id) = ?'); params.push(resolvedSessionId); }
     if (department)        { conditions.push('a.subject = ?');    params.push(department); }
+    if (offered_course)    { conditions.push('a.program_offered_name = ?'); params.push(offered_course); }
 
     const [rows] = await pool.execute(`
       SELECT a.id, a.application_id, u.full_name, a.subject,
@@ -302,8 +415,17 @@ router.get('/students', verifyToken, isAdmin, async (req, res) => {
     `, params);
 
     // Department-wise summary for the selected session
-    const deptParams = resolvedSessionId ? [resolvedSessionId] : [];
-    const sessFilter = resolvedSessionId ? 'AND COALESCE(a.session_id, u.session_id) = ?' : '';
+    const deptParams = [];
+    const conditionsSummary = ["a.status IN ('Approved', 'Submitted')", "a.payment_status IN ('Paid', 'Approved')"];
+    if (resolvedSessionId) {
+      conditionsSummary.push("COALESCE(a.session_id, u.session_id) = ?");
+      deptParams.push(resolvedSessionId);
+    }
+    if (offered_course) {
+      conditionsSummary.push("a.program_offered_name = ?");
+      deptParams.push(offered_course);
+    }
+    const whereSummary = conditionsSummary.length ? `WHERE ${conditionsSummary.join(' AND ')}` : '';
     const [deptCounts] = await pool.execute(`
       SELECT a.subject                                                                 AS department,
              COUNT(*)                                                                  AS total,
@@ -312,7 +434,7 @@ router.get('/students', verifyToken, isAdmin, async (req, res) => {
       FROM applications a
       JOIN users u ON a.user_id = u.id
       LEFT JOIN hall_tickets ht ON ht.application_id = a.application_id AND ht.venue_id IS NOT NULL
-      WHERE a.status IN ('Approved', 'Submitted') AND a.payment_status IN ('Paid', 'Approved') ${sessFilter}
+      ${whereSummary}
       GROUP BY a.subject
       ORDER BY a.subject
     `, deptParams);
@@ -328,9 +450,18 @@ router.get('/students', verifyToken, isAdmin, async (req, res) => {
  * Dry-run: returns the list of students + generated numbers WITHOUT committing
  */
 router.post('/preview', verifyToken, isAdmin, async (req, res) => {
-  const { venue_id, session_id, department, count } = req.body;
+  const { venue_id, session_id, department, offered_course, count } = req.body;
   if (!venue_id || !session_id || !department) {
     return res.status(400).json({ success: false, message: 'venue_id, session_id, department are required' });
+  }
+
+  let resolvedSessionId = session_id;
+  if (!resolvedSessionId || resolvedSessionId === 'active') {
+    resolvedSessionId = await getActiveSessionId();
+  }
+
+  if (!resolvedSessionId) {
+    return res.status(400).json({ success: false, message: 'Active session could not be resolved.' });
   }
 
   try {
@@ -347,21 +478,30 @@ router.post('/preview', verifyToken, isAdmin, async (req, res) => {
       return res.status(400).json({ success: false, message: 'No remaining seats in this venue' });
     }
 
-    // Students not yet allocated to any venue in this session+department (non-exempted only)
+    // Students not yet allocated to any venue in this session+department+offered_course (non-exempted only)
+    const conditions = [
+      "a.status IN ('Approved', 'Submitted')",
+      "a.payment_status IN ('Paid', 'Approved')",
+      "a.entrance_exam_status != 'Exempted'",
+      "COALESCE(a.session_id, u.session_id) = ?",
+      "a.subject = ?",
+      "ht.id IS NULL"
+    ];
+    const params = [resolvedSessionId, department];
+    if (offered_course) {
+      conditions.push("a.program_offered_name = ?");
+      params.push(offered_course);
+    }
+
     const [students] = await pool.execute(`
       SELECT a.id, a.application_id, u.full_name, a.subject
       FROM applications a
       JOIN users u ON a.user_id = u.id
       LEFT JOIN hall_tickets ht ON ht.application_id = a.application_id AND ht.venue_id IS NOT NULL
-      WHERE a.status IN ('Approved', 'Submitted')
-        AND a.payment_status IN ('Paid', 'Approved')
-        AND a.entrance_exam_status != 'Exempted'
-        AND COALESCE(a.session_id, u.session_id) = ?
-        AND a.subject = ?
-        AND ht.id IS NULL
+      WHERE ${conditions.join(' AND ')}
       ORDER BY a.created_at ASC
       LIMIT ${numToAllocate}
-    `, [session_id, department]);
+    `, params);
 
     if (students.length === 0) {
       return res.status(400).json({ success: false, message: 'No unallocated students found for this department' });
@@ -405,9 +545,18 @@ router.post('/preview', verifyToken, isAdmin, async (req, res) => {
  * Confirm and commit the allocation from a preview
  */
 router.post('/bulk-generate', verifyToken, isAdmin, async (req, res) => {
-  const { venue_id, session_id, department, count, auto_send } = req.body;
+  const { venue_id, session_id, department, offered_course, count, auto_send } = req.body;
   if (!venue_id || !session_id || !department) {
     return res.status(400).json({ success: false, message: 'venue_id, session_id, department are required' });
+  }
+
+  let resolvedSessionId = session_id;
+  if (!resolvedSessionId || resolvedSessionId === 'active') {
+    resolvedSessionId = await getActiveSessionId();
+  }
+
+  if (!resolvedSessionId) {
+    return res.status(400).json({ success: false, message: 'Active session could not be resolved.' });
   }
 
   const connection = await pool.getConnection();
@@ -431,20 +580,29 @@ router.post('/bulk-generate', verifyToken, isAdmin, async (req, res) => {
       return res.status(400).json({ success: false, message: 'No remaining seats in this venue' });
     }
 
+    const conditions = [
+      "a.status IN ('Approved', 'Submitted')",
+      "a.payment_status IN ('Paid', 'Approved')",
+      "a.entrance_exam_status != 'Exempted'",
+      "COALESCE(a.session_id, u.session_id) = ?",
+      "a.subject = ?",
+      "ht.id IS NULL"
+    ];
+    const params = [resolvedSessionId, department];
+    if (offered_course) {
+      conditions.push("a.program_offered_name = ?");
+      params.push(offered_course);
+    }
+
     const [students] = await connection.execute(`
       SELECT a.id, a.application_id, u.full_name, a.subject
       FROM applications a
       JOIN users u ON a.user_id = u.id
       LEFT JOIN hall_tickets ht ON ht.application_id = a.application_id AND ht.venue_id IS NOT NULL
-      WHERE a.status IN ('Approved', 'Submitted')
-        AND a.payment_status IN ('Paid', 'Approved')
-        AND a.entrance_exam_status != 'Exempted'
-        AND COALESCE(a.session_id, u.session_id) = ?
-        AND a.subject = ?
-        AND ht.id IS NULL
+      WHERE ${conditions.join(' AND ')}
       ORDER BY a.created_at ASC
       LIMIT ${numToAllocate}
-    `, [session_id, department]);
+    `, params);
 
     if (students.length === 0) {
       await connection.rollback();

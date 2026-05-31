@@ -18,7 +18,6 @@ const dropdownTypes = [
   { id: 'mphil_courses', label: 'M.Phil Courses' },
   { id: 'categories', label: 'Categories' },
   { id: 'districts', label: 'Districts' },
-  { id: 'communities', label: 'Communities' },
   { id: 'genders', label: 'Genders' },
   { id: 'id_types', label: 'ID Types' },
   { id: 'score_types', label: 'Score Types' },

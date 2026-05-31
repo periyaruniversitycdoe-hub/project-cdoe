@@ -3,6 +3,7 @@ const pool = require('../../../admin/backend/config/db');
 const SELECT_JOINED = `
     SELECT
         s.*,
+        d.max_capacity AS designation_max_capacity,
         d.name  AS designation_name,
         sd.name AS special_designation_name,
         dept.name AS department_name,
@@ -15,6 +16,17 @@ const SELECT_JOINED = `
     LEFT JOIN master_institutes           inst ON s.serving_institute_id     = inst.id
     LEFT JOIN master_districts            dist ON s.district_id              = dist.id
 `;
+
+function enrichCapacity(row) {
+    if (!row) return row;
+    if (row.designation_id && row.designation_max_capacity !== undefined && row.designation_max_capacity !== null) {
+        row.max_candidates = row.designation_max_capacity;
+        row.current_vacancy = Math.max(0, row.max_candidates - (row.current_scholars_count || 0));
+        row.max_full_time = row.max_candidates;
+        row.max_part_time = Math.floor(row.max_candidates / 2);
+    }
+    return row;
+}
 
 async function findAll({ status, search, page = 1, limit = 20 }) {
     const conditions = [];
@@ -37,12 +49,12 @@ async function findAll({ status, search, page = 1, limit = 20 }) {
         `${SELECT_JOINED} ${where} ORDER BY s.name ASC LIMIT ${limit} OFFSET ${offset}`,
         vals
     );
-    return { rows, total, page, limit };
+    return { rows: rows.map(enrichCapacity), total, page, limit };
 }
 
 async function findById(id) {
     const [[row]] = await pool.execute(`${SELECT_JOINED} WHERE s.id = ?`, [id]);
-    return row || null;
+    return enrichCapacity(row);
 }
 
 async function getDisciplines(supervisorId) {

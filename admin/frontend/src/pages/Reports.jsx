@@ -21,6 +21,7 @@ const menuItems = [
   { id: 'counselling', label: 'Counselling Reports', icon: GraduationCap },
   { id: 'qualifications', label: 'Qualification Reports', icon: Award },
   { id: 'audit', label: 'Audit Reports', icon: History },
+  { id: 'supervisor_capacity', label: 'Supervisor Capacity Reports', icon: Users },
 ];
 
 export default function Reports() {
@@ -379,6 +380,22 @@ export default function Reports() {
               <td className="small text-truncate" style={{ maxWidth: 300 }} title={r.old_value}>{r.old_value || '—'}</td>
               <td><code>{r.ip_address}</code></td>
               <td className="small">{new Date(r.created_at).toLocaleString()}</td>
+            </tr>
+          )
+        };
+      case 'supervisor_capacity':
+        return {
+          headers: ['Designation', 'Configured Capacity', 'Current Usage', 'Remaining Capacity'],
+          renderRow: (r, idx) => (
+            <tr key={idx}>
+              <td><span className="fw-semibold text-teal">{r.designation}</span></td>
+              <td><span className="badge bg-primary-subtle text-primary border">{r.configured_capacity}</span></td>
+              <td><span className="badge bg-warning-subtle text-warning border">{r.current_usage}</span></td>
+              <td>
+                <span className={`badge ${r.remaining_capacity > 0 ? 'bg-success' : 'bg-danger'}`}>
+                  {r.remaining_capacity}
+                </span>
+              </td>
             </tr>
           )
         };

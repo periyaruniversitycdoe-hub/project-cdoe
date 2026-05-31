@@ -53,15 +53,15 @@ class CommunityFeeCalculationService {
     static async calculateFee(communityName, isPhysicallyChallenged, connection = db) {
         const normalized = this.normalizeCommunity(communityName);
         const [rows] = await connection.query(
-            'SELECT fee_general, fee_diff_abled FROM community_fees WHERE community = ?',
+            'SELECT general_fee, differently_abled_fee FROM community_fees WHERE community_name = ?',
             [normalized]
         );
         
         let general = 1500;
         let diffAbled = 500;
         if (rows.length > 0) {
-            general = rows[0].fee_general !== null ? parseFloat(rows[0].fee_general) : 1500;
-            diffAbled = rows[0].fee_diff_abled !== null ? parseFloat(rows[0].fee_diff_abled) : 500;
+            general = rows[0].general_fee !== null ? parseFloat(rows[0].general_fee) : 1500;
+            diffAbled = rows[0].differently_abled_fee !== null ? parseFloat(rows[0].differently_abled_fee) : 500;
         }
 
         const isDA = [1, '1', 'Yes', 'yes'].includes(isPhysicallyChallenged);

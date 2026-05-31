@@ -70,11 +70,17 @@ const HallTickets = () => {
   const [autoSend,    setAutoSend]    = useState(false);
   const [autoAllocating, setAutoAllocating] = useState(false);
 
+  /* ── Offered Courses state ── */
+  const [offeredCourses, setOfferedCourses] = useState([]);
+  const [selectedOfferedCourse, setSelectedOfferedCourse] = useState('');
+  const [loadingOfferedCourses, setLoadingOfferedCourses] = useState(false);
+
   /* ── Issued Tickets state ── */
   const [issued,        setIssued]       = useState([]);
   const [issuedSession, setIssuedSession] = useState('active');
   const [issuedDept,    setIssuedDept]   = useState('');
   const [loadingIssued, setLoadingIssued] = useState(false);
+  const [sendingAll,    setSendingAll]    = useState(false);
 
   /* ── Manual Generator state ── */
   const [manualForm,    setManualForm]    = useState({ application_id: '', exam_date: '', exam_time: '', exam_venue: 'Periyar University, Salem - 636 011' });
@@ -93,14 +99,30 @@ const HallTickets = () => {
     return parseInt(genSession, 10) || null;
   }, [genSession, activeSession]);
 
-  // ── fetch dept counts & venues whenever session/dept changes ──
+  // ── fetch offered courses list ──
+  useEffect(() => {
+    const fetchOfferedCourses = async () => {
+      setLoadingOfferedCourses(true);
+      try {
+        const res = await axios.get(`${API_URL}/hall-tickets/offered-courses`, { headers: headers() });
+        setOfferedCourses(res.data.data || []);
+      } catch {
+        toast.error('Failed to load offered courses');
+      } finally {
+        setLoadingOfferedCourses(false);
+      }
+    };
+    fetchOfferedCourses();
+  }, []);
+
+  // ── fetch dept counts & venues whenever session/dept/offered course changes ──
   const fetchGenData = useCallback(async () => {
     try {
       const sid = resolvedGenSession();
       const qSid = sid || 'active';
 
       const [stuRes, venRes, deptRes] = await Promise.all([
-        axios.get(`${API_URL}/hall-tickets/students?session_id=${qSid}${genDept ? `&department=${encodeURIComponent(genDept)}` : ''}`, { headers: headers() }),
+        axios.get(`${API_URL}/hall-tickets/students?session_id=${qSid}${selectedOfferedCourse ? `&offered_course=${encodeURIComponent(selectedOfferedCourse)}` : ''}${genDept ? `&department=${encodeURIComponent(genDept)}` : ''}`, { headers: headers() }),
         axios.get(`${API_URL}/venues?session_id=${qSid}${genDept ? `&department=${encodeURIComponent(genDept)}` : ''}`, { headers: headers() }),
         axios.get(`${API_URL}/settings/master-data/dropdown_departments`, { headers: headers() }),
       ]);
@@ -108,7 +130,7 @@ const HallTickets = () => {
       setVenues(venRes.data.data || []);
       setDepartmentsMaster(deptRes.data.data || []);
     } catch { /* silent */ }
-  }, [resolvedGenSession, genDept]);
+  }, [resolvedGenSession, genDept, selectedOfferedCourse]);
 
   useEffect(() => { fetchGenData(); }, [fetchGenData]);
 
@@ -127,11 +149,39 @@ const HallTickets = () => {
 
   useEffect(() => { if (tab === 'issued') fetchIssued(); }, [tab, fetchIssued]);
 
+  // ── Send All Tickets ──
+  const handleSendAll = async () => {
+    if (issued.length === 0) {
+      toast.error('No hall tickets found to send.');
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to send/re-send all ${issued.length} hall ticket(s) to students' dashboards and emails?`)) {
+      return;
+    }
+    setSendingAll(true);
+    try {
+      const res = await axios.post(`${API_URL}/hall-tickets/send-all`, {}, { headers: headers() });
+      toast.success(res.data.message);
+      fetchIssued();
+    } catch {
+      toast.error('Failed to send all tickets');
+    } finally {
+      setSendingAll(false);
+    }
+  };
+
   // ── unique department list from deptCounts + issuedTickets ──
   const deptOptions = deptCounts.map(d => d.department).filter(Boolean);
 
   // ── selected venue object ──
   const selectedVenue = venues.find(v => String(v.id) === String(genVenue));
+
+  // ── Offered Course change handler ──
+  const handleOfferedCourseChange = (e) => {
+    setSelectedOfferedCourse(e.target.value);
+    setGenDept('');
+    setGenVenue('');
+  };
 
   // ── Preview ──
   const handlePreview = async () => {
@@ -143,7 +193,7 @@ const HallTickets = () => {
     setPreviewing(true);
     try {
       const res = await axios.post(`${API_URL}/hall-tickets/preview`,
-        { venue_id: genVenue, session_id: sid, department: genDept, count: genCount || undefined },
+        { venue_id: genVenue, session_id: sid, department: genDept, offered_course: selectedOfferedCourse || undefined, count: genCount || undefined },
         { headers: headers() }
       );
       setPreviewData(res.data);
@@ -160,7 +210,7 @@ const HallTickets = () => {
     setGenerating(true);
     try {
       const res = await axios.post(`${API_URL}/hall-tickets/bulk-generate`,
-        { venue_id: genVenue, session_id: sid, department: genDept, count: genCount || undefined, auto_send: autoSend },
+        { venue_id: genVenue, session_id: sid, department: genDept, offered_course: selectedOfferedCourse || undefined, count: genCount || undefined, auto_send: autoSend },
         { headers: headers() }
       );
       toast.success(res.data.message);
@@ -387,20 +437,33 @@ const HallTickets = () => {
               </div>
               <div className="card-body">
 
-                {/* Session */}
+                {/* Offered Course */}
                 <div className="mb-3">
-                  <label className="form-label small fw-bold mb-1">Session</label>
-                  <select className="form-select form-select-sm" value={genSession} onChange={e => { setGenSession(e.target.value); setGenDept(''); setGenVenue(''); }}>
-                    <option value="active">Active Session {activeSession ? `(${sessionLabel(activeSession)})` : ''}</option>
-                    <option value="all">All Sessions</option>
-                    {sessions.map(s => <option key={s.id} value={s.id}>{sessionLabel(s)}</option>)}
+                  <label className="form-label small fw-bold mb-1">Offered Course</label>
+                  <select
+                    className="form-select form-select-sm"
+                    value={selectedOfferedCourse}
+                    onChange={handleOfferedCourseChange}
+                    disabled={loadingOfferedCourses}
+                  >
+                    <option value="">— Select Offered Course —</option>
+                    {offeredCourses.map(course => (
+                      <option key={course} value={course}>
+                        {course}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
                 {/* Department */}
                 <div className="mb-3">
                   <label className="form-label small fw-bold mb-1">Department</label>
-                  <select className="form-select form-select-sm" value={genDept} onChange={e => { setGenDept(e.target.value); setGenVenue(''); }}>
+                  <select
+                    className="form-select form-select-sm"
+                    value={genDept}
+                    onChange={e => { setGenDept(e.target.value); setGenVenue(''); }}
+                    disabled={!selectedOfferedCourse}
+                  >
                     <option value="">— Select Department —</option>
                     {deptCounts.map(d => (
                       <option key={d.department} value={d.department}>
@@ -648,13 +711,7 @@ const HallTickets = () => {
           <div className="card border-0 shadow-sm mb-3">
             <div className="card-body py-3">
               <div className="row g-2 align-items-end">
-                <div className="col-auto">
-                  <select className="form-select form-select-sm" value={issuedSession} onChange={e => setIssuedSession(e.target.value)}>
-                    <option value="active">Active Session</option>
-                    <option value="all">All Sessions</option>
-                    {sessions.map(s => <option key={s.id} value={s.id}>{sessionLabel(s)}</option>)}
-                  </select>
-                </div>
+
                 <div className="col-auto">
                   <select className="form-select form-select-sm" value={issuedDept} onChange={e => setIssuedDept(e.target.value)}>
                     <option value="">All Departments</option>
@@ -662,8 +719,18 @@ const HallTickets = () => {
                   </select>
                 </div>
                 <div className="col-auto">
-                  <button className="btn btn-sm btn-outline-secondary" onClick={fetchIssued}>
+                  <button className="btn btn-sm btn-outline-secondary" onClick={fetchIssued} title="Refresh">
                     <RefreshCw size={13} />
+                  </button>
+                </div>
+                <div className="col-auto">
+                  <button
+                    className="btn btn-sm btn-primary fw-bold d-flex align-items-center gap-1"
+                    onClick={handleSendAll}
+                    disabled={sendingAll || issued.length === 0}
+                  >
+                    {sendingAll ? <span className="spinner-border spinner-border-sm" /> : <Send size={13} />}
+                    Send All Tickets ({issued.length})
                   </button>
                 </div>
                 <div className="col text-end">
@@ -724,11 +791,9 @@ const HallTickets = () => {
                         </td>
                         <td className="text-center">
                           <div className="d-flex gap-1 justify-content-center">
-                            {!item.is_sent && (
-                              <button className="btn btn-sm btn-primary px-2" style={{ fontSize: 11 }} onClick={() => handleSend(item.id)} title="Send to student">
-                                <Send size={13} />
-                              </button>
-                            )}
+                            <button className="btn btn-sm btn-primary px-2" style={{ fontSize: 11 }} onClick={() => handleSend(item.id)} title="Send/Re-send to student">
+                              <Send size={13} />
+                            </button>
                             <button className="btn btn-sm btn-outline-info px-2" style={{ fontSize: 11 }} onClick={() => window.open(`/hall-ticket/print/${item.id}`, '_blank')} title="Print">
                               <Printer size={13} />
                             </button>

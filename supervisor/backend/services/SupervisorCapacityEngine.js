@@ -18,11 +18,10 @@ class SupervisorCapacityEngine {
 
     static async getAllConfigs() {
         const [rows] = await pool.query(`
-            SELECT scm.id, scm.designation_id, scm.max_capacity, scm.status,
-                   d.name AS designation_name
-            FROM supervisor_capacity_master scm
-            JOIN master_designations d ON scm.designation_id = d.id
-            ORDER BY d.name ASC
+            SELECT id AS designation_id, id, max_capacity, is_active, name AS designation_name,
+                   CASE WHEN is_active = 1 THEN 'Active' ELSE 'Inactive' END AS status
+            FROM master_designations
+            ORDER BY name ASC
         `);
         return rows;
     }
@@ -31,8 +30,8 @@ class SupervisorCapacityEngine {
         if (!designationId) return null;
         const id = parseInt(designationId);
         const [rows] = await pool.query(
-            `SELECT max_capacity FROM supervisor_capacity_master
-             WHERE designation_id = ? AND status = 'Active' LIMIT 1`,
+            `SELECT max_capacity, is_active FROM master_designations
+             WHERE id = ? LIMIT 1`,
             [id]
         );
         return rows[0] || null;
@@ -41,24 +40,12 @@ class SupervisorCapacityEngine {
     static async upsertConfig(designationId, maxCapacity, status) {
         const desigId  = parseInt(designationId);
         const capacity = parseInt(maxCapacity) || 0;
-        const stat     = status === 'Inactive' ? 'Inactive' : 'Active';
+        const isActive = status === 'Inactive' ? 0 : 1;
 
-        const [existing] = await pool.query(
-            'SELECT id FROM supervisor_capacity_master WHERE designation_id = ? LIMIT 1',
-            [desigId]
+        await pool.query(
+            'UPDATE master_designations SET max_capacity = ?, is_active = ? WHERE id = ?',
+            [capacity, isActive, desigId]
         );
-
-        if (existing.length > 0) {
-            await pool.query(
-                'UPDATE supervisor_capacity_master SET max_capacity = ?, status = ? WHERE designation_id = ?',
-                [capacity, stat, desigId]
-            );
-        } else {
-            await pool.query(
-                'INSERT INTO supervisor_capacity_master (designation_id, max_capacity, status) VALUES (?, ?, ?)',
-                [desigId, capacity, stat]
-            );
-        }
         return { success: true };
     }
 
@@ -94,7 +81,12 @@ class SupervisorCapacityEngine {
     static async calculateCapacityDetails(designationId, currentScholarsCount = 0, currentPtScholarsCount = 0) {
         const config      = await this.getCapacityByDesignation(designationId);
         const maxCandidates = config ? config.max_capacity : 0;
-        return this.calculateVacancyBreakdown(maxCandidates, currentScholarsCount, currentPtScholarsCount);
+        const isActive      = config ? config.is_active : 0;
+        const breakdown     = this.calculateVacancyBreakdown(maxCandidates, currentScholarsCount, currentPtScholarsCount);
+        return {
+            ...breakdown,
+            is_active: isActive
+        };
     }
 
     /**
@@ -103,10 +95,11 @@ class SupervisorCapacityEngine {
      */
     static async recalculateForSupervisor(supervisorId) {
         const [rows] = await pool.query(
-            `SELECT s.max_candidates,
+            `SELECT COALESCE(d.max_capacity, s.max_candidates, 0) AS max_candidates,
                     COALESCE(s.current_scholars_count, 0)           AS current_scholars_count,
                     COALESCE(s.current_part_time_scholars_count, 0) AS current_part_time_scholars_count
              FROM supervisors s
+             LEFT JOIN master_designations d ON s.designation_id = d.id
              WHERE s.id = ?`,
             [supervisorId]
         );

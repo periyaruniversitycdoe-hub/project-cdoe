@@ -25,6 +25,8 @@ router.get('/me', verifyToken, async (req, res) => {
                     s.max_candidates, s.current_vacancy, s.max_part_time, s.max_full_time,
                     s.profile_image, s.status AS supervisor_status, s.area_of_specialization,
                     s.home_address_1, s.home_address_2, s.home_address_3, s.home_pincode, s.home_district_id,
+                    s.current_scholars_count, s.current_part_time_scholars_count,
+                    d.max_capacity AS designation_max_capacity,
                     d.name AS designation_name,
                     dept.name AS department_name,
                     dist.name AS district_name,
@@ -39,7 +41,14 @@ router.get('/me', verifyToken, async (req, res) => {
             [req.user.id]
         );
         if (rows.length === 0) return res.status(404).json({ message: 'User not found' });
-        res.json(rows[0]);
+        const row = rows[0];
+        if (row.supervisor_id && row.designation_max_capacity !== undefined && row.designation_max_capacity !== null) {
+            row.max_candidates = row.designation_max_capacity;
+            row.current_vacancy = Math.max(0, row.max_candidates - (row.current_scholars_count || 0));
+            row.max_full_time = row.max_candidates;
+            row.max_part_time = Math.floor(row.max_candidates / 2);
+        }
+        res.json(row);
     } catch (err) {
         console.error(err);
         res.status(500).json({ message: 'Server error' });
@@ -63,15 +72,23 @@ router.get('/dashboard', verifyToken, async (req, res) => {
 
         if (supervisorId) {
             const [sv] = await pool.query(
-                'SELECT max_candidates, current_vacancy, max_full_time, max_part_time FROM supervisors WHERE id = ?',
+                `SELECT s.max_candidates, s.current_vacancy, s.max_full_time, s.max_part_time,
+                        s.current_scholars_count, s.current_part_time_scholars_count,
+                        d.max_capacity AS designation_max_capacity
+                 FROM supervisors s
+                 LEFT JOIN master_designations d ON s.designation_id = d.id
+                 WHERE s.id = ?`,
                 [supervisorId]
             );
             if (sv.length > 0) {
+                const sRec = sv[0];
+                const maxCandidates = sRec.designation_max_capacity !== null && sRec.designation_max_capacity !== undefined ? sRec.designation_max_capacity : sRec.max_candidates;
+                const currentVacancy = Math.max(0, maxCandidates - (sRec.current_scholars_count || 0));
                 stats = {
-                    maxCandidates: sv[0].max_candidates,
-                    currentVacancy: sv[0].current_vacancy,
-                    maxFullTime: sv[0].max_full_time,
-                    maxPartTime: sv[0].max_part_time,
+                    maxCandidates: maxCandidates,
+                    currentVacancy: currentVacancy,
+                    maxFullTime: maxCandidates,
+                    maxPartTime: Math.floor(maxCandidates / 2),
                     isLinked: true
                 };
             }

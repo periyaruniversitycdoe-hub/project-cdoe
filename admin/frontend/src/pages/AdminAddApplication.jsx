@@ -344,6 +344,24 @@ const AdminAddApplication = () => {
   useEffect(() => { if (mphilMarkType   === 'Consolidated Mark Statement') setValue('mphil_is_awaiting_final_sem',   0); }, [mphilMarkType,   setValue]);
   useEffect(() => { if (category !== 'Part Time') setValue('working_district', ''); }, [category, setValue]);
 
+  // Auto-sync mark statement type selection based on active settings
+  useEffect(() => {
+    ['ug', 'pg', 'integrated'].forEach(level => {
+      const sKey = level === 'ug' ? 'UG Degree Documents' : level === 'pg' ? 'PG Degree Documents' : '5-Year Integrated Course';
+      const setting = fileSettings[sKey];
+      if (setting) {
+        const isCons = setting.consolidated_enabled !== 0;
+        const isSem = setting.semester_wise_enabled !== 0;
+        const currentType = watch(`${level}_mark_statement_type`);
+        if (!isCons && isSem && currentType !== 'Individual Mark Statement') {
+          setValue(`${level}_mark_statement_type`, 'Individual Mark Statement');
+        } else if (isCons && !isSem && currentType !== 'Consolidated Mark Statement') {
+          setValue(`${level}_mark_statement_type`, 'Consolidated Mark Statement');
+        }
+      }
+    });
+  }, [fileSettings, setValue, watch]);
+
   // ── Helpers ──────────────────────────────────────────────────────────────
   const handleAlphaInput = (e) => {
     e.target.value = e.target.value.replace(/[^A-Za-z஀-௿\s]/g, '');
@@ -371,12 +389,12 @@ const AdminAddApplication = () => {
       id_proof:       'ID Proof',
       community_cert: 'Community Certificate',
       pc_cert:        'PC Certificate',
-      sslc_marksheet: 'Mark Sheet',
-      hsc_marksheet:  'Mark Sheet',
-      ug_marksheet:   'Mark Sheet',
-      pg_marksheet:   'Mark Sheet',
-      ug_consolidated: 'Mark Sheet',
-      pg_consolidated: 'Mark Sheet',
+      sslc_marksheet: '10th Standard Marksheet',
+      hsc_marksheet:  '12th Standard Marksheet',
+      ug_marksheet:   'UG Degree Documents',
+      pg_marksheet:   'PG Degree Documents',
+      ug_consolidated: 'UG Degree Documents',
+      pg_consolidated: 'PG Degree Documents',
       diploma_marksheet: 'Mark Sheet',
       diploma_consolidated: 'Mark Sheet',
       mphil_marksheet: 'Mark Sheet',
@@ -387,13 +405,15 @@ const AdminAddApplication = () => {
     
     let settingKey = typeMap[key];
     if (!settingKey) {
-      if (key.startsWith('ug_sem_') || key.startsWith('pg_sem_') || key.startsWith('diploma_sem_') || key.startsWith('mphil_sem_')) {
-        settingKey = 'Mark Sheet';
+      if (key.startsWith('ug_sem_')) {
+        settingKey = 'UG Degree Documents';
+      } else if (key.startsWith('pg_sem_')) {
+        settingKey = 'PG Degree Documents';
       } else if (key.startsWith('integrated_sem_')) {
         settingKey = '5-Year Integrated Course';
-      } else if (key.startsWith('exp_cert_')) {
-        return 'Allowed: JPG, JPEG, PNG, PDF | Max Size: 2 MB';
-      } else if (key.startsWith('qual_cert_')) {
+      } else if (key.startsWith('diploma_sem_') || key.startsWith('mphil_sem_')) {
+        settingKey = 'Mark Sheet';
+      } else if (key.startsWith('exp_cert_') || key.startsWith('qual_cert_')) {
         return 'Allowed: JPG, JPEG, PNG, PDF | Max Size: 2 MB';
       } else {
         settingKey = 'Mark Sheet';
@@ -414,6 +434,10 @@ const AdminAddApplication = () => {
       'Community Certificate': 'Allowed: JPG, JPEG, PNG, PDF | Max Size: 1 MB',
       'PC Certificate': 'Allowed: JPG, JPEG, PNG, PDF | Max Size: 1 MB',
       'Mark Sheet': 'Allowed: JPG, JPEG, PNG, PDF | Max Size: 2 MB',
+      '10th Standard Marksheet': 'Allowed: JPG, JPEG, PNG, PDF | Max Size: 2 MB',
+      '12th Standard Marksheet': 'Allowed: JPG, JPEG, PNG, PDF | Max Size: 2 MB',
+      'UG Degree Documents': 'Allowed: JPG, JPEG, PNG, PDF | Max Size: 2 MB',
+      'PG Degree Documents': 'Allowed: JPG, JPEG, PNG, PDF | Max Size: 2 MB',
     };
 
     return fallbacks[settingKey] || 'Allowed: JPG, JPEG, PNG, PDF | Max Size: 2 MB';
@@ -432,6 +456,37 @@ const AdminAddApplication = () => {
   };
 
   const renderUploadControls = (key, disabled = false) => {
+    const typeMap = {
+      photo:          'Photo',
+      signature:      'Signature',
+      id_proof:       'ID Proof',
+      community_cert: 'Community Certificate',
+      pc_cert:        'PC Certificate',
+      sslc_marksheet: '10th Standard Marksheet',
+      hsc_marksheet:  '12th Standard Marksheet',
+      ug_marksheet:   'UG Degree Documents',
+      pg_marksheet:   'PG Degree Documents',
+      ug_consolidated: 'UG Degree Documents',
+      pg_consolidated: 'PG Degree Documents',
+      diploma_marksheet: 'Mark Sheet',
+      diploma_consolidated: 'Mark Sheet',
+      mphil_marksheet: 'Mark Sheet',
+      mphil_consolidated: 'Mark Sheet',
+      integrated_marksheet: '5-Year Integrated Course',
+      integrated_consolidated: '5-Year Integrated Course',
+    };
+    let settingKey = typeMap[key];
+    if (!settingKey) {
+      if (key.startsWith('ug_sem_')) settingKey = 'UG Degree Documents';
+      else if (key.startsWith('pg_sem_')) settingKey = 'PG Degree Documents';
+      else if (key.startsWith('integrated_sem_')) settingKey = '5-Year Integrated Course';
+      else if (key.startsWith('diploma_sem_') || key.startsWith('mphil_sem_')) settingKey = 'Mark Sheet';
+    }
+    const setting = settingKey ? fileSettings[settingKey] : null;
+    if (setting && setting.is_active === 0) {
+      return null; // Hide upload control completely if inactive
+    }
+
     const fileData = photos[key];
     const intimation = getUploadIntimation(key);
     const isDisabled = disabled || isSequentialUploadDisabled(key);
@@ -503,8 +558,9 @@ const AdminAddApplication = () => {
     const keys   = arr.filter(k => k.startsWith(prefix));
     
     // Check max semesters limit
-    const setting = fileSettings['5-Year Integrated Course'];
-    const maxSems = (semLevel === 'integrated' && setting?.max_semesters) ? setting.max_semesters : 10;
+    const settingKey = semLevel === 'ug' ? 'UG Degree Documents' : semLevel === 'pg' ? 'PG Degree Documents' : '5-Year Integrated Course';
+    const setting = fileSettings[settingKey];
+    const maxSems = (setting && setting.max_semesters) ? setting.max_semesters : 10;
     if (keys.length >= maxSems) return;
 
     const maxNum = keys.reduce((max, k) => Math.max(max, parseInt(k.split('_').pop())), 0);
@@ -539,10 +595,33 @@ const AdminAddApplication = () => {
       id_proof:       'ID Proof',
       community_cert: 'Community Certificate',
       pc_cert:        'PC Certificate',
+      sslc_marksheet: '10th Standard Marksheet',
+      hsc_marksheet:  '12th Standard Marksheet',
+      ug_marksheet:   'UG Degree Documents',
+      pg_marksheet:   'PG Degree Documents',
+      ug_consolidated: 'UG Degree Documents',
+      pg_consolidated: 'PG Degree Documents',
+      diploma_marksheet: 'Mark Sheet',
+      diploma_consolidated: 'Mark Sheet',
+      mphil_marksheet: 'Mark Sheet',
+      mphil_consolidated: 'Mark Sheet',
+      integrated_marksheet: '5-Year Integrated Course',
+      integrated_consolidated: '5-Year Integrated Course',
     };
-    let settingKey = typeMap[key] || 'Mark Sheet';
-    if (key.startsWith('integrated_sem_') || key.startsWith('integrated_consolidated') || key === 'integrated_marksheet') {
-      settingKey = '5-Year Integrated Course';
+    
+    let settingKey = typeMap[key];
+    if (!settingKey) {
+      if (key.startsWith('ug_sem_')) {
+        settingKey = 'UG Degree Documents';
+      } else if (key.startsWith('pg_sem_')) {
+        settingKey = 'PG Degree Documents';
+      } else if (key.startsWith('integrated_sem_')) {
+        settingKey = '5-Year Integrated Course';
+      } else if (key.startsWith('diploma_sem_') || key.startsWith('mphil_sem_')) {
+        settingKey = 'Mark Sheet';
+      } else {
+        settingKey = 'Mark Sheet';
+      }
     }
     const setting    = fileSettings[settingKey];
 
@@ -1125,6 +1204,19 @@ const AdminAddApplication = () => {
     const semKeys   = semArr.filter(k => k.startsWith(semPrefix));
 
     const rules = isRequired ? { required: 'This field is required' } : {};
+
+    const getAcademicSettingsKey = (semLvl) => {
+      if (semLvl === 'ug') return 'UG Degree Documents';
+      if (semLvl === 'pg') return 'PG Degree Documents';
+      if (semLvl === 'integrated') return '5-Year Integrated Course';
+      return null;
+    };
+    const sKey = getAcademicSettingsKey(semLevel);
+    const activeSetting = sKey ? fileSettings[sKey] : null;
+    const isAcademicActive = !activeSetting || activeSetting.is_active !== 0;
+    const isConsAllowed = !activeSetting || activeSetting.consolidated_enabled !== 0;
+    const isSemAllowed = !activeSetting || activeSetting.semester_wise_enabled !== 0;
+    const maxSems = activeSetting?.max_semesters || 10;
     
     const getFieldError = (fieldName) => {
       const parts = `${prefix}.${fieldName}`.split('.');
@@ -1237,80 +1329,84 @@ const AdminAddApplication = () => {
           </div>
 
           {/* ── Mark Statement Documents ── */}
-          <div className="col-md-12 border-top pt-3 mt-1">
-            <div className="fw-semibold small text-primary mb-2">Mark Statement Documents</div>
+          {isAcademicActive && (
+            <div className="col-md-12 border-top pt-3 mt-1">
+              <div className="fw-semibold small text-primary mb-2">Mark Statement Documents</div>
 
-            <div className="d-flex align-items-center gap-4 mb-3">
-              <span className="fw-semibold small text-secondary">Type:</span>
-              {['Individual Mark Statement', 'Consolidated Mark Statement'].map(type => (
-                <div key={type} className="form-check mb-0">
-                  <input type="radio" className="form-check-input"
-                    id={`${semLevel}_mst_${type}`} value={type}
-                    {...register(`${semLevel}_mark_statement_type`)} />
-                  <label className="form-check-label small fw-semibold" htmlFor={`${semLevel}_mst_${type}`}>{type}</label>
+              {isConsAllowed && isSemAllowed && (
+                <div className="d-flex align-items-center gap-4 mb-3">
+                  <span className="fw-semibold small text-secondary">Type:</span>
+                  {['Individual Mark Statement', 'Consolidated Mark Statement'].map(type => (
+                    <div key={type} className="form-check mb-0">
+                      <input type="radio" className="form-check-input"
+                        id={`${semLevel}_mst_${type}`} value={type}
+                        {...register(`${semLevel}_mark_statement_type`)} />
+                      <label className="form-check-label small fw-semibold" htmlFor={`${semLevel}_mst_${type}`}>{type}</label>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              )}
 
-            {/* Individual mode */}
-            {markType !== 'Consolidated Mark Statement' && (
-              <div>
-                <div className="form-check mb-2">
-                  <input type="checkbox" className="form-check-input" id={`${semLevel}_awaiting`}
-                    {...register(`${semLevel}_is_awaiting_final_sem`)} />
-                  <label className="form-check-label small fw-semibold text-warning" htmlFor={`${semLevel}_awaiting`}>
-                    I am awaiting my final semester results (mark sheet will be submitted later)
-                  </label>
-                </div>
-
-                <div className="border rounded-3 mb-2" style={{ fontSize: 13 }}>
-                  <div className="bg-light p-2 fw-bold d-none d-md-flex">
-                    <div style={{ width: 120 }} className="text-center">Semester</div>
-                    <div className="flex-grow-1">Document & Actions</div>
-                    <div style={{ width: 180 }} className="text-center">Row Control</div>
+              {/* Individual mode */}
+              {markType !== 'Consolidated Mark Statement' && isSemAllowed && (
+                <div>
+                  <div className="form-check mb-2">
+                    <input type="checkbox" className="form-check-input" id={`${semLevel}_awaiting`}
+                      {...register(`${semLevel}_is_awaiting_final_sem`)} />
+                    <label className="form-check-label small fw-semibold text-warning" htmlFor={`${semLevel}_awaiting`}>
+                      I am awaiting my final semester results (mark sheet will be submitted later)
+                    </label>
                   </div>
-                  <div className="list-group list-group-flush">
-                    {semKeys.map((key, idx) => (
-                      <div key={key} className="list-group-item p-2">
-                        <div className="row g-2 align-items-center">
-                          <div className="col-12 col-md-2 text-md-center fw-semibold">Semester {idx + 1}</div>
-                          <div className="col-12 col-md-7">
-                            {renderUploadControls(key)}
-                          </div>
-                          <div className="col-12 col-md-3 text-md-end">
-                            {semKeys.length > 1 && (
-                              <button type="button" className="btn btn-sm btn-outline-danger"
-                                onClick={() => removeSemesterRow(key, semLevel)} style={{ fontSize: 12 }}>Remove Row</button>
-                            )}
+
+                  <div className="border rounded-3 mb-2" style={{ fontSize: 13 }}>
+                    <div className="bg-light p-2 fw-bold d-none d-md-flex">
+                      <div style={{ width: 120 }} className="text-center">Semester</div>
+                      <div className="flex-grow-1">Document & Actions</div>
+                      <div style={{ width: 180 }} className="text-center">Row Control</div>
+                    </div>
+                    <div className="list-group list-group-flush">
+                      {semKeys.map((key, idx) => (
+                        <div key={key} className="list-group-item p-2">
+                          <div className="row g-2 align-items-center">
+                            <div className="col-12 col-md-2 text-md-center fw-semibold">Semester {idx + 1}</div>
+                            <div className="col-12 col-md-7">
+                              {renderUploadControls(key)}
+                            </div>
+                            <div className="col-12 col-md-3 text-md-end">
+                              {semKeys.length > 1 && (
+                                <button type="button" className="btn btn-sm btn-outline-danger"
+                                  onClick={() => removeSemesterRow(key, semLevel)} style={{ fontSize: 12 }}>Remove Row</button>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="d-flex align-items-center gap-3">
+                    {semKeys.length < maxSems && (
+                      <button type="button" className="btn btn-sm btn-outline-success"
+                        onClick={() => addSemester(semLevel)}>+ Add Next Semester</button>
+                    )}
+                    <small className="text-muted">{semKeys.length}/{maxSems} semesters</small>
                   </div>
                 </div>
+              )}
 
-                <div className="d-flex align-items-center gap-3">
-                  {semKeys.length < (semLevel === 'integrated' ? ((fileSettings['5-Year Integrated Course']?.max_semesters) || 10) : 10) && (
-                    <button type="button" className="btn btn-sm btn-outline-success"
-                      onClick={() => addSemester(semLevel)}>+ Add Next Semester</button>
-                  )}
-                  <small className="text-muted">{semKeys.length}/{(semLevel === 'integrated' ? ((fileSettings['5-Year Integrated Course']?.max_semesters) || 10) : 10)} semesters</small>
-                </div>
-              </div>
-            )}
-
-            {/* Consolidated mode */}
-            {markType === 'Consolidated Mark Statement' && (
-              <div className="border p-3 rounded-3" style={{ fontSize: 13 }}>
-                <div className="row g-2 align-items-center">
-                  <div className="col-12 col-md-3 fw-semibold">Consolidated Mark Sheet</div>
-                  <div className="col-12 col-md-9">
-                    {renderUploadControls(`${semLevel}_consolidated`)}
+              {/* Consolidated mode */}
+              {markType === 'Consolidated Mark Statement' && isConsAllowed && (
+                <div className="border p-3 rounded-3" style={{ fontSize: 13 }}>
+                  <div className="row g-2 align-items-center">
+                    <div className="col-12 col-md-3 fw-semibold">Consolidated Mark Sheet</div>
+                    <div className="col-12 col-md-9">
+                      {renderUploadControls(`${semLevel}_consolidated`)}
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     );

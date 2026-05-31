@@ -21,7 +21,6 @@ const MASTER_TYPES = [
     { key: 'research_subjects',    label: 'Research Subject',      icon: '📚', hasAbbrev: false },
     { key: 'research_categories',  label: 'Research Category',     icon: '🗂️', hasAbbrev: false },
     { key: 'disciplines',          label: 'Discipline',            icon: '🔬', hasAbbrev: false },
-    { key: 'capacity_config',      label: 'Supervisor Capacity',   icon: '📊', isCustom: true },
 ];
 
 export default function SupervisorMasterManagement() {
@@ -79,8 +78,10 @@ function MasterPanel({ type, meta }) {
     const [editingId, setEditingId] = useState(null);
     const [editName, setEditName] = useState('');
     const [editAbbrev, setEditAbbrev] = useState('');
+    const [editCapacity, setEditCapacity] = useState(0);
     const [newName, setNewName] = useState('');
     const [newAbbrev, setNewAbbrev] = useState('');
+    const [newCapacity, setNewCapacity] = useState(0);
     const [adding, setAdding] = useState(false);
     const [error, setError] = useState('');
 
@@ -94,19 +95,33 @@ function MasterPanel({ type, meta }) {
         finally { setLoading(false); }
     }, [type]);
 
-    useEffect(() => { load(); setEditingId(null); setNewName(''); setNewAbbrev(''); setError(''); }, [load]);
+    useEffect(() => { load(); setEditingId(null); setNewName(''); setNewAbbrev(''); setNewCapacity(0); setError(''); }, [load]);
 
     async function add() {
         if (!newName.trim()) { setError('Name is required'); return; }
+        if (type === 'designations') {
+            const cap = parseInt(newCapacity);
+            if (isNaN(cap) || cap < 0) { setError('Capacity must be a non-negative integer'); return; }
+        }
         setAdding(true); setError('');
         try {
+            const payload = { name: newName.trim(), abbreviation: newAbbrev.trim() || undefined };
+            if (type === 'designations') {
+                payload.max_capacity = parseInt(newCapacity) || 0;
+            }
             const res = await fetch(`${API}/${type}`, {
                 method: 'POST',
                 headers: authHeaders(true),
-                body: JSON.stringify({ name: newName.trim(), abbreviation: newAbbrev.trim() || undefined }),
+                body: JSON.stringify(payload),
             });
             const json = await res.json();
-            if (json.success) { setNewName(''); setNewAbbrev(''); invalidateDropdownCache(type); load(); }
+            if (json.success) { 
+                setNewName(''); 
+                setNewAbbrev(''); 
+                setNewCapacity(0);
+                invalidateDropdownCache(type); 
+                load(); 
+            }
             else setError(json.message);
         } catch { setError('Network error'); }
         finally { setAdding(false); }
@@ -116,16 +131,27 @@ function MasterPanel({ type, meta }) {
         setEditingId(item.id);
         setEditName(item.name);
         setEditAbbrev(item.abbreviation || '');
+        if (type === 'designations') {
+            setEditCapacity(item.max_capacity || 0);
+        }
         setError('');
     }
 
     async function saveEdit(id) {
         if (!editName.trim()) { setError('Name is required'); return; }
+        if (type === 'designations') {
+            const cap = parseInt(editCapacity);
+            if (isNaN(cap) || cap < 0) { setError('Capacity must be a non-negative integer'); return; }
+        }
         try {
+            const payload = { name: editName.trim(), abbreviation: editAbbrev.trim() || undefined, is_active: items.find(i => i.id === id)?.is_active };
+            if (type === 'designations') {
+                payload.max_capacity = parseInt(editCapacity) || 0;
+            }
             const res = await fetch(`${API}/${type}/${id}`, {
                 method: 'PUT',
                 headers: authHeaders(true),
-                body: JSON.stringify({ name: editName.trim(), abbreviation: editAbbrev.trim() || undefined, is_active: items.find(i => i.id === id)?.is_active }),
+                body: JSON.stringify(payload),
             });
             const json = await res.json();
             if (json.success) { setEditingId(null); invalidateDropdownCache(type); load(); }
@@ -172,7 +198,7 @@ function MasterPanel({ type, meta }) {
                 <div className="bg-light rounded p-3 mb-4">
                     <div className="fw-semibold small text-muted mb-2">Add New {meta.label}</div>
                     <div className="row g-2 align-items-end">
-                        <div className={meta.hasAbbrev ? 'col-md-6' : 'col-md-9'}>
+                        <div className={meta.hasAbbrev || type === 'designations' ? 'col-md-5' : 'col-md-9'}>
                             <input
                                 className="form-control"
                                 placeholder={`${meta.label} name *`}
@@ -182,7 +208,7 @@ function MasterPanel({ type, meta }) {
                             />
                         </div>
                         {meta.hasAbbrev && (
-                            <div className="col-md-3">
+                            <div className="col-md-4">
                                 <input
                                     className="form-control"
                                     placeholder="College code"
@@ -190,6 +216,19 @@ function MasterPanel({ type, meta }) {
                                     onChange={e => setNewAbbrev(e.target.value.replace(/\D/g, ''))}
                                     inputMode="numeric"
                                     pattern="[0-9]*"
+                                />
+                            </div>
+                        )}
+                        {type === 'designations' && (
+                            <div className="col-md-4">
+                                <input
+                                    type="number"
+                                    className="form-control"
+                                    placeholder="Max scholar capacity"
+                                    value={newCapacity}
+                                    min={0}
+                                    onChange={e => setNewCapacity(parseInt(e.target.value) || 0)}
+                                    onKeyDown={e => e.key === 'Enter' && add()}
                                 />
                             </div>
                         )}
@@ -214,6 +253,7 @@ function MasterPanel({ type, meta }) {
                                     <th>#</th>
                                     <th>Name</th>
                                     {meta.hasAbbrev && <th>College code</th>}
+                                    {type === 'designations' && <th>Max Capacity</th>}
                                     <th>Status</th>
                                     <th>Actions</th>
                                 </tr>
@@ -248,6 +288,21 @@ function MasterPanel({ type, meta }) {
                                                     />
                                                 ) : (
                                                     <span className="text-muted small">{item.abbreviation || '—'}</span>
+                                                )}
+                                            </td>
+                                        )}
+                                        {type === 'designations' && (
+                                            <td>
+                                                {editingId === item.id ? (
+                                                    <input
+                                                        type="number"
+                                                        className="form-control form-control-sm"
+                                                        value={editCapacity}
+                                                        min={0}
+                                                        onChange={e => setEditCapacity(parseInt(e.target.value) || 0)}
+                                                    />
+                                                ) : (
+                                                    <span className="fw-semibold text-primary">{item.max_capacity || 0}</span>
                                                 )}
                                             </td>
                                         )}
@@ -343,148 +398,4 @@ function InstituteLaunchPanel({ onOpen }) {
     );
 }
 
-function CapacityMasterPanel() {
-    const [configs, setConfigs] = useState([]);
-    const [designations, setDesignations] = useState([]);
-    const [loading, setLoading] = useState(false);
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState('');
-    const [success, setSuccess] = useState('');
 
-    const load = useCallback(async () => {
-        setLoading(true); setError('');
-        try {
-            const [cRes, dRes] = await Promise.all([
-                fetch((import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api/supervisors/capacity/config', { headers: authHeaders() }),
-                fetch((import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api/masters/designations', { headers: authHeaders() })
-            ]);
-            
-            const cJson = await cRes.json().catch(() => ({}));
-            const dJson = await dRes.json().catch(() => ({}));
-
-            if (!cRes.ok) throw new Error(cJson.message || `Capacity API Error (${cRes.status})`);
-            if (!dRes.ok) throw new Error(dJson.message || `Designations API Error (${dRes.status})`);
-
-            if (cJson.success) setConfigs(cJson.data);
-            if (dJson.success) setDesignations(dJson.data);
-        } catch (e) { 
-            console.error('Capacity Load Error:', e);
-            setError(e.message || 'ENGINE_LOAD_FAILURE'); 
-        }
-        finally { setLoading(false); }
-    }, []);
-
-    useEffect(() => { load(); }, [load]);
-
-    async function handleSave(designationId, maxCapacity, status) {
-        setSaving(true); setError(''); setSuccess('');
-        try {
-            const res = await fetch((import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api/supervisors/capacity/config', {
-                method: 'POST',
-                headers: authHeaders(true),
-                body: JSON.stringify({ designation_id: designationId, max_capacity: maxCapacity, status }),
-            });
-            const json = await res.json();
-            if (json.success) {
-                setSuccess('Capacity updated successfully');
-                load();
-            } else {
-                setError(json.message);
-            }
-        } catch { setError('Network error'); }
-        finally { setSaving(false); }
-    }
-
-    return (
-        <div className="card border-0 shadow-sm">
-            <div className="card-header bg-white border-bottom">
-                <h6 className="mb-0 fw-bold text-primary">📊 Supervisor Capacity Configuration</h6>
-            </div>
-            <div className="card-body">
-                {error && <div className="alert alert-danger py-2 small">{error}</div>}
-                {success && <div className="alert alert-success py-2 small">{success}</div>}
-
-                <div className="table-responsive">
-                    <table className="table table-hover align-middle">
-                        <thead className="table-light">
-                            <tr>
-                                <th>#</th>
-                                <th>Designation</th>
-                                <th style={{ width: 150 }}>Max Capacity</th>
-                                <th style={{ width: 150 }}>Status</th>
-                                <th className="text-end">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {designations.map((d, i) => {
-                                const config = configs.find(c => c.designation_id === d.id);
-                                return (
-                                    <CapacityRow 
-                                        key={d.id} 
-                                        index={i + 1}
-                                        designation={d} 
-                                        config={config} 
-                                        onSave={handleSave}
-                                        saving={saving}
-                                    />
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-function CapacityRow({ index, designation, config, onSave, saving }) {
-    const [capacity, setCapacity] = useState(config?.max_capacity || 0);
-    const [status, setStatus] = useState(config?.status || 'Active');
-
-    useEffect(() => {
-        if (config) {
-            setCapacity(config.max_capacity);
-            setStatus(config.status);
-        }
-    }, [config]);
-
-    const hasChanged = capacity !== (config?.max_capacity || 0) || status !== (config?.status || 'Active');
-
-    return (
-        <tr>
-            <td className="text-muted small">{index}</td>
-            <td>
-                <div className="fw-semibold">{designation.name}</div>
-                {!config && <small className="text-danger">Not Configured</small>}
-            </td>
-            <td>
-                <input 
-                    type="number" 
-                    className="form-control form-control-sm"
-                    value={capacity}
-                    onChange={e => setCapacity(parseInt(e.target.value) || 0)}
-                    min={0}
-                />
-            </td>
-            <td>
-                <select 
-                    className="form-select form-select-sm"
-                    value={status}
-                    onChange={e => setStatus(e.target.value)}
-                >
-                    <option value="Active">Active</option>
-                    <option value="Inactive">Inactive</option>
-                </select>
-            </td>
-            <td className="text-end">
-                <button 
-                    className="btn btn-sm btn-primary"
-                    disabled={!hasChanged || saving}
-                    onClick={() => onSave(designation.id, capacity, status)}
-                >
-                    {saving ? '...' : 'Save'}
-                </button>
-            </td>
-        </tr>
-    );
-}

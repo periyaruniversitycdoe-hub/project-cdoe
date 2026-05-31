@@ -9,7 +9,6 @@ const tables = {
     subjects: { table: 'dropdown_subjects', nameCol: 'name' },
     categories: { table: 'dropdown_categories', nameCol: 'name' },
     districts: { table: 'dropdown_districts', nameCol: 'name' },
-    communities: { table: 'dropdown_communities', nameCol: 'name' },
     genders: { table: 'dropdown_genders', nameCol: 'name' },
     id_types: { table: 'dropdown_id_types', nameCol: 'name' },
     score_types: { table: 'dropdown_score_types', nameCol: 'name' },
@@ -45,6 +44,38 @@ async function audit(conn, { adminId, action, entityType, entityId, oldValue, ne
 // GET all values for a type
 router.get('/:type', async (req, res) => {
     const { type } = req.params;
+
+    // Direct support for center/registration portal dropdowns returning raw arrays
+    if (type === 'master_institutes') {
+        try {
+            const [rows] = await pool.execute(`
+                SELECT id, college_code, name AS college_name, abbreviation
+                FROM master_institutes
+                WHERE is_active = 1
+                  AND college_code IS NOT NULL
+                  AND college_code != ''
+                ORDER BY college_code ASC
+            `);
+            return res.json(rows);
+        } catch (err) {
+            return res.status(500).json({ message: err.message });
+        }
+    }
+
+    if (type === 'master_districts' || type === 'master_centre_types') {
+        try {
+            const [rows] = await pool.execute(`
+                SELECT id, name
+                FROM ${type}
+                WHERE is_active = 1
+                ORDER BY name ASC
+            `);
+            return res.json(rows);
+        } catch (err) {
+            return res.status(500).json({ message: err.message });
+        }
+    }
+
     const config = tables[type];
     if (!config) return res.status(400).json({ success: false, message: 'Invalid dropdown type' });
 

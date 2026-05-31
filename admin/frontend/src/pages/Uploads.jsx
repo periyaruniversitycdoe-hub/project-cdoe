@@ -13,6 +13,11 @@ const FILE_TYPE_ICONS = {
   'Community Certificate': '📄',
   'PC Certificate':        '♿',
   'Mark Sheet':            '📝',
+  '10th Standard Marksheet': '📝',
+  '12th Standard Marksheet': '📝',
+  'UG Degree Documents':   '🎓',
+  'PG Degree Documents':   '🎓',
+  '5-Year Integrated Course': '⚙️',
 };
 
 const Uploads = () => {
@@ -44,6 +49,7 @@ const Uploads = () => {
         max_size:           row.max_size,
         size_unit:          row.size_unit,
         allowed_extensions: row.allowed_extensions,
+        is_active:          row.is_active !== undefined ? (row.is_active ? 1 : 0) : 1,
         is_integrated_course: row.is_integrated_course,
         consolidated_enabled: row.consolidated_enabled,
         semester_wise_enabled: row.semester_wise_enabled,
@@ -99,18 +105,26 @@ const Uploads = () => {
               <tr>
                 <th className="ps-4 py-3" style={{ width: 40 }}>#</th>
                 <th className="py-3">File Type</th>
-                <th className="py-3" style={{ width: 160 }}>Max Size</th>
-                <th className="py-3" style={{ width: 110 }}>Unit</th>
+                <th className="py-3" style={{ width: 150 }}>Max Size</th>
+                <th className="py-3" style={{ width: 100 }}>Unit</th>
                 <th className="py-3">Allowed Extensions</th>
                 <th className="py-3 d-flex align-items-center gap-1">
                   <Info size={13} className="text-muted" /> Hint
                 </th>
+                <th className="py-3 text-center" style={{ width: 100 }}>Status</th>
                 <th className="py-3 text-center pe-4" style={{ width: 100 }}>Save</th>
               </tr>
             </thead>
             <tbody>
               {settings.map((row, i) => {
-                const isIntegrated = row.is_integrated_course === 1 || row.file_type === '5-Year Integrated Course';
+                const isAcademicDoc = [
+                  '10th Standard Marksheet',
+                  '12th Standard Marksheet',
+                  'UG Degree Documents',
+                  'PG Degree Documents',
+                  '5-Year Integrated Course'
+                ].includes(row.file_type);
+                
                 return (
                   <React.Fragment key={row.id}>
                     <tr>
@@ -118,7 +132,7 @@ const Uploads = () => {
                       <td>
                         <span className="me-2">{FILE_TYPE_ICONS[row.file_type] || '📎'}</span>
                         <span className="fw-semibold">{row.file_type}</span>
-                        {isIntegrated && <span className="badge bg-info-subtle text-info ms-2" style={{ fontSize: '10px' }}>Enterprise Course</span>}
+                        {isAcademicDoc && <span className="badge bg-info-subtle text-info ms-2" style={{ fontSize: '10px' }}>Academic Document</span>}
                       </td>
                       <td>
                         <input
@@ -156,6 +170,17 @@ const Uploads = () => {
                           Types: <strong>{row.allowed_extensions}</strong>
                         </small>
                       </td>
+                      <td className="text-center">
+                        <div className="form-check form-switch d-inline-block">
+                          <input
+                            className="form-check-input"
+                            type="checkbox"
+                            role="switch"
+                            checked={row.is_active === 1 || row.is_active === true}
+                            onChange={e => handleChange(row.id, 'is_active', e.target.checked ? 1 : 0)}
+                          />
+                        </div>
+                      </td>
                       <td className="text-center pe-4">
                         <button
                           className="btn btn-sm btn-primary d-flex align-items-center gap-1 mx-auto"
@@ -170,12 +195,12 @@ const Uploads = () => {
                         </button>
                       </td>
                     </tr>
-                    {isIntegrated && (
+                    {isAcademicDoc && (
                       <tr>
-                        <td colSpan={7} className="bg-light-subtle ps-5 py-3">
+                        <td colSpan={8} className="bg-light-subtle ps-5 py-3">
                           <div className="border rounded-3 p-3 bg-white shadow-sm">
                             <h6 className="fw-bold mb-3 text-secondary d-flex align-items-center gap-2" style={{ fontSize: '13.5px' }}>
-                              <span>⚙️</span> Extended Integrated Course Upload Configuration
+                              <span>⚙️</span> Extended {row.file_type} Upload Configuration
                             </h6>
                             <div className="row g-3 text-start">
                               <div className="col-md-3">

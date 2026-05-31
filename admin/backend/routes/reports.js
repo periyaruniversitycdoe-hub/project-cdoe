@@ -374,6 +374,29 @@ router.get('/audit', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
+// GET Supervisor Capacity report
+router.get('/supervisor-capacity', verifyToken, isAdmin, async (req, res) => {
+    try {
+        await audit(pool, { adminId: req.user.id, action: 'VIEW_REPORT', reportType: 'supervisor_capacity', filters: req.query, ip: req.ip });
+
+        const [rows] = await pool.execute(
+            `SELECT 
+                d.name AS designation,
+                d.max_capacity AS configured_capacity,
+                COALESCE(SUM(s.current_scholars_count), 0) AS current_usage,
+                GREATEST(0, d.max_capacity - COALESCE(SUM(s.current_scholars_count), 0)) AS remaining_capacity
+             FROM master_designations d
+             LEFT JOIN supervisors s ON d.id = s.designation_id AND s.status = 'Approved'
+             WHERE d.is_active = 1
+             GROUP BY d.id, d.name, d.max_capacity
+             ORDER BY d.name ASC`
+        );
+        res.json({ success: true, data: rows });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
 // ── 3. Centralized Export Engine ──────────────────────────────────────────────
 
 router.post('/export', verifyToken, isAdmin, async (req, res) => {
@@ -461,6 +484,21 @@ router.post('/export', verifyToken, isAdmin, async (req, res) => {
             [rows] = await pool.execute(
                 `SELECT a.application_id, a.applicant_name, a.subject, a.qualified_exams, a.entrance_exam_status
                  FROM applications a ${whereClause}`, params
+            );
+        } else if (report_type === 'supervisor_capacity') {
+            sheetName = 'Supervisor Capacity Report';
+            headers = ['Designation', 'Configured Capacity', 'Current Usage', 'Remaining Capacity'];
+            [rows] = await pool.execute(
+                `SELECT 
+                    d.name AS designation,
+                    d.max_capacity AS configured_capacity,
+                    COALESCE(SUM(s.current_scholars_count), 0) AS current_usage,
+                    GREATEST(0, d.max_capacity - COALESCE(SUM(s.current_scholars_count), 0)) AS remaining_capacity
+                 FROM master_designations d
+                 LEFT JOIN supervisors s ON d.id = s.designation_id AND s.status = 'Approved'
+                 WHERE d.is_active = 1
+                 GROUP BY d.id, d.name, d.max_capacity
+                 ORDER BY d.name ASC`
             );
         } else if (report_type === 'audit') {
             sheetName = 'System Audit Logs';

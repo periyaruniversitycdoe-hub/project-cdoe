@@ -86,8 +86,9 @@ function validate(step, formData) {
   return errors;
 }
 
-export default function ApplicationForm() {
-  const { user, fetchMe } = useAuth();
+export default function ApplicationForm({ isAdminMode = false, centerId = null, onDone = null }) {
+  const centerAuth = useAuth();
+  const { user, fetchMe } = centerAuth || {};
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -111,42 +112,73 @@ export default function ApplicationForm() {
   });
   const [files, setFiles] = useState({ recognition_certificate: null });
 
-  const isReadOnly = ['Active', 'Approved'].includes(appStatus);
+  const CENTER_API = (import.meta.env.VITE_CENTER_API_URL || 'http://localhost:5003') + '/api';
+  const ADMIN_API = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
+
+  const activeAPI = isAdminMode ? ADMIN_API : CENTER_API;
+  const tokenKey = isAdminMode ? 'adminToken' : 'token';
+  const getHeaders = () => ({
+    headers: { Authorization: `Bearer ${localStorage.getItem(tokenKey) || ''}` }
+  });
+
+  const isReadOnly = isAdminMode ? false : ['Active', 'Approved', 'Suspended'].includes(appStatus);
 
   useEffect(() => {
     const tables = ['master_districts', 'master_centre_types', 'master_institutes'];
-    Promise.all(tables.map(t => axios.get(`${API}/dropdowns/${t}`))).then(results => {
+    // Dropdowns are fetched from Center API port (unauthenticated) to ensure consistency
+    Promise.all(tables.map(t => axios.get(`${CENTER_API}/dropdowns/${t}`))).then(results => {
       const data = {};
       tables.forEach((t, i) => data[t] = results[i].data || []);
       setDropdowns(data);
     }).catch(() => toast.error('Failed to load dropdown data.'));
 
-    axios.get(`${API}/portal/me`).then(res => {
-      const d = res.data;
-      setAppStatus(d.centre_status || d.centre_active || 'Draft');
-      if (d.center_id) {
-        setFormData(prev => ({
-          ...prev, ...d,
-          name:                    d.centre_name || d.name || '',
-          email:                   d.centre_email || d.email || '',
-          recognition_date:        d.recognition_date ? d.recognition_date.split('T')[0] : '',
-          recognition_certificate: d.recognition_certificate || null,
-          // ── Institute — use semantic identifiers, never DB serial ──────────
-          // /me now returns mi.college_code AS college_code and mi.name AS college_name
-          // from the joined master_institutes row.  These are the only values the
-          // dropdowns care about; institute_id is kept internally for legacy compat.
-          college_code:    d.college_code    || '',
-          college_name:    d.college_name    || '',
-          institute_id:    d.institute_id    ? String(d.institute_id)    : '',
-          // ── FK dropdowns ────────────────────────────────────────────────────
-          centre_type_id:  d.centre_type_id  ? String(d.centre_type_id)  : '',
-          district_id:     d.district_id     ? String(d.district_id)     : '',
-        }));
+    if (isAdminMode) {
+      if (centerId) {
+        axios.get(`${ADMIN_API}/centres/${centerId}`, getHeaders()).then(res => {
+          const d = res.data.data || res.data;
+          setAppStatus(d.status || d.centre_active || 'Pending');
+          setFormData(prev => ({
+            ...prev, ...d,
+            name:                    d.name || '',
+            email:                   d.email || '',
+            recognition_date:        d.recognition_date ? d.recognition_date.substring(0, 10) : '',
+            recognition_certificate: d.recognition_certificate || null,
+            college_code:            d.institute_code || d.abbreviation || '',
+            college_name:            d.institute_name || '',
+            institute_id:            d.institute_id ? String(d.institute_id) : '',
+            centre_type_id:          d.centre_type_id ? String(d.centre_type_id) : '',
+            district_id:             d.district_id ? String(d.district_id) : '',
+          }));
+        }).catch(() => toast.error('Failed to load centre details.')).finally(() => setLoading(false));
       } else {
-        setFormData(prev => ({ ...prev, name: d.name || '', email: d.email || '' }));
+        setAppStatus('Pending');
+        setLoading(false);
       }
-    }).catch(() => {}).finally(() => setLoading(false));
-  }, [user]);
+    } else {
+      axios.get(`${CENTER_API}/portal/me`, getHeaders()).then(res => {
+        const d = res.data;
+        setAppStatus(d.centre_status || d.centre_active || 'Draft');
+        if (d.center_id) {
+          setFormData(prev => ({
+            ...prev, ...d,
+            name:                    d.centre_name || d.name || '',
+            email:                   d.centre_email || d.email || '',
+            recognition_date:        d.recognition_date ? d.recognition_date.split('T')[0] : '',
+            recognition_certificate: d.recognition_certificate || null,
+            // ── Institute — use semantic identifiers, never DB serial ──────────
+            college_code:    d.college_code    || '',
+            college_name:    d.college_name    || '',
+            institute_id:    d.institute_id    ? String(d.institute_id)    : '',
+            // ── FK dropdowns ────────────────────────────────────────────────────
+            centre_type_id:  d.centre_type_id  ? String(d.centre_type_id)  : '',
+            district_id:     d.district_id     ? String(d.district_id)     : '',
+          }));
+        } else {
+          setFormData(prev => ({ ...prev, name: d.name || '', email: d.email || '' }));
+        }
+      }).catch(() => {}).finally(() => setLoading(false));
+    }
+  }, [user, centerId, isAdminMode]);
 
   const handleInput = useCallback((e) => {
     const { name, value } = e.target;
@@ -155,11 +187,6 @@ export default function ApplicationForm() {
   }, [errors]);
 
   // ── Bidirectional Institute Sync Engine ────────────────────────────────────
-  // Both handlers resolve from the same institutes list and update college_code,
-  // college_name, AND institute_id (FK kept for backend persistence) atomically.
-  // Neither handler ever touches a DB serial number in user-facing state.
-
-  // College Code selected → auto-fill College Name
   const handleCollegeCodeChange = useCallback((e) => {
     const code = e.target.value;
     const inst = dropdowns.master_institutes?.find(d => d.college_code === code);
@@ -167,11 +194,10 @@ export default function ApplicationForm() {
       ...prev,
       college_code: code,
       college_name: inst ? inst.college_name : '',
-      institute_id: inst ? String(inst.id)   : '',   // FK; resolved by backend on save too
+      institute_id: inst ? String(inst.id)   : '',
     }));
   }, [dropdowns.master_institutes]);
 
-  // College Name selected → auto-fill College Code
   const handleCollegeNameChange = useCallback((e) => {
     const name = e.target.value;
     const inst = dropdowns.master_institutes?.find(d => d.college_name === name);
@@ -179,7 +205,7 @@ export default function ApplicationForm() {
       ...prev,
       college_name: name,
       college_code: inst ? inst.college_code : '',
-      institute_id: inst ? String(inst.id)   : '',   // FK; resolved by backend on save too
+      institute_id: inst ? String(inst.id)   : '',
     }));
   }, [dropdowns.master_institutes]);
 
@@ -224,9 +250,26 @@ export default function ApplicationForm() {
 
     const toastId = toast.loading(isFinal ? 'Submitting registration...' : 'Saving progress...');
     try {
-      await axios.post(`${API}/portal/application`, postData, { headers: { 'Content-Type': 'multipart/form-data' } });
-      toast.success(isFinal ? '✅ Registration submitted for university review!' : '💾 Progress saved successfully!', { id: toastId });
-      if (isFinal) { await fetchMe(); navigate('/dashboard'); }
+      if (isAdminMode) {
+        if (centerId) {
+          await axios.put(`${activeAPI}/centres/${centerId}`, postData, {
+            headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${localStorage.getItem('adminToken') || ''}` }
+          });
+        } else {
+          postData.set('status', 'Pending');
+          await axios.post(`${activeAPI}/centres`, postData, {
+            headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${localStorage.getItem('adminToken') || ''}` }
+          });
+        }
+        toast.success('💾 Registration saved successfully!', { id: toastId });
+        if (onDone) onDone();
+      } else {
+        await axios.post(`${activeAPI}/portal/application`, postData, {
+          headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${localStorage.getItem('token') || ''}` }
+        });
+        toast.success(isFinal ? '✅ Registration submitted for university review!' : '💾 Progress saved successfully!', { id: toastId });
+        if (isFinal) { await fetchMe(); navigate('/dashboard'); }
+      }
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to save. Please try again.', { id: toastId });
     } finally {
@@ -377,7 +420,7 @@ export default function ApplicationForm() {
                   <div style={{ marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
                     <FileText size={15} color="#0891b2" />
                     <a
-                      href={`((import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001'))${formData.recognition_certificate}`}
+                      href={`${import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001'}${formData.recognition_certificate}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       style={{ fontSize: 12, color: '#0891b2', fontWeight: 600, textDecoration: 'underline' }}
@@ -451,6 +494,8 @@ export default function ApplicationForm() {
         <div style={S.actions}>
           {step > 0
             ? <button style={S.btnSecondary} onClick={() => setStep(s => s - 1)}><ChevronLeft size={17} /> Previous</button>
+            : isAdminMode && onDone
+            ? <button style={S.btnSecondary} onClick={onDone}>Cancel</button>
             : <div />}
           <div style={{ display: 'flex', gap: 12 }}>
             {!isReadOnly && (

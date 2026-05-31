@@ -961,7 +961,6 @@ const dropdownConfig = {
     categories: { table: 'dropdown_categories', name: 'name' },
     districts: { table: 'dropdown_districts', name: 'name' },
     genders: { table: 'dropdown_genders', name: 'name' },
-    communities: { table: 'dropdown_communities', name: 'name' },
     education_boards: { table: 'education_boards', name: 'board_name' },
     degree_types: { table: 'degree_types', name: 'degree_name', extra: ', level' },
     university_types: { table: 'university_types', name: 'type_name' },
@@ -981,6 +980,21 @@ Object.keys(dropdownConfig).forEach(key => {
             res.json(results);
         } catch (err) { res.status(500).json(err); }
     });
+});
+
+// Custom endpoint for communities to load from community_fees master as single source of truth
+app.get('/api/dropdowns/communities', async (req, res) => {
+    try {
+        const [results] = await db.query(
+            `SELECT id, community_name AS name, pg_min_mark, general_fee, differently_abled_fee, status 
+             FROM community_fees 
+             WHERE status = 'active' 
+             ORDER BY community_name ASC`
+        );
+        res.json(results);
+    } catch (err) {
+        res.status(500).json(err);
+    }
 });
 
 // ── Eligibility Engine — public read-only routes ──────────────────────────────
@@ -1353,6 +1367,32 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
                         );
                         if (exists.length === 0) {
                             errs.push(`Invalid M.Phil course: "${mphilItem.degree_name}"`);
+                        }
+                    }
+                }
+            }
+
+            // ── Server-side PG Minimum Mark Eligibility Enforcement ──
+            const selectedCommunityName = raw.community || data.community;
+            if (selectedCommunityName && (hasPg || hasIntegrated)) {
+                const [commRows] = await db.query(
+                    'SELECT pg_min_mark FROM community_fees WHERE community_name = ?',
+                    [selectedCommunityName]
+                );
+                if (commRows.length > 0 && commRows[0].pg_min_mark !== null) {
+                    const minMark = parseFloat(commRows[0].pg_min_mark);
+                    if (hasPg) {
+                        const pgItem = higherData?.[1];
+                        const pgScore = pgItem ? parseFloat(pgItem.score_value) : NaN;
+                        if (!isNaN(pgScore) && pgScore < minMark) {
+                            errs.push(`Minimum required PG percentage for your selected community is ${minMark}% (Your score: ${pgScore}%)`);
+                        }
+                    }
+                    if (hasIntegrated) {
+                        const integratedItem = integratedData;
+                        const integratedScore = integratedItem ? parseFloat(integratedItem.score_value) : NaN;
+                        if (!isNaN(integratedScore) && integratedScore < minMark) {
+                            errs.push(`Minimum required PG percentage for your selected community is ${minMark}% (Your score: ${integratedScore}%)`);
                         }
                     }
                 }
@@ -2993,7 +3033,7 @@ app.get('/api/districts', async (req, res) => {
 // ─── FILE UPLOAD SETTINGS (public — for frontend validation) ────────────────
 app.get('/api/file-upload-settings', async (req, res) => {
     try {
-        const [rows] = await db.query('SELECT file_type, max_size, size_unit, allowed_extensions FROM file_upload_settings');
+        const [rows] = await db.query('SELECT * FROM file_upload_settings');
         res.json({ success: true, data: rows });
     } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -3461,24 +3501,48 @@ app.get('/api/application/review', authenticateToken, async (req, res) => {
 
         const hasDoc = (type) => docs.some(d => d.document_type?.toLowerCase() === type.toLowerCase());
 
+        const [uploadSettings] = await db.query('SELECT file_type, is_active FROM file_upload_settings');
+        const settingsMap = {};
+        uploadSettings.forEach(s => { settingsMap[s.file_type] = s.is_active !== 0; });
+
+        const isSslcActive = settingsMap['10th Standard Marksheet'] !== false;
+        const isHscActive = settingsMap['12th Standard Marksheet'] !== false;
+        const isUgActive = settingsMap['UG Degree Documents'] !== false;
+        const isPgActive = settingsMap['PG Degree Documents'] !== false;
+
+        const isPhotoActive = settingsMap['Photo'] !== false;
+        const isSigActive = settingsMap['Signature'] !== false;
+        const isIdActive = settingsMap['ID Proof'] !== false;
+        const isCcActive = settingsMap['Community Certificate'] !== false;
+        const isPcActive = settingsMap['PC Certificate'] !== false;
+
+        const hasSslcChecked = application.has_sslc !== 0;
+        const hasHscChecked = application.has_hsc !== 0;
+        const hasUgChecked = application.has_ug !== 0;
+        const hasPgChecked = application.has_pg !== 0;
+
         // Check school education details
         const sslc = school.find(s => s.level === 'SSLC') || {};
         const hsc = school.find(s => s.level === 'HSC') || {};
-        const isSslcOk = !!(sslc.institution_name && sslc.board_id && sslc.passing_year && sslc.percentage && sslc.marksheet_path);
-        const isHscOk = !!(hsc.institution_name && hsc.board_id && hsc.passing_year && hsc.percentage && hsc.marksheet_path);
+        const isSslcOk = (!isSslcActive || !hasSslcChecked) || !!(sslc.institution_name && sslc.board_id && sslc.passing_year && sslc.percentage && sslc.marksheet_path);
+        const isHscOk = (!isHscActive || !hasHscChecked) || !!(hsc.institution_name && hsc.board_id && hsc.passing_year && hsc.percentage && hsc.marksheet_path);
 
         // Check higher education details
         const ug = higher.find(h => h.level === 'UG') || {};
         const pg = higher.find(h => h.level === 'PG') || {};
-        const isUgOk = !!(ug.institution_name && ug.degree_id && ug.passing_year && ug.score_value && (ug.marksheet_path || ug.consolidated_marksheet_path));
-        const isPgOk = !!(pg.institution_name && pg.degree_id && pg.passing_year && pg.score_value && (pg.marksheet_path || pg.consolidated_marksheet_path));
+        const isUgOk = (!isUgActive || !hasUgChecked) || !!(ug.institution_name && ug.degree_id && ug.passing_year && ug.score_value && (ug.marksheet_path || ug.consolidated_marksheet_path));
+        const isPgOk = (!isPgActive || !hasPgChecked) || !!(pg.institution_name && pg.degree_id && pg.passing_year && pg.score_value && (pg.marksheet_path || pg.consolidated_marksheet_path));
 
         const isPcEnabled = [1, '1', 'Yes'].includes(application.is_physically_challenged);
         const checks = {
             personalInfo: !!(application.applicant_name && application.dob && application.gender && application.community),
             contactInfo:  !!(application.mobile && application.email && application.address_1 && application.state && application.district && application.pincode),
             academicInfo: !!(application.subject && application.exam_center_1 && application.exam_center_2 && isSslcOk && isHscOk && isUgOk && isPgOk),
-            documents:    hasDoc('photo') && hasDoc('signature') && hasDoc('id_proof') && (!isPcEnabled || hasDoc('pc_cert')),
+            documents:    (!isPhotoActive || hasDoc('photo')) && 
+                          (!isSigActive || hasDoc('signature')) && 
+                          (!isIdActive || hasDoc('id_proof')) && 
+                          (!isPcEnabled || !isPcActive || hasDoc('pc_cert')) &&
+                          (application.community === 'OC' || !isCcActive || hasDoc('community_cert')),
         };
 
         const missingFields = {
@@ -3598,15 +3662,35 @@ app.post('/api/application/final-submit', authenticateToken, async (req, res) =>
 
         const hasDoc = (type) => docs.some(d => d.document_type?.toLowerCase() === type.toLowerCase());
 
+        const [uploadSettings] = await db.query('SELECT file_type, is_active FROM file_upload_settings');
+        const settingsMap = {};
+        uploadSettings.forEach(s => { settingsMap[s.file_type] = s.is_active !== 0; });
+
+        const isSslcActive = settingsMap['10th Standard Marksheet'] !== false;
+        const isHscActive = settingsMap['12th Standard Marksheet'] !== false;
+        const isUgActive = settingsMap['UG Degree Documents'] !== false;
+        const isPgActive = settingsMap['PG Degree Documents'] !== false;
+
+        const isPhotoActive = settingsMap['Photo'] !== false;
+        const isSigActive = settingsMap['Signature'] !== false;
+        const isIdActive = settingsMap['ID Proof'] !== false;
+        const isCcActive = settingsMap['Community Certificate'] !== false;
+        const isPcActive = settingsMap['PC Certificate'] !== false;
+
+        const hasSslcChecked = application.has_sslc !== 0;
+        const hasHscChecked = application.has_hsc !== 0;
+        const hasUgChecked = application.has_ug !== 0;
+        const hasPgChecked = application.has_pg !== 0;
+
         const sslc = school.find(s => s.level === 'SSLC') || {};
         const hsc  = school.find(s => s.level === 'HSC')  || {};
-        const isSslcOk = !!(sslc.institution_name && sslc.board_id && sslc.passing_year && sslc.percentage && sslc.marksheet_path);
-        const isHscOk  = !!(hsc.institution_name  && hsc.board_id  && hsc.passing_year  && hsc.percentage  && hsc.marksheet_path);
+        const isSslcOk = (!isSslcActive || !hasSslcChecked) || !!(sslc.institution_name && sslc.board_id && sslc.passing_year && sslc.percentage && sslc.marksheet_path);
+        const isHscOk  = (!isHscActive || !hasHscChecked)  || !!(hsc.institution_name  && hsc.board_id  && hsc.passing_year  && hsc.percentage  && hsc.marksheet_path);
 
         const ug = higher.find(h => h.level === 'UG') || {};
         const pg = higher.find(h => h.level === 'PG') || {};
-        const isUgOk = !!(ug.institution_name && ug.degree_id && ug.passing_year && ug.score_value && (ug.marksheet_path || ug.consolidated_marksheet_path));
-        const isPgOk = !!(pg.institution_name && pg.degree_id && pg.passing_year && pg.score_value && (pg.marksheet_path || pg.consolidated_marksheet_path));
+        const isUgOk = (!isUgActive || !hasUgChecked) || !!(ug.institution_name && ug.degree_id && ug.passing_year && ug.score_value && (ug.marksheet_path || ug.consolidated_marksheet_path));
+        const isPgOk = (!isPgActive || !hasPgChecked) || !!(pg.institution_name && pg.degree_id && pg.passing_year && pg.score_value && (pg.marksheet_path || pg.consolidated_marksheet_path));
 
         const missing = [];
         if (!application.applicant_name) missing.push('Applicant Name');
@@ -3622,14 +3706,15 @@ app.post('/api/application/final-submit', authenticateToken, async (req, res) =>
         if (!application.subject)        missing.push('Subject / Discipline');
         if (!application.exam_center_1)  missing.push('Exam Center Preference 1');
         if (!application.exam_center_2)  missing.push('Exam Center Preference 2');
-        if (!isSslcOk) missing.push('SSLC (10th) Details & Marksheet');
-        if (!isHscOk)  missing.push('HSC (12th) Details & Marksheet');
-        if (!isUgOk)   missing.push('UG Details & Marksheet');
-        if (!isPgOk)   missing.push('PG Details & Marksheet');
-        if (!hasDoc('photo'))     missing.push('Passport Photo');
-        if (!hasDoc('signature')) missing.push('Signature');
-        if (!hasDoc('id_proof'))  missing.push('ID Proof');
-        if ([1, '1', 'Yes'].includes(application.is_physically_challenged) && !hasDoc('pc_cert')) {
+        if (isSslcActive && hasSslcChecked && !isSslcOk) missing.push('SSLC (10th) Details & Marksheet');
+        if (isHscActive && hasHscChecked && !isHscOk)  missing.push('HSC (12th) Details & Marksheet');
+        if (isUgActive && hasUgChecked && !isUgOk)   missing.push('UG Details & Marksheet');
+        if (isPgActive && hasPgChecked && !isPgOk)   missing.push('PG Details & Marksheet');
+        if (isPhotoActive && !hasDoc('photo'))     missing.push('Passport Photo');
+        if (isSigActive && !hasDoc('signature')) missing.push('Signature');
+        if (isIdActive && !hasDoc('id_proof'))  missing.push('ID Proof');
+        if (application.community !== 'OC' && isCcActive && !hasDoc('community_cert')) missing.push('Community Certificate');
+        if ([1, '1', 'Yes'].includes(application.is_physically_challenged) && isPcActive && !hasDoc('pc_cert')) {
             missing.push('PC Certificate');
         }
 
