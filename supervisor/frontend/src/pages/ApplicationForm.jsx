@@ -104,7 +104,7 @@ const S = {
 };
 
 const REQUIRED_STEP0 = ['name', 'gender', 'designation_id'];
-const REQUIRED_STEP1 = ['address_1', 'district_id', 'mobile'];
+const REQUIRED_STEP1 = ['address_1', 'district_id', 'pincode', 'mobile', 'home_address_1', 'home_district_id', 'home_pincode'];
 const REQUIRED_STEP2 = ['dob', 'date_of_joining', 'max_candidates'];
 const REQUIRED_STEP3 = ['bank_holder_name', 'bank_name', 'account_number', 'ifsc_code'];
 
@@ -120,6 +120,7 @@ function validate(step, formData) {
   if (step === 1 && formData.mobile && !/^\d{10}$/.test(formData.mobile)) errors.mobile = 'Enter valid 10-digit mobile number';
   if (step === 1 && formData.aadhaar_no && !/^\d{12}$/.test(formData.aadhaar_no)) errors.aadhaar_no = 'Aadhaar must be 12 digits';
   if (step === 1 && formData.pincode && !/^\d{6}$/.test(formData.pincode)) errors.pincode = 'Pincode must be 6 digits';
+  if (step === 1 && formData.home_pincode && !/^\d{6}$/.test(formData.home_pincode)) errors.home_pincode = 'Pincode must be 6 digits';
   
   if (step === 3) {
     if (formData.bank_holder_name && !/^[A-Z\s]{3,}$/.test(formData.bank_holder_name)) {
@@ -152,6 +153,7 @@ export default function ApplicationForm() {
     name: '', gender: 'Male', designation_id: '', special_designation_id: '',
     department_id: '', area_of_specialization: '', serving_institute_id: '',
     address_1: '', address_2: '', address_3: '', district_id: '', pincode: '',
+    home_address_1: '', home_address_2: '', home_address_3: '', home_district_id: '', home_pincode: '',
     aadhaar_no: '', mobile: '', email: '',
     dob: '', date_of_joining: '', date_of_superannuation: '',
     recognition_ref_no: '', max_candidates: 0, current_vacancy: 0,
@@ -548,46 +550,92 @@ export default function ApplicationForm() {
 
           {/* ─── Step 1: Address & Identity ─── */}
           {step === 1 && (
-            <div style={S.grid2}>
-              <div style={{ ...S.group, gridColumn: '1 / -1' }}>
-                <label style={S.label}>Address Line 1<span style={S.required}>*</span></label>
-                <input style={S.input(errors.address_1)} name="address_1" value={formData.address_1} onChange={handleInput} readOnly={isReadOnly} placeholder="Door No., Street Name" />
-                {errors.address_1 && <span style={S.errMsg}>{errors.address_1}</span>}
+            <div>
+              {/* Office Address Section */}
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#4f46e5', marginBottom: 16, borderBottom: '2.5px solid #e0e7ff', paddingBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                🏫 Office Address
               </div>
-              <div style={S.group}>
-                <label style={S.label}>Address Line 2</label>
-                <input style={S.input(false)} name="address_2" value={formData.address_2} onChange={handleInput} readOnly={isReadOnly} placeholder="Colony / Area" />
+              <div style={{ ...S.grid2, marginBottom: 32 }}>
+                <div style={{ ...S.group, gridColumn: '1 / -1' }}>
+                  <label style={S.label}>Address Line 1<span style={S.required}>*</span></label>
+                  <input style={S.input(errors.address_1)} name="address_1" value={formData.address_1} onChange={handleInput} readOnly={isReadOnly} placeholder="Door No., Street Name" />
+                  {errors.address_1 && <span style={S.errMsg}>{errors.address_1}</span>}
+                </div>
+                <div style={S.group}>
+                  <label style={S.label}>Address Line 2</label>
+                  <input style={S.input(false)} name="address_2" value={formData.address_2} onChange={handleInput} readOnly={isReadOnly} placeholder="Colony / Area" />
+                </div>
+                <div style={S.group}>
+                  <label style={S.label}>City / Town</label>
+                  <input style={S.input(false)} name="address_3" value={formData.address_3} onChange={handleInput} readOnly={isReadOnly} placeholder="City or Town" />
+                </div>
+                <div style={S.group}>
+                  <label style={S.label}>District<span style={S.required}>*</span></label>
+                  <select style={S.select(errors.district_id)} name="district_id" value={formData.district_id} onChange={handleInput} disabled={isReadOnly}>
+                    <option value="">— Select District —</option>
+                    {dropdowns.master_districts?.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
+                  {errors.district_id && <span style={S.errMsg}>{errors.district_id}</span>}
+                </div>
+                <div style={S.group}>
+                  <label style={S.label}>Pincode<span style={S.required}>*</span></label>
+                  <input style={S.input(errors.pincode)} name="pincode" value={formData.pincode} onChange={handleInput} readOnly={isReadOnly} maxLength={6} placeholder="6-digit pincode" />
+                  {errors.pincode && <span style={S.errMsg}>{errors.pincode}</span>}
+                </div>
               </div>
-              <div style={S.group}>
-                <label style={S.label}>City / Town</label>
-                <input style={S.input(false)} name="address_3" value={formData.address_3} onChange={handleInput} readOnly={isReadOnly} />
+
+              {/* Home Address Section */}
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#4f46e5', marginBottom: 16, borderBottom: '2.5px solid #e0e7ff', paddingBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                🏠 Home Address
               </div>
-              <div style={S.group}>
-                <label style={S.label}>District<span style={S.required}>*</span></label>
-                <select style={S.select(errors.district_id)} name="district_id" value={formData.district_id} onChange={handleInput} disabled={isReadOnly}>
-                  <option value="">— Select District —</option>
-                  {dropdowns.master_districts?.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                </select>
-                {errors.district_id && <span style={S.errMsg}>{errors.district_id}</span>}
+              <div style={{ ...S.grid2, marginBottom: 32 }}>
+                <div style={{ ...S.group, gridColumn: '1 / -1' }}>
+                  <label style={S.label}>Address Line 1<span style={S.required}>*</span></label>
+                  <input style={S.input(errors.home_address_1)} name="home_address_1" value={formData.home_address_1} onChange={handleInput} readOnly={isReadOnly} placeholder="Door No., Street Name" />
+                  {errors.home_address_1 && <span style={S.errMsg}>{errors.home_address_1}</span>}
+                </div>
+                <div style={S.group}>
+                  <label style={S.label}>Address Line 2</label>
+                  <input style={S.input(false)} name="home_address_2" value={formData.home_address_2} onChange={handleInput} readOnly={isReadOnly} placeholder="Colony / Area" />
+                </div>
+                <div style={S.group}>
+                  <label style={S.label}>City / Town</label>
+                  <input style={S.input(false)} name="home_address_3" value={formData.home_address_3} onChange={handleInput} readOnly={isReadOnly} placeholder="City or Town" />
+                </div>
+                <div style={S.group}>
+                  <label style={S.label}>District<span style={S.required}>*</span></label>
+                  <select style={S.select(errors.home_district_id)} name="home_district_id" value={formData.home_district_id} onChange={handleInput} disabled={isReadOnly}>
+                    <option value="">— Select District —</option>
+                    {dropdowns.master_districts?.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
+                  {errors.home_district_id && <span style={S.errMsg}>{errors.home_district_id}</span>}
+                </div>
+                <div style={S.group}>
+                  <label style={S.label}>Pincode<span style={S.required}>*</span></label>
+                  <input style={S.input(errors.home_pincode)} name="home_pincode" value={formData.home_pincode} onChange={handleInput} readOnly={isReadOnly} maxLength={6} placeholder="6-digit pincode" />
+                  {errors.home_pincode && <span style={S.errMsg}>{errors.home_pincode}</span>}
+                </div>
               </div>
-              <div style={S.group}>
-                <label style={S.label}>Pincode</label>
-                <input style={S.input(errors.pincode)} name="pincode" value={formData.pincode} onChange={handleInput} readOnly={isReadOnly} maxLength={6} placeholder="6-digit pincode" />
-                {errors.pincode && <span style={S.errMsg}>{errors.pincode}</span>}
+
+              {/* Identity & Contact Section */}
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#4f46e5', marginBottom: 16, borderBottom: '2.5px solid #e0e7ff', paddingBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                🔑 Identity & Contact
               </div>
-              <div style={S.group}>
-                <label style={S.label}>Aadhaar Number</label>
-                <input style={S.input(errors.aadhaar_no)} name="aadhaar_no" value={formData.aadhaar_no} onChange={handleInput} readOnly={isReadOnly} maxLength={12} placeholder="12-digit Aadhaar" />
-                {errors.aadhaar_no && <span style={S.errMsg}>{errors.aadhaar_no}</span>}
-              </div>
-              <div style={S.group}>
-                <label style={S.label}>Mobile Number<span style={S.required}>*</span></label>
-                <input style={S.input(errors.mobile)} name="mobile" value={formData.mobile} onChange={handleInput} readOnly={isReadOnly} placeholder="10-digit mobile" />
-                {errors.mobile && <span style={S.errMsg}>{errors.mobile}</span>}
-              </div>
-              <div style={S.group}>
-                <label style={S.label}>Email Address</label>
-                <input style={S.input(false)} name="email" value={formData.email} onChange={handleInput} readOnly={isReadOnly} type="email" />
+              <div style={S.grid2}>
+                <div style={S.group}>
+                  <label style={S.label}>Aadhaar Number</label>
+                  <input style={S.input(errors.aadhaar_no)} name="aadhaar_no" value={formData.aadhaar_no} onChange={handleInput} readOnly={isReadOnly} maxLength={12} placeholder="12-digit Aadhaar" />
+                  {errors.aadhaar_no && <span style={S.errMsg}>{errors.aadhaar_no}</span>}
+                </div>
+                <div style={S.group}>
+                  <label style={S.label}>Mobile Number<span style={S.required}>*</span></label>
+                  <input style={S.input(errors.mobile)} name="mobile" value={formData.mobile} onChange={handleInput} readOnly={isReadOnly} placeholder="10-digit mobile" />
+                  {errors.mobile && <span style={S.errMsg}>{errors.mobile}</span>}
+                </div>
+                <div style={S.group}>
+                  <label style={S.label}>Email Address</label>
+                  <input style={S.input(false)} name="email" value={formData.email} onChange={handleInput} readOnly={isReadOnly} type="email" />
+                </div>
               </div>
             </div>
           )}
