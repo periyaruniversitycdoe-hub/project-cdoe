@@ -31,6 +31,7 @@ loadEnv();
 async function run() {
     const pool = mysql.createPool({
         host: process.env.DB_HOST || 'localhost',
+        port: parseInt(process.env.DB_PORT || '3306'),
         user: process.env.DB_USER || 'root',
         password: process.env.DB_PASSWORD || '',
         database: process.env.DB_NAME || 'rsm_db',
@@ -39,7 +40,9 @@ async function run() {
     
     try {
         console.log('Reading migration SQL 005_part_time_enhancements.sql...');
-        const sql = fs.readFileSync(path.join(__dirname, '005_part_time_enhancements.sql'), 'utf8');
+        let sql = fs.readFileSync(path.join(__dirname, '005_part_time_enhancements.sql'), 'utf8');
+        const dbName = process.env.DB_NAME || 'rsm_db';
+        sql = sql.replace(/USE\s+rsm_db\s*;/gi, `USE \`${dbName}\`;`);
         console.log('Applying migration to database...');
         await pool.query(sql);
         console.log('✅ Migration successfully applied!');
