@@ -100,7 +100,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
         const [[{ total }]] = await pool.execute(
             `SELECT COUNT(*) AS total FROM master_institutes mi ${where}`, params
         );
-        const [rows] = await pool.execute(
+        const [rows] = await pool.query(
             `SELECT mi.* FROM master_institutes mi ${where} ORDER BY mi.${sort} ${order} LIMIT ? OFFSET ?`,
             [...params, limit, offset]
         );
