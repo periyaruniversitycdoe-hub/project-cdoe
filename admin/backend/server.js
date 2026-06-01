@@ -43,7 +43,8 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
 }));
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 // Rate Limiting — auth routes get strict limits; general API is generous but protected
@@ -150,6 +151,10 @@ app.use('/api/portal-home', portalHomeRoutes);
 // Enterprise Dynamic Roster Management Engine
 const rosterRoutes = require('./routes/roster');
 app.use('/api/roster', rosterRoutes);
+
+// Enterprise Consolidated Import/Export Engine
+const importsRoutes = require('./routes/imports');
+app.use('/api/imports', importsRoutes);
 
 // ── Institute Master auto-migration ──────────────────────────────────────────
 (async () => {
@@ -419,6 +424,29 @@ app.use('/api/roster', rosterRoutes);
         try { await db.execute(sql); } catch (e) { console.error('Roster migration table error:', e.message); }
     }
     console.log('✅ Roster Management Engine schema verified.');
+})();
+
+// ── Enterprise Excel Import Audit History Migration ──────────────────────────
+(async () => {
+    try {
+        await db.execute(`
+            CREATE TABLE IF NOT EXISTS excel_import_history (
+                id                 INT AUTO_INCREMENT PRIMARY KEY,
+                uploaded_by        VARCHAR(200) NOT NULL,
+                upload_date        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                file_name          VARCHAR(255) NOT NULL,
+                record_count       INT NOT NULL,
+                success_count      INT NOT NULL,
+                failed_count       INT NOT NULL,
+                import_destination VARCHAR(100) NOT NULL,
+                import_mode        VARCHAR(50) NOT NULL,
+                details            LONGTEXT DEFAULT NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        `);
+        console.log('✅ Enterprise Excel Import History schema verified.');
+    } catch (e) {
+        console.error('Excel import history migration error:', e.message);
+    }
 })();
 
 

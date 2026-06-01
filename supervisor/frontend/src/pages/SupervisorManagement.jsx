@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import DynamicDropdown from '@admin/components/DynamicDropdown';
 import FileUploadField from '@admin/components/FileUploadField';
 import DisciplineRepeater from '../components/DisciplineRepeater';
+import UnifiedImportWizard from '@admin/components/UnifiedImportWizard';
 
 const API = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
 
@@ -63,6 +64,12 @@ function SupervisorList({ onAdd, onEdit }) {
         load();
     }
 
+    async function handleDeleteAll() {
+        if (!window.confirm('Are you sure want to delete all supervisors? This cannot be undone.')) return;
+        await fetch(`${API}/supervisors/all`, { method: 'DELETE', headers: authHeaders() });
+        load();
+    }
+
     async function updateStatus(id, status, reason = '') {
         const payload = { status };
         if (reason) payload.rejection_reason = reason;
@@ -83,14 +90,80 @@ function SupervisorList({ onAdd, onEdit }) {
 
     const totalPages = Math.ceil(data.total / filters.limit);
 
+    // Consolidated Excel Import Engine States & Handlers
+    const [importOpen, setImportOpen] = useState(false);
+    const [historyOpen, setHistoryOpen] = useState(false);
+    const [importHistory, setImportHistory] = useState([]);
+
+    function handleDownloadTemplate() {
+        const a = document.createElement('a');
+        a.href = `${API.replace('/api', '')}/api/imports/template/supervisors?token=${getToken()}`;
+        a.download = 'supervisors_import_template.xlsx';
+        a.click();
+    }
+
+    async function handleExportExcel() {
+        try {
+            const res = await fetch(`${API.replace('/api', '')}/api/imports/export/supervisors`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${getToken()}`
+                },
+                body: JSON.stringify({
+                    search: filters.search,
+                    status: filters.status
+                })
+            });
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `supervisors_export_${Date.now()}.xlsx`;
+            a.click();
+        } catch (e) {
+            alert('Export failed: ' + e.message);
+        }
+    }
+
+    async function handleShowHistory() {
+        setHistoryOpen(true);
+        try {
+            const res = await fetch(`${API.replace('/api', '')}/api/imports/history`, {
+                headers: { 'Authorization': `Bearer ${getToken()}` }
+            });
+            const json = await res.json();
+            if (json.success) setImportHistory(json.history);
+        } catch { /* ignore */ }
+    }
+
     return (
         <div className="container-fluid py-4">
-            <div className="d-flex justify-content-between align-items-center mb-4">
+            <div className="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
                 <div>
                     <h4 className="mb-0 fw-bold">Supervisor Management</h4>
                     <small className="text-muted">PhD Research Supervisors / Guides</small>
                 </div>
-                <button className="btn btn-primary" onClick={onAdd}>+ Register Supervisor</button>
+                <div className="d-flex gap-2 flex-wrap">
+                    <button className="btn btn-outline-secondary btn-sm" onClick={handleDownloadTemplate} title="Download supervisor Excel template">
+                        📥 Excel Template
+                    </button>
+                    <button className="btn btn-outline-success btn-sm" onClick={handleExportExcel} title="Export current supervisors list to Excel">
+                        📤 Export Excel
+                    </button>
+                    <button className="btn btn-outline-primary btn-sm" onClick={() => setImportOpen(true)} title="Import supervisors from Excel or CSV">
+                        📂 Import Excel/CSV
+                    </button>
+                    <button className="btn btn-outline-info btn-sm" onClick={handleShowHistory} title="View Excel & CSV Import Audit Logs">
+                        📜 Import History
+                    </button>
+                    <button className="btn btn-danger btn-sm" onClick={handleDeleteAll} title="Delete all supervisors">
+                        🗑️ Delete All
+                    </button>
+                    <button className="btn btn-primary btn-sm" onClick={onAdd}>
+                        + Register Supervisor
+                    </button>
+                </div>
             </div>
 
             {/* Filters */}
@@ -236,6 +309,67 @@ function SupervisorList({ onAdd, onEdit }) {
                     </div>
                 )}
             </div>
+
+            {/* Unified Excel Import Wizard */}
+            {importOpen && (
+                <UnifiedImportWizard
+                    initialDestination="supervisors"
+                    onClose={() => setImportOpen(false)}
+                    onRefresh={load}
+                />
+            )}
+
+            {/* Import History Modal */}
+            {historyOpen && (
+                <div className="modal d-block" style={{ background: 'rgba(0,0,0,.5)', zIndex: 1060 }}>
+                    <div className="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+                        <div className="modal-content border-0 shadow-lg">
+                            <div className="modal-header bg-dark text-white py-3">
+                                <h5 className="modal-title fw-bold">📜 Excel &amp; CSV Import &amp; Audit Logs</h5>
+                                <button className="btn-close btn-close-white" onClick={() => setHistoryOpen(false)} />
+                            </div>
+                            <div className="modal-body p-4">
+                                {importHistory.length === 0 ? (
+                                    <div className="text-center text-muted py-4">No import logs found in database.</div>
+                                ) : (
+                                    <div className="table-responsive">
+                                        <table className="table table-hover table-striped align-middle small">
+                                            <thead className="table-light">
+                                                <tr>
+                                                    <th>Upload Date</th>
+                                                    <th>File Name</th>
+                                                    <th>Mode</th>
+                                                    <th>Destination</th>
+                                                    <th>Success Count</th>
+                                                    <th>User</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {importHistory.map((hist) => (
+                                                    <tr key={hist.id}>
+                                                        <td>{new Date(hist.upload_date).toLocaleString()}</td>
+                                                        <td><code className="text-break">{hist.file_name}</code></td>
+                                                        <td><span className="badge bg-secondary">{hist.import_mode}</span></td>
+                                                        <td><strong>{hist.import_destination}</strong></td>
+                                                        <td>
+                                                            <span className="badge bg-success">{hist.success_count} success</span>
+                                                            <span className="badge bg-danger ms-1">{hist.failed_count} skipped</span>
+                                                        </td>
+                                                        <td><span className="text-muted">{hist.uploaded_by}</span></td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="modal-footer bg-light py-2">
+                                <button className="btn btn-secondary px-4" onClick={() => setHistoryOpen(false)}>Close</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

@@ -50,6 +50,7 @@ router.get('/:id',        verifyToken, isAdmin, ctrl.get);
 router.post('/',          verifyToken, isAdmin, supervisorUpload, ctrl.create);
 router.put('/:id',        verifyToken, isAdmin, supervisorUpload, ctrl.update);
 router.patch('/:id/status', verifyToken, isAdmin, ctrl.updateStatus);
-router.delete('/:id',     verifyToken, isAdmin, ctrl.remove);
+router.delete('/all',      verifyToken, isAdmin, ctrl.removeAll);
+router.delete('/:id',      verifyToken, isAdmin, ctrl.remove);
 
 module.exports = router;

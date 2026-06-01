@@ -130,6 +130,10 @@ async function remove(id) {
     if (!count) throw Object.assign(new Error('Supervisor not found'), { status: 404 });
 }
 
+async function removeAll() {
+    return repo.removeAll();
+}
+
 async function getActiveCentres() {
     return centreRepo.findAllActive();
 }
@@ -204,4 +208,4 @@ async function getCapacityByDesignation(designationId) {
     return capacityEngine.calculateCapacityDetails(designationId);
 }
 
-module.exports = { list, get, create, update, updateStatus, remove, getActiveCentres, listCapacityConfigs, upsertCapacityConfig, getCapacityByDesignation };
+module.exports = { list, get, create, update, updateStatus, remove, removeAll, getActiveCentres, listCapacityConfigs, upsertCapacityConfig, getCapacityByDesignation };

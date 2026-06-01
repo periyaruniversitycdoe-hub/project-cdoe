@@ -1,4 +1,4 @@
-const dns = require('dns');
+﻿const dns = require('dns');
 if (dns.setDefaultResultOrder) {
     dns.setDefaultResultOrder('ipv4first');
 }
@@ -43,7 +43,7 @@ app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false })); // Paytm callback is a form POST
 
-// ── CORS must be registered BEFORE rate limiters so that 429 responses
+// â”€â”€ CORS must be registered BEFORE rate limiters so that 429 responses
 //    still carry Access-Control-Allow-Origin and the browser can read them.
 app.use(cors({
     origin: (origin, callback) => {
@@ -65,7 +65,7 @@ app.use(cors({
     credentials: true
 }));
 
-// ── Rate Limiting (registered AFTER cors() so 429 responses carry CORS headers)
+// â”€â”€ Rate Limiting (registered AFTER cors() so 429 responses carry CORS headers)
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: 50,           // 50 login attempts per 15 min per IP
@@ -75,7 +75,7 @@ const authLimiter = rateLimit({
 });
 const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    limit: 500,          // 500 requests per 15 min per IP — generous for dev/prod
+    limit: 500,          // 500 requests per 15 min per IP â€” generous for dev/prod
     standardHeaders: true,
     legacyHeaders: false,
     message: { success: false, message: 'Too many requests. Please try again later.' },
@@ -213,7 +213,7 @@ const initDB = async () => {
                 ALTER TABLE part_time_categories
                 ADD COLUMN category_hint TEXT DEFAULT NULL AFTER category_name;
             `);
-            console.log("✅ category_hint column verified in part_time_categories.");
+            console.log("âœ… category_hint column verified in part_time_categories.");
         } catch (err) {
             if (err.errno !== 1060 && err.code !== 'ER_DUP_FIELDNAME') {
                 console.error('Error adding category_hint column:', err.message);
@@ -223,7 +223,7 @@ const initDB = async () => {
         // Safely add category_reference_code to part_time_categories
         try {
             await db.query(`ALTER TABLE part_time_categories ADD COLUMN category_reference_code VARCHAR(20) DEFAULT NULL AFTER category_hint`);
-            console.log("✅ category_reference_code column verified in part_time_categories.");
+            console.log("âœ… category_reference_code column verified in part_time_categories.");
         } catch (err) {
             if (err.errno !== 1060 && err.code !== 'ER_DUP_FIELDNAME') {
                 console.error('Error adding category_reference_code column:', err.message);
@@ -233,7 +233,7 @@ const initDB = async () => {
         // Safely add role_hint to part_time_roles
         try {
             await db.query(`ALTER TABLE part_time_roles ADD COLUMN role_hint TEXT DEFAULT NULL AFTER role_name`);
-            console.log("✅ role_hint column verified in part_time_roles.");
+            console.log("âœ… role_hint column verified in part_time_roles.");
         } catch (err) {
             if (err.errno !== 1060 && err.code !== 'ER_DUP_FIELDNAME') {
                 console.error('Error adding role_hint column:', err.message);
@@ -243,7 +243,7 @@ const initDB = async () => {
         // Eligibility-driven course name for PG and M.Phil sections
         try {
             await db.query(`ALTER TABLE higher_education ADD COLUMN degree_name VARCHAR(255) DEFAULT NULL`);
-            console.log("✅ degree_name column verified in higher_education.");
+            console.log("âœ… degree_name column verified in higher_education.");
         } catch (err) {
             if (err.errno !== 1060 && err.code !== 'ER_DUP_FIELDNAME') {
                 console.error('Error adding degree_name column:', err.message);
@@ -290,7 +290,7 @@ const initDB = async () => {
             } else {
                 // Try matching old name if reference code is not set yet
                 const oldMatchNames = {
-                    '2.2.2.1': 'Teaching → College',
+                    '2.2.2.1': 'Teaching â†’ College',
                     '2.2.2.2': 'High School/Higher Secondary School',
                     '2.2.2.3': 'Non Teaching',
                     '2.2.2.4': 'Others',
@@ -302,7 +302,7 @@ const initDB = async () => {
                 );
             }
         }
-        console.log("✅ Part-Time category hints and reference codes verified.");
+        console.log("âœ… Part-Time category hints and reference codes verified.");
 
         // Safely create global_part_time_guidance registry table
         await db.query(`
@@ -316,9 +316,9 @@ const initDB = async () => {
                 FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         `);
-        console.log("✅ global_part_time_guidance schema verified.");
+        console.log("âœ… global_part_time_guidance schema verified.");
 
-        // State → District sub-table for working areas
+        // State â†’ District sub-table for working areas
         await db.query(`
             CREATE TABLE IF NOT EXISTS part_time_area_districts (
                 id            INT AUTO_INCREMENT PRIMARY KEY,
@@ -331,7 +331,7 @@ const initDB = async () => {
                 UNIQUE KEY uniq_area_district (area_id, district_name)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         `);
-        console.log("✅ part_time_area_districts schema verified.");
+        console.log("âœ… part_time_area_districts schema verified.");
 
         // District + area_id columns on applications (backward-compatible)
         const ptExtCols = [
@@ -341,7 +341,7 @@ const initDB = async () => {
         for (const col of ptExtCols) {
             try {
                 await db.query(`ALTER TABLE applications ADD COLUMN ${col.name} ${col.type}`);
-                console.log(`✅ ${col.name} column added to applications.`);
+                console.log(`âœ… ${col.name} column added to applications.`);
             } catch (err) {
                 if (err.errno !== 1060 && err.code !== 'ER_DUP_FIELDNAME') {
                     console.error(`Error adding applications.${col.name}:`, err.message);
@@ -349,13 +349,35 @@ const initDB = async () => {
             }
         }
 
-        // Seed Master Data (Official University Structure) — only on first-time empty tables.
+        // Permanent address columns on applications (features_migration.sql guard)
+        const permCols = [
+            { name: 'perm_same_as_comm', type: 'TINYINT(1) NOT NULL DEFAULT 0' },
+            { name: 'perm_address_1',    type: 'VARCHAR(255) NULL' },
+            { name: 'perm_address_2',    type: 'VARCHAR(255) NULL' },
+            { name: 'perm_address_3',    type: 'VARCHAR(255) NULL' },
+            { name: 'perm_state',        type: 'VARCHAR(100) NULL' },
+            { name: 'perm_district',     type: 'VARCHAR(100) NULL' },
+            { name: 'perm_city',         type: 'VARCHAR(100) NULL' },
+            { name: 'perm_pincode',      type: 'VARCHAR(10) NULL' },
+        ];
+        for (const col of permCols) {
+            try {
+                await db.query(`ALTER TABLE applications ADD COLUMN ${col.name} ${col.type}`);
+            } catch (err) {
+                if (err.errno !== 1060 && err.code !== 'ER_DUP_FIELDNAME') {
+                    console.error(`Error adding applications.${col.name}:`, err.message);
+                }
+            }
+        }
+        console.log('âœ… Permanent address columns verified.');
+
+        // Seed Master Data (Official University Structure) â€” only on first-time empty tables.
         // NEVER truncate on startup to preserve admin-managed configurations.
         const [[{ catCount }]] = await db.query("SELECT COUNT(*) AS catCount FROM part_time_categories");
         if (catCount === 0) {
             const masterSeeds = [
                 {
-                    cat: "Teaching → College",
+                    cat: "Teaching â†’ College",
                     roles: ["Professor", "Associate Professor", "Assistant Professor"],
                     areas: ["Salem", "Namakkal", "Krishnagiri", "Dharmapuri"]
                 },
@@ -392,9 +414,9 @@ const initDB = async () => {
                     }
                 }
             }
-            console.log("✅ Master Part-Time Configuration seeded (first-time only).");
+            console.log("âœ… Master Part-Time Configuration seeded (first-time only).");
         } else {
-            console.log("✅ Part-Time Configuration already present — skipping seed.");
+            console.log("âœ… Part-Time Configuration already present â€” skipping seed.");
         }
 
         // Payment time-window columns (Section 1 enterprise workflow)
@@ -433,7 +455,7 @@ const initDB = async () => {
                 }
             }
         }
-        console.log('✅ Deferred payment columns verified.');
+        console.log('âœ… Deferred payment columns verified.');
 
         // Department column in attendance_upload_logs (for venue tracking)
         try {
@@ -494,9 +516,9 @@ const initDB = async () => {
                 INDEX idx_email_portal (email, portal)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         `);
-        console.log("✅ password_reset_otps table verified.");
+        console.log("âœ… password_reset_otps table verified.");
 
-        // ── Delayed Application ID Generation schema (run-once guards) ─────────
+        // â”€â”€ Delayed Application ID Generation schema (run-once guards) â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // Make users.application_id nullable (CETPHD format is longer than 20 chars)
         try {
             await db.query(`ALTER TABLE users MODIFY COLUMN application_id VARCHAR(30) UNIQUE NULL`);
@@ -555,9 +577,9 @@ const initDB = async () => {
                 updated_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         `);
-        console.log('✅ Application ID delayed-generation schema verified.');
+        console.log('âœ… Application ID delayed-generation schema verified.');
 
-        // ── Eligibility Engine — new columns on applications ─────────────────
+        // â”€â”€ Eligibility Engine â€” new columns on applications â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const eligCols = [
             { name: 'department_id',        def: 'INT NULL' },
             { name: 'program_offered_id',   def: 'INT NULL' },
@@ -571,9 +593,9 @@ const initDB = async () => {
                     console.error(`Error adding applications.${col.name}:`, err.message);
             }
         }
-        console.log('✅ Eligibility engine columns verified.');
+        console.log('âœ… Eligibility engine columns verified.');
 
-        // ── Portal Notifications — public admission announcements ─────────────
+        // â”€â”€ Portal Notifications â€” public admission announcements â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         await db.query(`
             CREATE TABLE IF NOT EXISTS portal_notifications (
                 id           INT AUTO_INCREMENT PRIMARY KEY,
@@ -587,7 +609,7 @@ const initDB = async () => {
                 updated_at   TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         `);
-        console.log('✅ portal_notifications table verified.');
+        console.log('âœ… portal_notifications table verified.');
 
     } catch (err) {
         console.error('Database init error:', err);
@@ -611,7 +633,7 @@ authRouter.post('/register', async (req, res) => {
         const [existing] = await db.query('SELECT email FROM users WHERE email = ?', [email]);
         if (existing.length > 0) return res.status(400).json({ message: 'User already exists' });
 
-        // Fetch active session — registration blocked if none exists
+        // Fetch active session â€” registration blocked if none exists
         const [sessionRows] = await db.query(
             `SELECT s.id FROM sessions s WHERE s.is_active = 1 AND s.registration_open = 1 LIMIT 1`
         );
@@ -624,7 +646,7 @@ authRouter.post('/register', async (req, res) => {
 
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // application_id is NOT generated here — it is assigned only after the
+        // application_id is NOT generated here â€” it is assigned only after the
         // registration form is fully submitted (CETPHD/J26/XXXX format).
         // Students are tracked by email / user_id until then.
         await db.query(
@@ -632,7 +654,7 @@ authRouter.post('/register', async (req, res) => {
             [full_name, email, hashedPassword, activeSessionId]
         );
 
-        // Auto-create Draft application record — application_id remains NULL
+        // Auto-create Draft application record â€” application_id remains NULL
         const [userResult] = await db.query('SELECT id FROM users WHERE email = ?', [email]);
         const userId = userResult[0].id;
         await db.query(
@@ -682,7 +704,7 @@ authRouter.post('/login', async (req, res) => {
                    last_ip       = VALUES(last_ip)`,
                 [user.id, req.ip || null]
             );
-        } catch (_) { /* non-critical — never block login */ }
+        } catch (_) { /* non-critical â€” never block login */ }
 
         const token = jwt.sign({ id: user.id, application_id: user.application_id, role: user.role }, process.env.STUDENT_JWT_SECRET, { expiresIn: '7d' });
         res.json({ message: 'Login successful', data: { token, user: { id: user.id, full_name: user.full_name, application_id: user.application_id, email: user.email, role: user.role } } });
@@ -691,7 +713,7 @@ authRouter.post('/login', async (req, res) => {
     }
 });
 
-// ── POST /api/auth/send-otp ────────────────────────────────────────────────────
+// â”€â”€ POST /api/auth/send-otp â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 authRouter.post('/send-otp', async (req, res) => {
     const { email, purpose = 'verification' } = req.body;
     if (!email) return res.status(400).json({ message: 'Email is required' });
@@ -723,7 +745,7 @@ authRouter.post('/send-otp', async (req, res) => {
     }
 });
 
-// ── POST /api/auth/verify-otp ──────────────────────────────────────────────────
+// â”€â”€ POST /api/auth/verify-otp â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 authRouter.post('/verify-otp', async (req, res) => {
     const { email, otp, purpose = 'verification' } = req.body;
     if (!email || !otp) return res.status(400).json({ message: 'Email and OTP are required' });
@@ -763,7 +785,7 @@ authRouter.post('/verify-otp', async (req, res) => {
     }
 });
 
-// ── POST /api/auth/forgot-password ────────────────────────────────────────────
+// â”€â”€ POST /api/auth/forgot-password â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 authRouter.post('/forgot-password', async (req, res) => {
     const { email } = req.body;
     if (!email) return res.status(400).json({ message: 'Email is required' });
@@ -798,7 +820,7 @@ authRouter.post('/forgot-password', async (req, res) => {
     }
 });
 
-// ── POST /api/auth/reset-password ─────────────────────────────────────────────
+// â”€â”€ POST /api/auth/reset-password â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 authRouter.post('/reset-password', async (req, res) => {
     const { email, token, newPassword } = req.body;
     if (!email || !token || !newPassword)
@@ -834,7 +856,7 @@ const sharedAuthRoutes = require('../../shared/auth/routes/authRoutes');
 app.use('/api/auth', sharedAuthRoutes(express, db, 'student', bcrypt));
 app.use('/api/auth', authRouter);
 
-// ── PUT /api/auth/change-password — logged-in student password change ─────────
+// â”€â”€ PUT /api/auth/change-password â€” logged-in student password change â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.put('/api/auth/change-password', authenticateToken, async (req, res) => {
     const { currentPassword, newPassword } = req.body;
     if (!currentPassword || !newPassword)
@@ -884,12 +906,12 @@ app.get('/api/portal-home/settings', async (_req, res) => {
         const [[row]] = await db.query('SELECT * FROM portal_home_settings WHERE id = 1');
         res.json({ success: true, data: row || {} });
     } catch (_err) {
-        // Table may not exist yet on first boot — return empty object gracefully
+        // Table may not exist yet on first boot â€” return empty object gracefully
         res.json({ success: true, data: {} });
     }
 });
 
-// Proxy prospectus download — streams file from admin uploads through student backend
+// Proxy prospectus download â€” streams file from admin uploads through student backend
 app.get('/api/portal-home/prospectus/download', async (_req, res) => {
     try {
         const [[row]] = await db.query(
@@ -936,7 +958,7 @@ app.get('/api/portal-home/announcements', async (_req, res) => {
         );
         res.json({ success: true, data: rows });
     } catch (_err) {
-        // Table or columns may not exist yet or has schema lag — return empty array gracefully
+        // Table or columns may not exist yet or has schema lag â€” return empty array gracefully
         res.json({ success: true, data: [] });
     }
 });
@@ -997,7 +1019,7 @@ app.get('/api/dropdowns/communities', async (req, res) => {
     }
 });
 
-// ── Eligibility Engine — public read-only routes ──────────────────────────────
+// â”€â”€ Eligibility Engine â€” public read-only routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // GET /api/eligibility/departments
 app.get('/api/eligibility/departments', async (req, res) => {
     try {
@@ -1078,7 +1100,7 @@ const upload = multer({
     }
 });
 
-// GET /api/applications/my — fetch the logged-in student's application by user_id.
+// GET /api/applications/my â€” fetch the logged-in student's application by user_id.
 // Used before form submission when application_id is not yet assigned.
 // Also used after submission (backwards compatible).
 app.get('/api/applications/my', authenticateToken, async (req, res) => {
@@ -1107,7 +1129,7 @@ app.get('/api/applications/my', authenticateToken, async (req, res) => {
     }
 });
 
-// Shared helper — attach school/higher/experience/quals/docs to an application object.
+// Shared helper â€” attach school/higher/experience/quals/docs to an application object.
 // Always uses user_id (always available from JWT). application_id is only used
 // for document/qualification lookups on old records that pre-date the migration.
 async function _attachSubDocs(application, userId) {
@@ -1156,7 +1178,7 @@ app.get('/api/applications/:application_id', authenticateToken, async (req, res)
         const appId = req.params.application_id;
         const userId = req.user.id;
 
-        // Ownership-scoped lookup — always AND user_id to prevent IDOR
+        // Ownership-scoped lookup â€” always AND user_id to prevent IDOR
         let appResults;
         [appResults] = await db.query(
             'SELECT * FROM applications WHERE application_id = ? AND user_id = ?',
@@ -1208,7 +1230,7 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
     try {
         const raw   = { ...req.body };
         const files = req.files || [];
-        // Primary tracking key — always available from JWT, never null.
+        // Primary tracking key â€” always available from JWT, never null.
         // application_id from the request body is ignored before submission to
         // avoid depending on the old APP2026-XXXXXX format.
         const userId = req.user.id;
@@ -1340,7 +1362,7 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
                 }
             }
 
-            // ── Server-side eligibility enforcement ──────────────────────────────
+            // â”€â”€ Server-side eligibility enforcement â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             // Validates that selected PG/M.Phil course is in the admin-mapped list
             // for the chosen programme. This cannot be bypassed via frontend.
             const programId = raw.program_offered_id || data.program_offered_id;
@@ -1372,7 +1394,7 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
                 }
             }
 
-            // ── Server-side PG Minimum Mark Eligibility Enforcement ──
+            // â”€â”€ Server-side PG Minimum Mark Eligibility Enforcement â”€â”€
             const selectedCommunityName = raw.community || data.community;
             if (selectedCommunityName && (hasPg || hasIntegrated)) {
                 const [commRows] = await db.query(
@@ -1459,11 +1481,27 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
 
                 if (existingId) await db.query('UPDATE school_education SET ? WHERE id = ?', [fields, existingId]);
                 else await db.query('INSERT INTO school_education SET ?', { ...fields, user_id: userId });
+
+                // Back-sync: link marksheet from application_documents if not already set
+                if (fields.level && !fields.marksheet_path) {
+                    const docKey  = fields.level === 'SSLC' ? 'sslc_marksheet' : 'hsc_marksheet';
+                    const docKey2 = fields.level === 'SSLC' ? 'school_education.0_marksheet' : 'school_education.1_marksheet';
+                    const [docRows] = await db.query(
+                        'SELECT file_path FROM application_documents WHERE user_id = ? AND document_type IN (?, ?) ORDER BY id DESC LIMIT 1',
+                        [userId, docKey, docKey2]
+                    );
+                    if (docRows.length > 0) {
+                        await db.query(
+                            'UPDATE school_education SET marksheet_path = ? WHERE user_id = ? AND level = ?',
+                            [docRows[0].file_path, userId, fields.level]
+                        );
+                    }
+                }
                 idx++;
             }
         }
 
-        // 3. Handle Higher Education — keyed by user_id
+        // 3. Handle Higher Education â€” keyed by user_id
         if (raw.higher_education) {
             const higherData = typeof raw.higher_education === 'string' ? JSON.parse(raw.higher_education) : raw.higher_education;
             let idx = 0;
@@ -1482,9 +1520,42 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
 
                 if (existingId) await db.query('UPDATE higher_education SET ? WHERE id = ?', [fields, existingId]);
                 else await db.query('INSERT INTO higher_education SET ?', { ...fields, user_id: userId });
+
+                // Back-sync: if marksheet was uploaded before this row existed, link it now
+                if (fields.level && (!fields.marksheet_path && !fields.consolidated_marksheet_path)) {
+                    const lvl = fields.level.toLowerCase(); // 'ug', 'pg', 'diploma', 'm.phil', 'integrated'
+                    const docKey = lvl === 'ug' ? 'ug_consolidated' : lvl === 'pg' ? 'pg_consolidated'
+                        : lvl === 'diploma' ? 'diploma_consolidated' : lvl === 'm.phil' ? 'mphil_consolidated' : 'integrated_consolidated';
+                    const docKey2 = lvl === 'ug' ? 'ug_marksheet' : lvl === 'pg' ? 'pg_marksheet'
+                        : lvl === 'diploma' ? 'diploma_marksheet' : lvl === 'm.phil' ? 'mphil_marksheet' : 'integrated_marksheet';
+                    const [docRows] = await db.query(
+                        'SELECT file_path FROM application_documents WHERE user_id = ? AND document_type IN (?, ?) ORDER BY id DESC LIMIT 1',
+                        [userId, docKey, docKey2]
+                    );
+                    if (docRows.length > 0) {
+                        await db.query(
+                            'UPDATE higher_education SET marksheet_path = ?, consolidated_marksheet_path = ? WHERE user_id = ? AND level = ?',
+                            [docRows[0].file_path, docRows[0].file_path, userId, fields.level]
+                        );
+                    }
+                }
                 idx++;
             }
         }
+
+        // Helper: back-sync a marksheet from application_documents into higher_education
+        const syncHigherMarksheet = async (level, ...docKeys) => {
+            const [docRows] = await db.query(
+                `SELECT file_path FROM application_documents WHERE user_id = ? AND document_type IN (${docKeys.map(() => '?').join(',')}) ORDER BY id DESC LIMIT 1`,
+                [userId, ...docKeys]
+            );
+            if (docRows.length > 0) {
+                await db.query(
+                    'UPDATE higher_education SET marksheet_path = ?, consolidated_marksheet_path = ? WHERE user_id = ? AND level = ? AND (marksheet_path IS NULL OR marksheet_path = "")',
+                    [docRows[0].file_path, docRows[0].file_path, userId, level]
+                );
+            }
+        };
 
         // 3.1 Handle Diploma (level = 'Diploma')
         if (raw.diploma) {
@@ -1495,6 +1566,8 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
             const [ex] = await db.query('SELECT id FROM higher_education WHERE user_id = ? AND level = "Diploma"', [userId]);
             if (ex.length > 0) await db.query('UPDATE higher_education SET ? WHERE id = ?', [fields, ex[0].id]);
             else await db.query('INSERT INTO higher_education SET ?', { ...fields, user_id: userId });
+            if (!fields.marksheet_path && !fields.consolidated_marksheet_path)
+                await syncHigherMarksheet('Diploma', 'diploma_consolidated', 'diploma_marksheet');
         }
 
         // 3.2 Handle M.Phil (level = 'M.Phil')
@@ -1506,6 +1579,8 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
             const [ex] = await db.query('SELECT id FROM higher_education WHERE user_id = ? AND level = "M.Phil"', [userId]);
             if (ex.length > 0) await db.query('UPDATE higher_education SET ? WHERE id = ?', [fields, ex[0].id]);
             else await db.query('INSERT INTO higher_education SET ?', { ...fields, user_id: userId });
+            if (!fields.marksheet_path && !fields.consolidated_marksheet_path)
+                await syncHigherMarksheet('M.Phil', 'mphil_consolidated', 'mphil_marksheet');
         }
 
         // 3.3 Handle 5-Year Integrated Course (level = 'Integrated')
@@ -1517,9 +1592,11 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
             const [ex] = await db.query('SELECT id FROM higher_education WHERE user_id = ? AND level = "Integrated"', [userId]);
             if (ex.length > 0) await db.query('UPDATE higher_education SET ? WHERE id = ?', [fields, ex[0].id]);
             else await db.query('INSERT INTO higher_education SET ?', { ...fields, user_id: userId });
+            if (!fields.marksheet_path && !fields.consolidated_marksheet_path)
+                await syncHigherMarksheet('Integrated', 'integrated_consolidated', 'integrated_marksheet');
         }
 
-        // 4. Handle Experience — keyed by user_id
+        // 4. Handle Experience â€” keyed by user_id
         if (raw.experience_details) {
             const expData = typeof raw.experience_details === 'string' ? JSON.parse(raw.experience_details) : raw.experience_details;
             for (const item of expData) {
@@ -1532,12 +1609,12 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
             }
         }
 
-        // 5. Handle Documents/Files — keyed by user_id
+        // 5. Handle Documents/Files â€” keyed by user_id
         if (files.length > 0) {
             for (const file of files) {
                 const filePath = file.path.replace(/\\/g, '/');
 
-                // ── Qualification certificate (qual_cert_{qualificationId}) ──
+                // â”€â”€ Qualification certificate (qual_cert_{qualificationId}) â”€â”€
                 if (file.fieldname.startsWith('qual_cert_')) {
                     const qualId = parseInt(file.fieldname.replace('qual_cert_', ''), 10);
                     if (qualId) {
@@ -1551,7 +1628,7 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
                     continue;
                 }
 
-                // ── Experience certificate (exp_cert_{index}) ──
+                // â”€â”€ Experience certificate (exp_cert_{index}) â”€â”€
                 if (file.fieldname.startsWith('exp_cert_')) {
                     const expIdx = parseInt(file.fieldname.replace('exp_cert_', ''), 10);
                     const [expRows] = await db.query(
@@ -1569,7 +1646,7 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
                     continue;
                 }
 
-                // ── Standard document ──
+                // â”€â”€ Standard document â”€â”€
                 await db.query('DELETE FROM application_documents WHERE user_id = ? AND document_type = ?', [userId, file.fieldname]);
                 await db.query('INSERT INTO application_documents (user_id, document_type, file_path) VALUES (?, ?, ?)', [userId, file.fieldname, filePath]);
 
@@ -1598,7 +1675,7 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
             }
         }
 
-        // 6. Handle normalized student_qualifications — keyed by user_id
+        // 6. Handle normalized student_qualifications â€” keyed by user_id
         if (raw.student_qualifications !== undefined) {
             let qualIds = [];
             try {
@@ -1652,7 +1729,7 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
             );
         }
 
-        // ── 7. Mark application as fully submitted ────────────────────────────────
+        // â”€â”€ 7. Mark application as fully submitted â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // Application ID is NOT generated here. It is generated exclusively after
         // successful payment (in webhookService.lockApplicationAndGenerateReceipt).
         // All pre-payment tracking uses user_id / email.
@@ -1733,27 +1810,27 @@ app.get('/api/student/eligibility', authenticateToken, async (req, res) => {
         let counsellingEndDate   = null;
         let counsellingStartDate = null;
 
-        // ── CounsellingAccessEngine — Production Grade ────────────────────────
+        // â”€â”€ CounsellingAccessEngine â€” Production Grade â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // Decoupled from application-lifecycle status (Submitted/Approved/Interview).
         // Automation Rule: Entrance PASS + Paid + Published + Window = Counselling Access.
 
         const isExempted   = app.entrance_exam_status === 'Exempted';
         const isDirectPass = app.direct_pass_status   === 'DirectPass';
 
-        // GATE A: Result — PASS via entrance OR direct qualification
+        // GATE A: Result â€” PASS via entrance OR direct qualification
         const gateA_pass = (
             app.final_result_status === 'PASS' || isDirectPass || isExempted ||
             ['Qualified', 'Direct Qualified'].includes(app.qualification_status)
         );
 
-        // GATE B: Payment — student must have paid
+        // GATE B: Payment â€” student must have paid
         const gateB_paid = app.payment_status === 'Paid';
 
-        // GATE C: Result Publication — admin has published results globally
+        // GATE C: Result Publication â€” admin has published results globally
         const resultPublished = !!app.result_published_at || !!settings.entrance_result_publish;
         const gateC_published = resultPublished;
 
-        // GATE D: Counselling Window — validated against Counselling Management settings
+        // GATE D: Counselling Window â€” validated against Counselling Management settings
         let gateD_window = false;
 
         if (app.session_id) {
@@ -1883,7 +1960,7 @@ app.get('/api/student/hall-ticket', authenticateToken, async (req, res) => {
                 ticket.exam_venue = `${dept} - ${hall}`;
             }
         } else {
-            ticket.exam_venue = hall || dept || '—';
+            ticket.exam_venue = hall || dept || 'â€”';
         }
 
         // Track first download timestamp
@@ -1905,9 +1982,9 @@ app.get('/api/student/hall-ticket', authenticateToken, async (req, res) => {
     }
 });
 
-// ─── PAYMENT FLOW — Pay Now / Pay Later ──────────────────────────────────────
+// â”€â”€â”€ PAYMENT FLOW â€” Pay Now / Pay Later â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-// POST /api/student/payment/choice  — record pay-now or pay-later
+// POST /api/student/payment/choice  â€” record pay-now or pay-later
 app.post('/api/student/payment/choice', authenticateToken, async (req, res) => {
     const { choice } = req.body; // 'PayNow' | 'PayLater'
     if (!['PayNow', 'PayLater'].includes(choice)) {
@@ -1931,7 +2008,7 @@ app.post('/api/student/payment/choice', authenticateToken, async (req, res) => {
         res.status(500).json({ success: false, message: err.message });
     }
 });
-// GET /api/student/payment/fee-details — fetch accurate dynamic fee based on community
+// GET /api/student/payment/fee-details â€” fetch accurate dynamic fee based on community
 app.get('/api/student/payment/fee-details', authenticateToken, async (req, res) => {
     try {
         const [[appRow]] = await db.query(
@@ -1954,7 +2031,7 @@ app.get('/api/student/payment/fee-details', authenticateToken, async (req, res) 
     }
 });
 
-// POST /api/student/payment/confirm  — mark payment as paid (used after gateway callback / manual payment)
+// POST /api/student/payment/confirm  â€” mark payment as paid (used after gateway callback / manual payment)
 app.post('/api/student/payment/confirm', authenticateToken, async (req, res) => {
     const { transaction_id, payment_mode, amount } = req.body;
     const connection = await db.getConnection();
@@ -2009,7 +2086,7 @@ app.post('/api/student/payment/confirm', authenticateToken, async (req, res) => 
 
         await connection.commit();
 
-        // Evaluate direct-pass async (best-effort — don't block response)
+        // Evaluate direct-pass async (best-effort â€” don't block response)
         db.query(
             `SELECT a.application_id FROM applications a WHERE a.user_id = ?`, [req.user.id]
         ).then(async ([rows]) => {
@@ -2053,7 +2130,7 @@ app.post('/api/student/payment/confirm', authenticateToken, async (req, res) => 
     }
 });
 
-// GET /api/student/payment/history  — payment history for the logged-in student
+// GET /api/student/payment/history  â€” payment history for the logged-in student
 app.get('/api/student/payment/history', authenticateToken, async (req, res) => {
     try {
         const [[appRow]] = await db.query(
@@ -2075,7 +2152,7 @@ app.get('/api/student/payment/history', authenticateToken, async (req, res) => {
     }
 });
 
-// POST /api/student/payment/create-order — DEPRECATED: use POST /api/payment/initiate
+// POST /api/student/payment/create-order â€” DEPRECATED: use POST /api/payment/initiate
 app.post('/api/student/payment/create-order', authenticateToken, (_req, res) => {
     res.status(410).json({
         success: false,
@@ -2084,7 +2161,7 @@ app.post('/api/student/payment/create-order', authenticateToken, (_req, res) => 
     });
 });
 
-// POST /api/applications/verify-payment-submit — verify gateway payment and lock application atomically
+// POST /api/applications/verify-payment-submit â€” verify gateway payment and lock application atomically
 app.post('/api/applications/verify-payment-submit', authenticateToken, async (req, res) => {
     const { 
         transaction_id, 
@@ -2263,11 +2340,11 @@ app.post('/api/applications/verify-payment-submit', authenticateToken, async (re
     }
 });
 
-// GET /api/applications/download-receipt/:appId — generates premium PDF payment receipt via pdfkit
+// GET /api/applications/download-receipt/:appId â€” generates premium PDF payment receipt via pdfkit
 app.get('/api/applications/download-receipt/:appId', authenticateToken, async (req, res) => {
     try {
         const appId = req.params.appId;
-        // Ownership check — only the owning student may download their receipt
+        // Ownership check â€” only the owning student may download their receipt
         const [appResults] = await db.query(
             'SELECT * FROM applications WHERE application_id = ? AND user_id = ?',
             [appId, req.user.id]
@@ -2423,14 +2500,14 @@ app.get('/api/applications/download-receipt/:appId', authenticateToken, async (r
         doc.fillColor(TEXT_COLOR).fontSize(9).font('Helvetica')
            .text('Ph.D. Application Admission Processing Fee', 50, y + 8)
            .font('Helvetica-Bold')
-           .text(`₹ ${parseFloat(payment.amount || application.amount || 1500).toFixed(2)}`, 470, y + 8, { align: 'right', width: 75 });
+           .text(`â‚¹ ${parseFloat(payment.amount || application.amount || 1500).toFixed(2)}`, 470, y + 8, { align: 'right', width: 75 });
         y += 25;
 
         // Table Total
         doc.rect(40, y, 515, 25).fillColor(LIGHT_GRAY).fill();
         doc.fillColor(PRIMARY).fontSize(9).font('Helvetica-Bold')
            .text('Total Amount Paid', 50, y + 8)
-           .text(`₹ ${parseFloat(payment.amount || application.amount || 1500).toFixed(2)}`, 470, y + 8, { align: 'right', width: 75 });
+           .text(`â‚¹ ${parseFloat(payment.amount || application.amount || 1500).toFixed(2)}`, 470, y + 8, { align: 'right', width: 75 });
         y += 35;
 
         const getAmountInWords = (amt) => {
@@ -2459,7 +2536,7 @@ app.get('/api/applications/download-receipt/:appId', authenticateToken, async (r
         const footerY = 760;
         doc.moveTo(40, footerY).lineTo(555, footerY).strokeColor(GOLD).lineWidth(1.5).stroke();
         doc.fillColor('#888888').fontSize(7.5).font('Helvetica')
-           .text('Computer Generated E-Receipt — University Ph.D. Admission Desk', 45, footerY + 8)
+           .text('Computer Generated E-Receipt â€” University Ph.D. Admission Desk', 45, footerY + 8)
            .text(`Generated on: ${new Date().toLocaleString()}`, 470, footerY + 8, { align: 'right', width: 80 });
 
         doc.end();
@@ -2470,9 +2547,9 @@ app.get('/api/applications/download-receipt/:appId', authenticateToken, async (r
     }
 });
 
-// ── Notifications ──────────────────────────────────────────────────────────
+// â”€â”€ Notifications â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-// REST fallback — initial load / polling fallback
+// REST fallback â€” initial load / polling fallback
 app.get('/api/student/notifications', authenticateToken, async (req, res) => {
     try {
         const [rows] = await db.query(
@@ -2518,7 +2595,7 @@ app.put('/api/student/notifications/read-all', authenticateToken, async (req, re
     }
 });
 
-// SSE real-time stream — pushes new notifications every 8 seconds
+// SSE real-time stream â€” pushes new notifications every 8 seconds
 // EventSource cannot send Authorization header, so token accepted via query param
 app.get('/api/student/notifications/stream', (req, res) => {
     const rawToken = (req.headers['authorization'] || '').replace('Bearer ', '') || req.query.token;
@@ -2558,7 +2635,7 @@ app.get('/api/student/notifications/stream', (req, res) => {
                 const payload = JSON.stringify({ notifications: rows, unread, newItems });
                 res.write(`data: ${payload}\n\n`);
             } catch (_) {
-                // DB error — send keepalive comment so connection stays open
+                // DB error â€” send keepalive comment so connection stays open
                 res.write(': keepalive\n\n');
             }
         };
@@ -2572,14 +2649,14 @@ app.get('/api/student/notifications/stream', (req, res) => {
     });
 });
 
-// ── PDF Download ────────────────────────────────────────────────────────────
+// â”€â”€ PDF Download â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const PDFDocument = require('pdfkit');
 
 app.get('/api/applications/download-pdf/:appId', authenticateToken, async (req, res) => {
     try {
         const appId = req.params.appId;
-        // Ownership check — only the owning student may download their application PDF
+        // Ownership check â€” only the owning student may download their application PDF
         const [appResults] = await db.query(
             'SELECT * FROM applications WHERE application_id = ? AND user_id = ?',
             [appId, req.user.id]
@@ -2603,7 +2680,7 @@ app.get('/api/applications/download-pdf/:appId', authenticateToken, async (req, 
         const docMap = {};
         docs.forEach(d => { docMap[d.document_type] = d.file_path; });
 
-        // ── constants ─────────────────────────────────────────────────────
+        // â”€â”€ constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const PRIMARY  = '#1a3a5c';
         const ACCENT   = '#1e56a0';
         const LIGHT    = '#eef2f7';
@@ -2627,8 +2704,8 @@ app.get('/api/applications/download-pdf/:appId', authenticateToken, async (req, 
 
         const PW = doc.page.width - MARGIN * 2; // usable width = 515.28 pts
 
-        // ── helpers ──────────────────────────────────────────────────────
-        const val = (v) => (v == null || v === '' || v === 'null' || v === 'undefined') ? '—' : String(v);
+        // â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        const val = (v) => (v == null || v === '' || v === 'null' || v === 'undefined') ? 'â€”' : String(v);
 
         // ensure enough space remains; add page if needed
         const ensureSpace = (needed) => {
@@ -2714,7 +2791,7 @@ app.get('/api/applications/download-pdf/:appId', authenticateToken, async (req, 
             doc.fillColor('#000');
         };
 
-        // ── DRAW LOGO (pdfkit primitives — Periyar University emblem) ────
+        // â”€â”€ DRAW LOGO (pdfkit primitives â€” Periyar University emblem) â”€â”€â”€â”€
         const drawLogo = (cx, cy, r) => {
             // outer ring
             doc.save().circle(cx, cy, r).fillColor('#1a3a5c').fill();
@@ -2743,7 +2820,7 @@ app.get('/api/applications/download-pdf/:appId', authenticateToken, async (req, 
             doc.fillColor(GOLD).fontSize(5.2).font('Helvetica-Bold')
                .text('PERIYAR  UNIVERSITY', cx - r + 4, cy - r + 3, { width: (r - 4) * 2, align: 'center', lineBreak: false });
             doc.fillColor('#fff').fontSize(4.5).font('Helvetica')
-               .text('SALEM  –  636 011', cx - r + 4, cy + r - 10, { width: (r - 4) * 2, align: 'center', lineBreak: false });
+               .text('SALEM  â€“  636 011', cx - r + 4, cy + r - 10, { width: (r - 4) * 2, align: 'center', lineBreak: false });
             // gold ribbon banner
             const bannerY = cy + r - 17;
             doc.rect(cx - r + 2, bannerY, (r - 2) * 2, 9).fillColor(GOLD).fill();
@@ -2752,12 +2829,12 @@ app.get('/api/applications/download-pdf/:appId', authenticateToken, async (req, 
             doc.restore();
         };
 
-        // ── PAGE 1 HEADER ─────────────────────────────────────────────────
+        // â”€â”€ PAGE 1 HEADER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const HEADER_TOP = MARGIN;
         const HEADER_H   = 90;
         doc.rect(MARGIN, HEADER_TOP, PW, HEADER_H).fill('#ffffff');
 
-        // Draw Logo Image — resolve relative to this server file for portability
+        // Draw Logo Image â€” resolve relative to this server file for portability
         const logoPath = path.join(__dirname, 'uploads', 'settings', 'pu_logo.png');
         const fallbackLogoPath = path.join(__dirname, '..', '..', 'frontend', 'public', 'images', 'pu_logo.png');
         const resolvedLogo = fs.existsSync(logoPath) ? logoPath : (fs.existsSync(fallbackLogoPath) ? fallbackLogoPath : null);
@@ -2765,7 +2842,7 @@ app.get('/api/applications/download-pdf/:appId', authenticateToken, async (req, 
             doc.image(resolvedLogo, MARGIN, HEADER_TOP + 5, { height: 80 });
         }
 
-        // applicant photo — right side
+        // applicant photo â€” right side
         const photoPath = docMap['Photo']
             ? path.join(__dirname, docMap['Photo'].replace(/^\//, ''))
             : null;
@@ -2797,13 +2874,13 @@ app.get('/api/applications/download-pdf/:appId', authenticateToken, async (req, 
         doc.text("State Public University Rank 40 - SDG Institutions Rank Band: 11-50", textX, HEADER_TOP + 42, { width: textW, align: 'left', lineBreak: false });
         doc.text("Salem - 636 011, Tamil Nadu, India.", textX, HEADER_TOP + 54, { width: textW, align: 'left', lineBreak: false });
 
-        // ── FORM TITLE BANNER ────────────────────────────────────────────
+        // â”€â”€ FORM TITLE BANNER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const titleY = HEADER_TOP + HEADER_H + 4;
         doc.rect(MARGIN, titleY, PW, 22).fill(ACCENT);
         doc.fillColor('#fff').fontSize(12).font('Helvetica-Bold')
            .text('APPLICATION FOR Ph.D. ADMISSION', MARGIN, titleY + 5, { width: PW, align: 'center', lineBreak: false });
 
-        // ── META ROW ─────────────────────────────────────────────────────
+        // â”€â”€ META ROW â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const metaY = titleY + 28;
         doc.rect(MARGIN, metaY, PW, 18).fill(LIGHT);
         doc.rect(MARGIN, metaY, PW, 18).strokeColor('#cbd5e1').lineWidth(0.4).stroke();
@@ -2818,27 +2895,27 @@ app.get('/api/applications/download-pdf/:appId', authenticateToken, async (req, 
         doc.y = metaY + 24;
         doc.fillColor('#000').font('Helvetica');
 
-        // ── SECTION 1: EXAM DETAILS ──────────────────────────────────────
+        // â”€â”€ SECTION 1: EXAM DETAILS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         sectionHeader('1.  EXAMINATION DETAILS');
-        let qualStr = '—';
+        let qualStr = 'â€”';
         try { const q = application.qualified_exams; qualStr = q ? (typeof q === 'string' ? JSON.parse(q) : q).join(', ') || 'None' : 'None'; } catch {}
         twoCol([
             ['Exam Centre (First Preference)',  application.exam_center_1],
             ['Exam Centre (Second Preference)', application.exam_center_2],
             ['Subject / Discipline',            application.subject],
-            ['Subject (Second)',                application.subject_2 || '—'],
+            ['Subject (Second)',                application.subject_2 || 'â€”'],
             ['Category',                        application.category],
-            ['Working District',                application.working_district || '—'],
+            ['Working District',                application.working_district || 'â€”'],
             ['Qualified Examinations',          qualStr],
         ]);
 
-        // ── SECTION 2: PERSONAL DETAILS ──────────────────────────────────
+        // â”€â”€ SECTION 2: PERSONAL DETAILS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         sectionHeader('2.  PERSONAL DETAILS');
         const dobStr = application.dob
             ? new Date(application.dob).toLocaleDateString('en-IN', { day:'2-digit', month:'long', year:'numeric' })
-            : '—';
+            : 'â€”';
         const pcStr = (application.is_physically_challenged === '1' || application.is_physically_challenged === 1)
-            ? `Yes — ${val(application.pc_percentage)}% (${val(application.pc_type)})`
+            ? `Yes â€” ${val(application.pc_percentage)}% (${val(application.pc_type)})`
             : 'No';
         twoCol([
             ['Applicant Name (English)', application.applicant_name],
@@ -2855,7 +2932,7 @@ app.get('/api/applications/download-pdf/:appId', authenticateToken, async (req, 
             ['ID Number',                application.id_number],
         ]);
 
-        // ── SECTION 3: CONTACT & ADDRESS ─────────────────────────────────
+        // â”€â”€ SECTION 3: CONTACT & ADDRESS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         sectionHeader('3.  CONTACT & ADDRESS DETAILS');
         const commAddr = [application.address_1, application.address_2, application.address_3].filter(Boolean).join(', ');
         const permAddr = application.perm_same_as_comm
@@ -2863,7 +2940,7 @@ app.get('/api/applications/download-pdf/:appId', authenticateToken, async (req, 
             : [application.perm_address_1, application.perm_address_2, application.perm_district, application.perm_state, application.perm_pincode].filter(Boolean).join(', ');
         twoCol([
             ['Mobile Number',            application.mobile],
-            ['Phone (Landline)',          application.phone || '—'],
+            ['Phone (Landline)',          application.phone || 'â€”'],
             ['Email Address',            application.email],
             ['Communication Address',    commAddr],
             ['District',                 application.district],
@@ -2872,7 +2949,7 @@ app.get('/api/applications/download-pdf/:appId', authenticateToken, async (req, 
             ['Permanent Address',        permAddr],
         ]);
 
-        // ── SECTION 4: SCHOOL EDUCATION ──────────────────────────────────
+        // â”€â”€ SECTION 4: SCHOOL EDUCATION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const validSchool = school.filter(s => s.institution_name || s.level);
         if (validSchool.length > 0) {
             sectionHeader('4.  SCHOOL EDUCATION');
@@ -2881,13 +2958,13 @@ app.get('/api/applications/download-pdf/:appId', authenticateToken, async (req, 
             validSchool.forEach((s, i) => tableRow(
                 [s.level, s.institution_name, s.other_board_name || s.board_id,
                  `${s.passing_month || ''} ${s.passing_year || ''}`.trim(),
-                 s.percentage ? `${s.percentage}%` : '—'],
+                 s.percentage ? `${s.percentage}%` : 'â€”'],
                 sColW, i
             ));
             doc.moveDown(0.4);
         }
 
-        // ── SECTION 5: HIGHER EDUCATION ──────────────────────────────────
+        // â”€â”€ SECTION 5: HIGHER EDUCATION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const validHigher = higher.filter(h => h.institution_name || h.level);
         if (validHigher.length > 0) {
             sectionHeader('5.  HIGHER EDUCATION');
@@ -2896,13 +2973,13 @@ app.get('/api/applications/download-pdf/:appId', authenticateToken, async (req, 
             validHigher.forEach((h, i) => tableRow(
                 [h.level, h.institution_name, h.university_name,
                  `${h.passing_month || ''} ${h.passing_year || ''}`.trim(),
-                 h.score_value ? `${h.score_value}${h.score_type ? ` (${h.score_type})` : ''}` : '—'],
+                 h.score_value ? `${h.score_value}${h.score_type ? ` (${h.score_type})` : ''}` : 'â€”'],
                 hColW, i
             ));
             doc.moveDown(0.4);
         }
 
-        // ── SECTION 6: WORK EXPERIENCE ────────────────────────────────────
+        // â”€â”€ SECTION 6: WORK EXPERIENCE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const validExp = experience.filter(e => e.organization_name || e.designation);
         if (validExp.length > 0) {
             sectionHeader('6.  WORK EXPERIENCE');
@@ -2918,7 +2995,7 @@ app.get('/api/applications/download-pdf/:appId', authenticateToken, async (req, 
             doc.moveDown(0.4);
         }
 
-        // ── SECTION 7: DECLARATION ────────────────────────────────────────
+        // â”€â”€ SECTION 7: DECLARATION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         sectionHeader('7.  DECLARATION');
         ensureSpace(60);
         const declY = doc.y;
@@ -2931,7 +3008,7 @@ app.get('/api/applications/download-pdf/:appId', authenticateToken, async (req, 
            );
         doc.moveDown(0.5);
 
-        // ── SIGNATURE ROW ─────────────────────────────────────────────────
+        // â”€â”€ SIGNATURE ROW â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         ensureSpace(70);
         doc.moveDown(0.8);
         const sigY = doc.y;
@@ -2960,7 +3037,7 @@ app.get('/api/applications/download-pdf/:appId', authenticateToken, async (req, 
         doc.fillColor('#bbb').fontSize(7).font('Helvetica')
            .text('For Office Use Only', sealX + 5, sigY + 16, { width: 75, align: 'center' });
 
-        // ── FOOTERS on every buffered page ────────────────────────────────
+        // â”€â”€ FOOTERS on every buffered page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const range = doc.bufferedPageRange();
         for (let i = 0; i < range.count; i++) {
             doc.switchToPage(range.start + i);
@@ -2981,7 +3058,7 @@ app.get('/api/applications/download-pdf/:appId', authenticateToken, async (req, 
     }
 });
 
-// ─── DROPDOWNS & SETTINGS ──────────────────────────────────────────────
+// â”€â”€â”€ DROPDOWNS & SETTINGS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.get('/api/dropdowns/settings', async (req, res) => {
     try {
         const [rows] = await db.query('SELECT * FROM university_settings LIMIT 1');
@@ -2999,7 +3076,7 @@ app.get('/api/dropdowns/:table', async (req, res) => {
     } catch (err) { res.status(500).json(err); }
 });
 
-// ─── STATES & DISTRICTS (public — used by student application form) ─────────
+// â”€â”€â”€ STATES & DISTRICTS (public â€” used by student application form) â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.get('/api/states', async (req, res) => {
     try {
         const [rows] = await db.query('SELECT id, state_name FROM states ORDER BY state_name ASC');
@@ -3030,7 +3107,7 @@ app.get('/api/districts', async (req, res) => {
     } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// ─── FILE UPLOAD SETTINGS (public — for frontend validation) ────────────────
+// â”€â”€â”€ FILE UPLOAD SETTINGS (public â€” for frontend validation) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.get('/api/file-upload-settings', async (req, res) => {
     try {
         const [rows] = await db.query('SELECT * FROM file_upload_settings');
@@ -3038,7 +3115,7 @@ app.get('/api/file-upload-settings', async (req, res) => {
     } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// ─── ADMIN MASTER DATA MANAGEMENT ──────────────────────────────────────────
+// â”€â”€â”€ ADMIN MASTER DATA MANAGEMENT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const masterTables = ['education_boards', 'degree_types', 'university_types', 'specializations', 'employment_types'];
 
 masterTables.forEach(table => {
@@ -3079,7 +3156,7 @@ masterTables.forEach(table => {
     });
 });
 
-// ─── QUALIFICATION TYPES (public — used by student application form) ─────────
+// â”€â”€â”€ QUALIFICATION TYPES (public â€” used by student application form) â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.get('/api/qualifications', async (req, res) => {
     try {
         const [rows] = await db.query(
@@ -3094,7 +3171,7 @@ app.get('/api/qualifications', async (req, res) => {
     }
 });
 
-// ─── ACTIVE SESSION (public) ─────────────────────────────────────────────────
+// â”€â”€â”€ ACTIVE SESSION (public) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.get('/api/active-session', async (req, res) => {
     try {
         const [rows] = await db.query(
@@ -3109,9 +3186,9 @@ app.get('/api/active-session', async (req, res) => {
     }
 });
 
-// ─── COUNSELLING — Student Routes ────────────────────────────────────────────
+// â”€â”€â”€ COUNSELLING â€” Student Routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-// ─── CounsellingAccessEngine — Centralized counselling eligibility + date access control ───
+// â”€â”€â”€ CounsellingAccessEngine â€” Centralized counselling eligibility + date access control â”€â”€â”€
 async function checkCounsellingEligibility(userId) {
     // 1. Fetch settings and application state
     const [settingsRows] = await db.query(
@@ -3132,7 +3209,7 @@ async function checkCounsellingEligibility(userId) {
     const isExempted   = app.entrance_exam_status === 'Exempted';
     const isDirectPass = app.direct_pass_status   === 'DirectPass';
 
-    // [GATE 1] Result — PASS via entrance OR direct qualification
+    // [GATE 1] Result â€” PASS via entrance OR direct qualification
     const gateA_pass = (
         app.final_result_status === 'PASS' || isDirectPass || isExempted ||
         ['Qualified', 'Direct Qualified'].includes(app.qualification_status)
@@ -3144,12 +3221,12 @@ async function checkCounsellingEligibility(userId) {
         return { eligible: false, status: 403, message: msg };
     }
 
-    // [GATE 2] Payment — Must be Paid
+    // [GATE 2] Payment â€” Must be Paid
     if (app.payment_status !== 'Paid') {
         return { eligible: false, status: 403, message: 'Your admission fee payment has not been verified yet.' };
     }
 
-    // [GATE 3] Publication — Results must be published
+    // [GATE 3] Publication â€” Results must be published
     const resultPublished = !!app.result_published_at || !!settings.entrance_result_publish;
     if (!resultPublished) {
         return { eligible: false, status: 403, message: 'Entrance exam results have not been published yet.' };
@@ -3184,7 +3261,7 @@ async function checkCounsellingEligibility(userId) {
     return { eligible: true };
 }
 
-// GET /api/counselling/settings — active counselling settings for current session
+// GET /api/counselling/settings â€” active counselling settings for current session
 app.get('/api/counselling/settings', authenticateToken, async (req, res) => {
     try {
         const eligibility = await checkCounsellingEligibility(req.user.id);
@@ -3211,7 +3288,7 @@ app.get('/api/counselling/settings', authenticateToken, async (req, res) => {
     }
 });
 
-// GET /api/counselling/research-centers — active centers (public)
+// GET /api/counselling/research-centers â€” active centers (public)
 app.get('/api/counselling/research-centers', async (req, res) => {
     try {
         const [rows] = await db.query(
@@ -3223,7 +3300,7 @@ app.get('/api/counselling/research-centers', async (req, res) => {
     }
 });
 
-// GET /api/counselling/research-supervisors?center_id= — active supervisors for center
+// GET /api/counselling/research-supervisors?center_id= â€” active supervisors for center
 app.get('/api/counselling/research-supervisors', async (req, res) => {
     const { center_id } = req.query;
     if (!center_id) return res.status(400).json({ success: false, message: 'center_id required' });
@@ -3241,7 +3318,7 @@ app.get('/api/counselling/research-supervisors', async (req, res) => {
     }
 });
 
-// GET /api/counselling/my-application — get student's counselling application
+// GET /api/counselling/my-application â€” get student's counselling application
 app.get('/api/counselling/my-application', authenticateToken, async (req, res) => {
     try {
         const eligibility = await checkCounsellingEligibility(req.user.id);
@@ -3278,7 +3355,7 @@ app.get('/api/counselling/my-application', authenticateToken, async (req, res) =
     }
 });
 
-// POST /api/counselling/save — save/update counselling draft
+// POST /api/counselling/save â€” save/update counselling draft
 app.post('/api/counselling/save', authenticateToken, async (req, res) => {
     const { choices } = req.body;
     if (!Array.isArray(choices) || choices.length === 0) {
@@ -3362,7 +3439,7 @@ app.post('/api/counselling/save', authenticateToken, async (req, res) => {
     }
 });
 
-// POST /api/counselling/submit — final submit
+// POST /api/counselling/submit â€” final submit
 app.post('/api/counselling/submit', authenticateToken, async (req, res) => {
     try {
         const eligibility = await checkCounsellingEligibility(req.user.id);
@@ -3410,7 +3487,7 @@ app.post('/api/counselling/submit', authenticateToken, async (req, res) => {
     }
 });
 
-// GET /api/counselling/my-allotment — student's allotment result
+// GET /api/counselling/my-allotment â€” student's allotment result
 app.get('/api/counselling/my-allotment', authenticateToken, async (req, res) => {
     try {
         const [userRows] = await db.query('SELECT session_id FROM users WHERE id = ?', [req.user.id]);
@@ -3437,30 +3514,44 @@ app.get('/api/counselling/my-allotment', authenticateToken, async (req, res) => 
     }
 });
 
-// ─── APPLICATION REVIEW & FINAL SUBMIT ──────────────────────────────────────
+// â”€â”€â”€ APPLICATION REVIEW & FINAL SUBMIT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-// GET /api/application/review — full structured review data for the logged-in student
+// GET /api/application/review â€” full structured review data for the logged-in student
 app.get('/api/application/review', authenticateToken, async (req, res) => {
     try {
-        const [userRows] = await db.query('SELECT application_id FROM users WHERE id = ?', [req.user.id]);
+        const userId = req.user.id;
+        const [userRows] = await db.query('SELECT application_id FROM users WHERE id = ?', [userId]);
         if (!userRows.length) return res.status(404).json({ success: false, message: 'User not found' });
         const appId = userRows[0].application_id;
 
-        const [apps] = await db.query('SELECT * FROM applications WHERE application_id = ?', [appId]);
+        // Pre-payment students don't have application_id yet â€” fall back to user_id lookup
+        let apps;
+        if (appId) {
+            [apps] = await db.query('SELECT * FROM applications WHERE application_id = ?', [appId]);
+        }
+        if (!apps || !apps.length) {
+            [apps] = await db.query('SELECT * FROM applications WHERE user_id = ?', [userId]);
+        }
         if (!apps.length) return res.status(404).json({ success: false, message: 'Application not found' });
 
         const application = apps[0];
-        const [school]     = await db.query('SELECT * FROM school_education WHERE application_id = ?', [appId]);
-        const [higher]     = await db.query('SELECT * FROM higher_education WHERE application_id = ?', [appId]);
-        const [experience] = await db.query('SELECT * FROM experience_details WHERE application_id = ?', [appId]);
-        const [docs]       = await db.query('SELECT * FROM application_documents WHERE application_id = ? OR user_id = ?', [appId, req.user.id]);
+
+        // Always query education tables by user_id (works for both pre-payment and post-payment students)
+        // Also OR application_id for legacy records stored before the user_id migration
+        const eduWhere = appId ? 'user_id = ? OR application_id = ?' : 'user_id = ?';
+        const eduParams = appId ? [userId, appId] : [userId];
+
+        const [school]     = await db.query(`SELECT * FROM school_education WHERE ${eduWhere}`, eduParams);
+        const [higher]     = await db.query(`SELECT * FROM higher_education WHERE ${eduWhere} ORDER BY id ASC`, eduParams);
+        const [experience] = await db.query(`SELECT * FROM experience_details WHERE ${eduWhere}`, eduParams);
+        const [docs]       = await db.query('SELECT * FROM application_documents WHERE user_id = ?', [userId]);
 
         // Self-healing email synchronization
         if (!application.email) {
-            const [userEmailRow] = await db.query('SELECT email FROM users WHERE id = ?', [req.user.id]);
+            const [userEmailRow] = await db.query('SELECT email FROM users WHERE id = ?', [userId]);
             if (userEmailRow.length > 0 && userEmailRow[0].email) {
                 application.email = userEmailRow[0].email;
-                await db.query('UPDATE applications SET email = ? WHERE application_id = ?', [application.email, appId]);
+                await db.query('UPDATE applications SET email = ? WHERE user_id = ?', [application.email, userId]);
             }
         }
 
@@ -3471,14 +3562,14 @@ app.get('/api/application/review', authenticateToken, async (req, res) => {
                 const sslcRow = school.find(s => s.level === 'SSLC');
                 if (sslcRow && !sslcRow.marksheet_path) {
                     sslcRow.marksheet_path = filePath;
-                    await db.query('UPDATE school_education SET marksheet_path = ? WHERE application_id = ? AND level = "SSLC"', [filePath, appId]);
+                    await db.query('UPDATE school_education SET marksheet_path = ? WHERE user_id = ? AND level = "SSLC"', [filePath, userId]);
                 }
             }
             if ((doc.document_type === 'school_education.1_marksheet' || doc.document_type === 'hsc_marksheet') && school.length > 0) {
                 const hscRow = school.find(s => s.level === 'HSC');
                 if (hscRow && !hscRow.marksheet_path) {
                     hscRow.marksheet_path = filePath;
-                    await db.query('UPDATE school_education SET marksheet_path = ? WHERE application_id = ? AND level = "HSC"', [filePath, appId]);
+                    await db.query('UPDATE school_education SET marksheet_path = ? WHERE user_id = ? AND level = "HSC"', [filePath, userId]);
                 }
             }
             if ((doc.document_type === 'ug_consolidated' || doc.document_type === 'ug_marksheet' || doc.document_type.startsWith('ug_sem_')) && higher.length > 0) {
@@ -3486,7 +3577,7 @@ app.get('/api/application/review', authenticateToken, async (req, res) => {
                 if (ugRow && (!ugRow.marksheet_path || !ugRow.consolidated_marksheet_path)) {
                     ugRow.marksheet_path = filePath;
                     ugRow.consolidated_marksheet_path = filePath;
-                    await db.query('UPDATE higher_education SET marksheet_path = ?, consolidated_marksheet_path = ? WHERE application_id = ? AND level = "UG"', [filePath, filePath, appId]);
+                    await db.query('UPDATE higher_education SET marksheet_path = ?, consolidated_marksheet_path = ? WHERE user_id = ? AND level = "UG"', [filePath, filePath, userId]);
                 }
             }
             if ((doc.document_type === 'pg_consolidated' || doc.document_type === 'pg_marksheet' || doc.document_type.startsWith('pg_sem_')) && higher.length > 0) {
@@ -3494,50 +3585,85 @@ app.get('/api/application/review', authenticateToken, async (req, res) => {
                 if (pgRow && (!pgRow.marksheet_path || !pgRow.consolidated_marksheet_path)) {
                     pgRow.marksheet_path = filePath;
                     pgRow.consolidated_marksheet_path = filePath;
-                    await db.query('UPDATE higher_education SET marksheet_path = ?, consolidated_marksheet_path = ? WHERE application_id = ? AND level = "PG"', [filePath, filePath, appId]);
+                    await db.query('UPDATE higher_education SET marksheet_path = ?, consolidated_marksheet_path = ? WHERE user_id = ? AND level = "PG"', [filePath, filePath, userId]);
                 }
             }
         }
 
-        const hasDoc = (type) => docs.some(d => d.document_type?.toLowerCase() === type.toLowerCase());
+        // Flexible doc check — matches Photo/photo, ID Proof/id_proof, community_cert/Community Certificate etc.
+        const hasDoc = (type) => docs.some(d => {
+            const dt = (d.document_type || '').toLowerCase().replace(/[_\s-]/g, '');
+            const t  = type.toLowerCase().replace(/[_\s-]/g, '');
+            return dt === t || dt.includes(t) || t.includes(dt);
+        });
 
         const [uploadSettings] = await db.query('SELECT file_type, is_active FROM file_upload_settings');
         const settingsMap = {};
         uploadSettings.forEach(s => { settingsMap[s.file_type] = s.is_active !== 0; });
 
         const isSslcActive = settingsMap['10th Standard Marksheet'] !== false;
-        const isHscActive = settingsMap['12th Standard Marksheet'] !== false;
-        const isUgActive = settingsMap['UG Degree Documents'] !== false;
-        const isPgActive = settingsMap['PG Degree Documents'] !== false;
+        const isHscActive  = settingsMap['12th Standard Marksheet'] !== false;
+        const isUgActive   = settingsMap['UG Degree Documents'] !== false;
+        const isPgActive   = settingsMap['PG Degree Documents'] !== false;
+        const isDiplomaActive    = settingsMap['Mark Sheet'] !== false;
+        const isMphilActive      = settingsMap['Mark Sheet'] !== false;
+        const isIntegratedActive = settingsMap['5-Year Integrated Course'] !== false;
 
         const isPhotoActive = settingsMap['Photo'] !== false;
-        const isSigActive = settingsMap['Signature'] !== false;
-        const isIdActive = settingsMap['ID Proof'] !== false;
-        const isCcActive = settingsMap['Community Certificate'] !== false;
-        const isPcActive = settingsMap['PC Certificate'] !== false;
+        const isSigActive   = settingsMap['Signature'] !== false;
+        const isIdActive    = settingsMap['ID Proof'] !== false;
+        const isCcActive    = settingsMap['Community Certificate'] !== false;
+        const isPcActive    = settingsMap['PC Certificate'] !== false;
 
-        const hasSslcChecked = application.has_sslc !== 0;
-        const hasHscChecked = application.has_hsc !== 0;
-        const hasUgChecked = application.has_ug !== 0;
-        const hasPgChecked = application.has_pg !== 0;
+        // Respect student's own has_* flags — if they didn't check a section, don't require it
+        const hasSslcChecked     = application.has_sslc       == null ? true : application.has_sslc       != 0;
+        const hasHscChecked      = application.has_hsc        == null ? true : application.has_hsc        != 0;
+        const hasUgChecked       = application.has_ug         == null ? true : application.has_ug         != 0;
+        const hasPgChecked       = application.has_pg         == null ? true : application.has_pg         != 0;
+        const hasDiplomaChecked  = application.has_diploma    == null ? false : application.has_diploma   != 0;
+        const hasMphilChecked    = application.has_mphil      == null ? false : application.has_mphil     != 0;
+        const hasIntChecked      = application.has_integrated == null ? false : application.has_integrated != 0;
 
-        // Check school education details
+        // ── School education ──────────────────────────────────────────────────
         const sslc = school.find(s => s.level === 'SSLC') || {};
-        const hsc = school.find(s => s.level === 'HSC') || {};
-        const isSslcOk = (!isSslcActive || !hasSslcChecked) || !!(sslc.institution_name && sslc.board_id && sslc.passing_year && sslc.percentage && sslc.marksheet_path);
-        const isHscOk = (!isHscActive || !hasHscChecked) || !!(hsc.institution_name && hsc.board_id && hsc.passing_year && hsc.percentage && hsc.marksheet_path);
+        const hsc  = school.find(s => s.level === 'HSC')  || {};
+        const hasSslcSheet = !!(sslc.marksheet_path) || hasDoc('sslc_marksheet') || hasDoc('school_education.0_marksheet');
+        const hasHscSheet  = !!(hsc.marksheet_path)  || hasDoc('hsc_marksheet')  || hasDoc('school_education.1_marksheet');
+        const isSslcOk = (!isSslcActive || !hasSslcChecked) || !!(sslc.institution_name && sslc.board_id && sslc.passing_year && sslc.percentage && hasSslcSheet);
+        const isHscOk  = (!isHscActive  || !hasHscChecked)  || !!(hsc.institution_name  && hsc.board_id  && hsc.passing_year  && hsc.percentage  && hasHscSheet);
 
-        // Check higher education details
-        const ug = higher.find(h => h.level === 'UG') || {};
-        const pg = higher.find(h => h.level === 'PG') || {};
-        const isUgOk = (!isUgActive || !hasUgChecked) || !!(ug.institution_name && ug.degree_id && ug.passing_year && ug.score_value && (ug.marksheet_path || ug.consolidated_marksheet_path));
-        const isPgOk = (!isPgActive || !hasPgChecked) || !!(pg.institution_name && pg.degree_id && pg.passing_year && pg.score_value && (pg.marksheet_path || pg.consolidated_marksheet_path));
+        // ── Higher education ──────────────────────────────────────────────────
+        const ug         = higher.find(h => h.level === 'UG')         || {};
+        const pg         = higher.find(h => h.level === 'PG')         || {};
+        const diploma    = higher.find(h => h.level === 'Diploma')    || {};
+        const mphil      = higher.find(h => h.level === 'M.Phil')     || {};
+        const integrated = higher.find(h => h.level === 'Integrated') || {};
 
+        // Accept degree_name OR degree_id
+        const ugHasDegree   = !!(ug.degree_id   || ug.degree_name);
+        const pgHasDegree   = !!(pg.degree_id   || pg.degree_name);
+        const dipHasDegree  = !!(diploma.degree_id  || diploma.degree_name);
+        const mphHasDegree  = !!(mphil.degree_id    || mphil.degree_name);
+
+        // Accept marksheet from education row OR from application_documents
+        const ugHasSheet    = !!(ug.marksheet_path || ug.consolidated_marksheet_path)             || hasDoc('ug_consolidated')       || hasDoc('ug_marksheet');
+        const pgHasSheet    = !!(pg.marksheet_path || pg.consolidated_marksheet_path)             || hasDoc('pg_consolidated')       || hasDoc('pg_marksheet');
+        const dipHasSheet   = !!(diploma.marksheet_path || diploma.consolidated_marksheet_path)   || hasDoc('diploma_consolidated')  || hasDoc('diploma_marksheet');
+        const mphHasSheet   = !!(mphil.marksheet_path  || mphil.consolidated_marksheet_path)      || hasDoc('mphil_consolidated')    || hasDoc('mphil_marksheet');
+        const intHasSheet   = !!(integrated.marksheet_path || integrated.consolidated_marksheet_path) || hasDoc('integrated_consolidated') || hasDoc('integrated_marksheet');
+
+        const isUgOk   = (!isUgActive   || !hasUgChecked)       || !!(ug.institution_name       && ugHasDegree  && ug.passing_year       && ug.score_value       && ugHasSheet);
+        const isPgOk   = (!isPgActive   || !hasPgChecked)       || !!(pg.institution_name       && pgHasDegree  && pg.passing_year       && pg.score_value       && pgHasSheet);
+        const isDipOk  = (!isDiplomaActive || !hasDiplomaChecked) || !!(diploma.institution_name  && dipHasDegree && diploma.passing_year  && diploma.score_value  && dipHasSheet);
+        const isMphOk  = (!isMphilActive   || !hasMphilChecked)   || !!(mphil.institution_name    && mphHasDegree && mphil.passing_year    && mphil.score_value    && mphHasSheet);
+        const isIntOk  = (!isIntegratedActive || !hasIntChecked)  || !!(integrated.institution_name && integrated.university_name && integrated.passing_year && integrated.score_value && intHasSheet);
+
+        // ── Documents ─────────────────────────────────────────────────────────
         const isPcEnabled = [1, '1', 'Yes'].includes(application.is_physically_challenged);
         const checks = {
             personalInfo: !!(application.applicant_name && application.dob && application.gender && application.community),
             contactInfo:  !!(application.mobile && application.email && application.address_1 && application.state && application.district && application.pincode),
-            academicInfo: !!(application.subject && application.exam_center_1 && application.exam_center_2 && isSslcOk && isHscOk && isUgOk && isPgOk),
+            academicInfo: !!(application.subject && application.exam_center_1 && application.exam_center_2 && isSslcOk && isHscOk && isUgOk && isPgOk && isDipOk && isMphOk && isIntOk),
             documents:    (!isPhotoActive || hasDoc('photo')) && 
                           (!isSigActive || hasDoc('signature')) && 
                           (!isIdActive || hasDoc('id_proof')) && 
@@ -3568,17 +3694,33 @@ app.get('/api/application/review', authenticateToken, async (req, res) => {
         if (!application.exam_center_1) missingFields.academicInfo.push('Exam Center Preference 1');
         if (!application.exam_center_2) missingFields.academicInfo.push('Exam Center Preference 2');
         if (!isSslcOk) missingFields.academicInfo.push('SSLC (10th) Details & Marksheet');
-        if (!isHscOk) missingFields.academicInfo.push('HSC (12th) Details & Marksheet');
-        if (!isUgOk) missingFields.academicInfo.push('UG Details & Marksheet');
-        if (!isPgOk) missingFields.academicInfo.push('PG Details & Marksheet');
+        if (!isHscOk)  missingFields.academicInfo.push('HSC (12th) Details & Marksheet');
+        if (!isUgOk)   missingFields.academicInfo.push('UG Details & Marksheet');
+        if (!isPgOk)   missingFields.academicInfo.push('PG Details & Marksheet');
+        if (!isDipOk)  missingFields.academicInfo.push('Diploma Details & Marksheet');
+        if (!isMphOk)  missingFields.academicInfo.push('M.Phil Details & Marksheet');
+        if (!isIntOk)  missingFields.academicInfo.push('5-Year Integrated Details & Marksheet');
 
-        if (!hasDoc('photo')) missingFields.documents.push('Passport Photo');
-        if (!hasDoc('signature')) missingFields.documents.push('Signature');
-        if (!hasDoc('id_proof')) missingFields.documents.push('ID Proof');
-        if (isPcEnabled && !hasDoc('pc_cert')) missingFields.documents.push('PC Certificate');
+        if (isPhotoActive && !hasDoc('photo'))       missingFields.documents.push('Passport Photo');
+        if (isSigActive   && !hasDoc('signature'))   missingFields.documents.push('Signature');
+        if (isIdActive    && !hasDoc('id_proof'))     missingFields.documents.push('ID Proof');
+        if (isPcEnabled   && isPcActive && !hasDoc('pc_cert')) missingFields.documents.push('PC Certificate');
+        if (application.community !== 'OC' && isCcActive && !hasDoc('community_cert')) missingFields.documents.push('Community Certificate');
 
-        const totalRequired = isPcEnabled ? 21 : 20;
-        const missingCount = missingFields.personalInfo.length + missingFields.contactInfo.length + missingFields.academicInfo.length + missingFields.documents.length;
+        // Dynamic total: count only required items
+        const academicRequired = 3 // subject + 2 exam centres
+            + (isSslcActive && hasSslcChecked ? 1 : 0)
+            + (isHscActive  && hasHscChecked  ? 1 : 0)
+            + (isUgActive   && hasUgChecked   ? 1 : 0)
+            + (isPgActive   && hasPgChecked   ? 1 : 0)
+            + (isDiplomaActive    && hasDiplomaChecked ? 1 : 0)
+            + (isMphilActive      && hasMphilChecked   ? 1 : 0)
+            + (isIntegratedActive && hasIntChecked     ? 1 : 0);
+        const docsRequired = (isPhotoActive ? 1 : 0) + (isSigActive ? 1 : 0) + (isIdActive ? 1 : 0)
+            + (isPcEnabled && isPcActive ? 1 : 0)
+            + (application.community !== 'OC' && isCcActive ? 1 : 0);
+        const totalRequired = 4 + 6 + academicRequired + docsRequired; // personal(4) + contact(6)
+        const missingCount  = missingFields.personalInfo.length + missingFields.contactInfo.length + missingFields.academicInfo.length + missingFields.documents.length;
         const completionPct = Math.max(0, Math.round(((totalRequired - missingCount) / totalRequired) * 100));
 
         res.json({
@@ -3599,9 +3741,9 @@ app.get('/api/application/review', authenticateToken, async (req, res) => {
     }
 });
 
-// POST /api/application/final-submit — validate and mark AWAITING_PAYMENT (deferred payment flow)
+// POST /api/application/final-submit â€” validate and mark AWAITING_PAYMENT (deferred payment flow)
 // payment_decision: 'pay_now' | 'pay_later'  (required)
-// Application is NOT locked here — only locked after payment succeeds.
+// Application is NOT locked here â€” only locked after payment succeeds.
 app.post('/api/application/final-submit', authenticateToken, async (req, res) => {
     const { declarationAccepted, payment_decision } = req.body;
     if (!declarationAccepted) {
@@ -3612,11 +3754,19 @@ app.post('/api/application/final-submit', authenticateToken, async (req, res) =>
     }
 
     try {
-        const [userRows] = await db.query('SELECT application_id FROM users WHERE id = ?', [req.user.id]);
+        const userId = req.user.id;
+        const [userRows] = await db.query('SELECT application_id FROM users WHERE id = ?', [userId]);
         if (!userRows.length) return res.status(404).json({ success: false, message: 'User not found' });
         const appId = userRows[0].application_id;
 
-        const [apps] = await db.query('SELECT * FROM applications WHERE application_id = ?', [appId]);
+        // Pre-payment students don't have application_id yet — fall back to user_id lookup
+        let apps;
+        if (appId) {
+            [apps] = await db.query('SELECT * FROM applications WHERE application_id = ?', [appId]);
+        }
+        if (!apps || !apps.length) {
+            [apps] = await db.query('SELECT * FROM applications WHERE user_id = ?', [userId]);
+        }
         if (!apps.length) return res.status(404).json({ success: false, message: 'Application not found' });
 
         const application = apps[0];
@@ -3630,8 +3780,8 @@ app.post('/api/application/final-submit', authenticateToken, async (req, res) =>
         if (application.status === 'AWAITING_PAYMENT' || application.status === 'PAYMENT_PENDING') {
             if (application.payment_decision !== payment_decision) {
                 await db.query(
-                    `UPDATE applications SET payment_decision = ?, updated_at = NOW() WHERE application_id = ?`,
-                    [payment_decision, appId]
+                    `UPDATE applications SET payment_decision = ?, updated_at = NOW() WHERE user_id = ?`,
+                    [payment_decision, userId]
                 );
             }
             return res.json({
@@ -3649,48 +3799,79 @@ app.post('/api/application/final-submit', authenticateToken, async (req, res) =>
         // Session must allow submissions
         const [sessionCheck] = await db.query(
             `SELECT s.application_open FROM users u JOIN sessions s ON u.session_id = s.id WHERE u.id = ?`,
-            [req.user.id]
+            [userId]
         );
         if (!sessionCheck.length || !sessionCheck[0].application_open) {
             return res.status(403).json({ success: false, message: 'Application submissions are currently closed. Please try again later.' });
         }
 
-        // Mandatory field validation
-        const [school] = await db.query('SELECT * FROM school_education WHERE application_id = ?', [appId]);
-        const [higher] = await db.query('SELECT * FROM higher_education WHERE application_id = ?', [appId]);
-        const [docs]   = await db.query('SELECT * FROM application_documents WHERE application_id = ? OR user_id = ?', [appId, req.user.id]);
+        // Always query education/docs by user_id (works pre- and post-payment)
+        const eduWhere  = appId ? 'user_id = ? OR application_id = ?' : 'user_id = ?';
+        const eduParams = appId ? [userId, appId] : [userId];
+        const [school] = await db.query(`SELECT * FROM school_education WHERE ${eduWhere}`, eduParams);
+        const [higher] = await db.query(`SELECT * FROM higher_education WHERE ${eduWhere}`, eduParams);
+        const [docs]   = await db.query('SELECT * FROM application_documents WHERE user_id = ?', [userId]);
 
-        const hasDoc = (type) => docs.some(d => d.document_type?.toLowerCase() === type.toLowerCase());
+        const hasDoc = (type) => docs.some(d => {
+            const dt = (d.document_type || '').toLowerCase().replace(/[_\s-]/g, '');
+            const t  = type.toLowerCase().replace(/[_\s-]/g, '');
+            return dt === t || dt.includes(t) || t.includes(dt);
+        });
 
         const [uploadSettings] = await db.query('SELECT file_type, is_active FROM file_upload_settings');
         const settingsMap = {};
         uploadSettings.forEach(s => { settingsMap[s.file_type] = s.is_active !== 0; });
 
-        const isSslcActive = settingsMap['10th Standard Marksheet'] !== false;
-        const isHscActive = settingsMap['12th Standard Marksheet'] !== false;
-        const isUgActive = settingsMap['UG Degree Documents'] !== false;
-        const isPgActive = settingsMap['PG Degree Documents'] !== false;
+        const isSslcActive     = settingsMap['10th Standard Marksheet'] !== false;
+        const isHscActive      = settingsMap['12th Standard Marksheet'] !== false;
+        const isUgActive       = settingsMap['UG Degree Documents'] !== false;
+        const isPgActive       = settingsMap['PG Degree Documents'] !== false;
+        const isDiplomaActive  = settingsMap['Mark Sheet'] !== false;
+        const isMphilActive    = settingsMap['Mark Sheet'] !== false;
+        const isIntActive      = settingsMap['5-Year Integrated Course'] !== false;
+        const isPhotoActive    = settingsMap['Photo'] !== false;
+        const isSigActive      = settingsMap['Signature'] !== false;
+        const isIdActive       = settingsMap['ID Proof'] !== false;
+        const isCcActive       = settingsMap['Community Certificate'] !== false;
+        const isPcActive       = settingsMap['PC Certificate'] !== false;
 
-        const isPhotoActive = settingsMap['Photo'] !== false;
-        const isSigActive = settingsMap['Signature'] !== false;
-        const isIdActive = settingsMap['ID Proof'] !== false;
-        const isCcActive = settingsMap['Community Certificate'] !== false;
-        const isPcActive = settingsMap['PC Certificate'] !== false;
-
-        const hasSslcChecked = application.has_sslc !== 0;
-        const hasHscChecked = application.has_hsc !== 0;
-        const hasUgChecked = application.has_ug !== 0;
-        const hasPgChecked = application.has_pg !== 0;
+        const hasSslcChecked  = application.has_sslc       == null ? true  : application.has_sslc       != 0;
+        const hasHscChecked   = application.has_hsc        == null ? true  : application.has_hsc        != 0;
+        const hasUgChecked    = application.has_ug         == null ? true  : application.has_ug         != 0;
+        const hasPgChecked    = application.has_pg         == null ? true  : application.has_pg         != 0;
+        const hasDipChecked   = application.has_diploma    == null ? false : application.has_diploma    != 0;
+        const hasMphChecked   = application.has_mphil      == null ? false : application.has_mphil      != 0;
+        const hasIntChecked   = application.has_integrated == null ? false : application.has_integrated != 0;
 
         const sslc = school.find(s => s.level === 'SSLC') || {};
         const hsc  = school.find(s => s.level === 'HSC')  || {};
-        const isSslcOk = (!isSslcActive || !hasSslcChecked) || !!(sslc.institution_name && sslc.board_id && sslc.passing_year && sslc.percentage && sslc.marksheet_path);
-        const isHscOk  = (!isHscActive || !hasHscChecked)  || !!(hsc.institution_name  && hsc.board_id  && hsc.passing_year  && hsc.percentage  && hsc.marksheet_path);
+        const hasSslcSheet = !!(sslc.marksheet_path) || hasDoc('sslc_marksheet') || hasDoc('school_education.0_marksheet');
+        const hasHscSheet  = !!(hsc.marksheet_path)  || hasDoc('hsc_marksheet')  || hasDoc('school_education.1_marksheet');
+        const isSslcOk = (!isSslcActive || !hasSslcChecked) || !!(sslc.institution_name && sslc.board_id && sslc.passing_year && sslc.percentage && hasSslcSheet);
+        const isHscOk  = (!isHscActive  || !hasHscChecked)  || !!(hsc.institution_name  && hsc.board_id  && hsc.passing_year  && hsc.percentage  && hasHscSheet);
 
-        const ug = higher.find(h => h.level === 'UG') || {};
-        const pg = higher.find(h => h.level === 'PG') || {};
-        const isUgOk = (!isUgActive || !hasUgChecked) || !!(ug.institution_name && ug.degree_id && ug.passing_year && ug.score_value && (ug.marksheet_path || ug.consolidated_marksheet_path));
-        const isPgOk = (!isPgActive || !hasPgChecked) || !!(pg.institution_name && pg.degree_id && pg.passing_year && pg.score_value && (pg.marksheet_path || pg.consolidated_marksheet_path));
+        const ug         = higher.find(h => h.level === 'UG')         || {};
+        const pg         = higher.find(h => h.level === 'PG')         || {};
+        const diploma    = higher.find(h => h.level === 'Diploma')    || {};
+        const mphil      = higher.find(h => h.level === 'M.Phil')     || {};
+        const integrated = higher.find(h => h.level === 'Integrated') || {};
+
+        const ugHasDeg  = !!(ug.degree_id   || ug.degree_name);
+        const pgHasDeg  = !!(pg.degree_id   || pg.degree_name);
+        const dipHasDeg = !!(diploma.degree_id  || diploma.degree_name);
+        const mphHasDeg = !!(mphil.degree_id    || mphil.degree_name);
+
+        const ugHasSheet  = !!(ug.marksheet_path       || ug.consolidated_marksheet_path)       || hasDoc('ug_consolidated')          || hasDoc('ug_marksheet');
+        const pgHasSheet  = !!(pg.marksheet_path       || pg.consolidated_marksheet_path)       || hasDoc('pg_consolidated')          || hasDoc('pg_marksheet');
+        const dipHasSheet = !!(diploma.marksheet_path  || diploma.consolidated_marksheet_path)  || hasDoc('diploma_consolidated')     || hasDoc('diploma_marksheet');
+        const mphHasSheet = !!(mphil.marksheet_path    || mphil.consolidated_marksheet_path)    || hasDoc('mphil_consolidated')       || hasDoc('mphil_marksheet');
+        const intHasSheet = !!(integrated.marksheet_path || integrated.consolidated_marksheet_path) || hasDoc('integrated_consolidated') || hasDoc('integrated_marksheet');
+
+        const isUgOk  = (!isUgActive  || !hasUgChecked)  || !!(ug.institution_name       && ugHasDeg  && ug.passing_year       && ug.score_value       && ugHasSheet);
+        const isPgOk  = (!isPgActive  || !hasPgChecked)  || !!(pg.institution_name       && pgHasDeg  && pg.passing_year       && pg.score_value       && pgHasSheet);
+        const isDipOk = (!isDiplomaActive || !hasDipChecked) || !!(diploma.institution_name  && dipHasDeg && diploma.passing_year  && diploma.score_value  && dipHasSheet);
+        const isMphOk = (!isMphilActive   || !hasMphChecked) || !!(mphil.institution_name    && mphHasDeg && mphil.passing_year    && mphil.score_value    && mphHasSheet);
+        const isIntOk = (!isIntActive     || !hasIntChecked) || !!(integrated.institution_name && integrated.university_name && integrated.passing_year && integrated.score_value && intHasSheet);
 
         const missing = [];
         if (!application.applicant_name) missing.push('Applicant Name');
@@ -3706,17 +3887,18 @@ app.post('/api/application/final-submit', authenticateToken, async (req, res) =>
         if (!application.subject)        missing.push('Subject / Discipline');
         if (!application.exam_center_1)  missing.push('Exam Center Preference 1');
         if (!application.exam_center_2)  missing.push('Exam Center Preference 2');
-        if (isSslcActive && hasSslcChecked && !isSslcOk) missing.push('SSLC (10th) Details & Marksheet');
-        if (isHscActive && hasHscChecked && !isHscOk)  missing.push('HSC (12th) Details & Marksheet');
-        if (isUgActive && hasUgChecked && !isUgOk)   missing.push('UG Details & Marksheet');
-        if (isPgActive && hasPgChecked && !isPgOk)   missing.push('PG Details & Marksheet');
-        if (isPhotoActive && !hasDoc('photo'))     missing.push('Passport Photo');
-        if (isSigActive && !hasDoc('signature')) missing.push('Signature');
-        if (isIdActive && !hasDoc('id_proof'))  missing.push('ID Proof');
+        if (isSslcActive   && hasSslcChecked && !isSslcOk) missing.push('SSLC (10th) Details & Marksheet');
+        if (isHscActive    && hasHscChecked  && !isHscOk)  missing.push('HSC (12th) Details & Marksheet');
+        if (isUgActive     && hasUgChecked   && !isUgOk)   missing.push('UG Details & Marksheet');
+        if (isPgActive     && hasPgChecked   && !isPgOk)   missing.push('PG Details & Marksheet');
+        if (isDiplomaActive && hasDipChecked && !isDipOk)  missing.push('Diploma Details & Marksheet');
+        if (isMphilActive  && hasMphChecked  && !isMphOk)  missing.push('M.Phil Details & Marksheet');
+        if (isIntActive    && hasIntChecked  && !isIntOk)  missing.push('5-Year Integrated Details & Marksheet');
+        if (isPhotoActive && !hasDoc('photo'))         missing.push('Passport Photo');
+        if (isSigActive   && !hasDoc('signature'))     missing.push('Signature');
+        if (isIdActive    && !hasDoc('id_proof'))       missing.push('ID Proof');
         if (application.community !== 'OC' && isCcActive && !hasDoc('community_cert')) missing.push('Community Certificate');
-        if ([1, '1', 'Yes'].includes(application.is_physically_challenged) && isPcActive && !hasDoc('pc_cert')) {
-            missing.push('PC Certificate');
-        }
+        if ([1, '1', 'Yes'].includes(application.is_physically_challenged) && isPcActive && !hasDoc('pc_cert')) missing.push('PC Certificate');
 
         if (missing.length > 0) {
             return res.status(400).json({ success: false, message: 'Please complete all mandatory fields before submitting.', missingFields: missing });
@@ -3735,8 +3917,8 @@ app.post('/api/application/final-submit', authenticateToken, async (req, res) =>
                  payment_decision = ?,
                  payment_due_date = ?,
                  updated_at = NOW()
-             WHERE application_id = ?`,
-            [payment_decision, paymentDueDate, appId]
+             WHERE user_id = ?`,
+            [payment_decision, paymentDueDate, userId]
         );
 
         res.json({
@@ -3910,7 +4092,7 @@ notificationRouter.put('/mark-all-read', authenticateToken, async (req, res) => 
 
 app.use('/api/notifications', notificationRouter);
 
-// ── Test Email Endpoint (Brevo Verification) ──────────────────────────────────
+// â”€â”€ Test Email Endpoint (Brevo Verification) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.get('/api/test-email', async (req, res) => {
     try {
         const targetEmail = req.query.to || req.query.email;
@@ -3923,10 +4105,10 @@ app.get('/api/test-email', async (req, res) => {
         const { sendTransacEmail } = require('../../backend/src/services/emailService');
         const info = await sendTransacEmail({
             to: targetEmail,
-            subject: 'Brevo Transactional Test Email — PhD Portal',
+            subject: 'Brevo Transactional Test Email â€” PhD Portal',
             html: `
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-                    <h2 style="color: #2563eb;">⚡ Brevo Transactional Email Active</h2>
+                    <h2 style="color: #2563eb;">âš¡ Brevo Transactional Email Active</h2>
                     <p>Congratulations! This test email has been successfully sent via the **Brevo (Sendinblue)** Transactional API over secure HTTPS (Port 443).</p>
                     <p style="margin-top: 20px; color: #666; font-size: 13px;">This verifies that your Render deployment is completely production-ready and bypasses SMTP port blocking!</p>
                 </div>
@@ -3949,11 +4131,11 @@ app.get('/api/test-email', async (req, res) => {
     }
 });
 
-// ── Payment System ────────────────────────────────────────────────────────────
+// â”€â”€ Payment System â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const paymentRoutes = require('./routes/payment');
 app.use('/api/payment', paymentRoutes);
 
-// Global error handler — must be last middleware
+// Global error handler â€” must be last middleware
 app.use((err, _req, res, _next) => {
     console.error('UNHANDLED SERVER ERROR:', err);
     res.status(err.status || 500).json({
@@ -3965,3 +4147,4 @@ app.use((err, _req, res, _next) => {
 app.listen(process.env.STUDENT_BACKEND_PORT || 5000, () => {
     console.log(`Student Backend running on port ${process.env.STUDENT_BACKEND_PORT || 5000}`);
 });
+

@@ -27,9 +27,14 @@ const remove = wrap(async req => {
     return null;
 });
 
+const removeAll = wrap(async () => {
+    const deleted = await svc.removeAll();
+    return { deleted };
+});
+
 const getActiveCentres = wrap(() => svc.getActiveCentres());
 const listCapacityConfigs = wrap(() => svc.listCapacityConfigs());
 const upsertCapacityConfig = wrap(req => svc.upsertCapacityConfig(req.body));
 const getCapacityByDesignation = wrap(req => svc.getCapacityByDesignation(req.params.designationId));
 
-module.exports = { list, get, create, update, updateStatus, remove, getActiveCentres, listCapacityConfigs, upsertCapacityConfig, getCapacityByDesignation };
+module.exports = { list, get, create, update, updateStatus, remove, removeAll, getActiveCentres, listCapacityConfigs, upsertCapacityConfig, getCapacityByDesignation };

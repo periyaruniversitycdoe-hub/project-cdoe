@@ -56,3 +56,6 @@ logs/*.log
 
 # ── Local Database Data Directory ──
 database/mysql-data/
+
+# ── User Uploads ──────────────────────────────────────────────────────────────
+uploads/

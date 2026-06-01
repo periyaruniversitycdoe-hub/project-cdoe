@@ -119,6 +119,11 @@ async function remove(id) {
     return result.affectedRows;
 }
 
+async function removeAll() {
+    const [result] = await pool.query('DELETE FROM supervisors');
+    return result.affectedRows;
+}
+
 async function isEmailTaken(email, excludeId = null) {
     const q = excludeId
         ? 'SELECT id FROM supervisors WHERE email = ? AND id != ?'
@@ -128,4 +133,4 @@ async function isEmailTaken(email, excludeId = null) {
     return !!row;
 }
 
-module.exports = { findAll, findById, getDisciplines, create, update, upsertDisciplines, updateStatus, remove, isEmailTaken };
+module.exports = { findAll, findById, getDisciplines, create, update, upsertDisciplines, updateStatus, remove, removeAll, isEmailTaken };
