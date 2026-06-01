@@ -6,7 +6,7 @@ import {
   ChevronRight, Ticket, CalendarRange, MapPin, GraduationCap,
   IndianRupee, CreditCard, UserCheck, BookOpen, X, Award, Users,
   BarChart3, ShieldCheck, UserSquare2, Building2, Database, History, Layers, KeyRound,
-  Home
+  Home, Megaphone
 } from 'lucide-react';
 import { useSession } from '../contexts/SessionContext';
 
@@ -58,6 +58,8 @@ const menuStructure = [
   {
     group: 'COMMUNICATION',
     items: [
+      { icon: Megaphone,       label: 'Announcement Mgmt',     path: '/announcements' },
+      { icon: BookOpen,        label: 'News & Announcements',  path: '/news-announcements' },
       { icon: Layers,          label: 'Email Categories',       path: '/email-templates' },
       { icon: Database,        label: 'Email Services',        path: '/email-services' },
       { icon: History,         label: 'Email Logs',            path: '/email-logs' },

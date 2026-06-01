@@ -47,6 +47,8 @@ import CredentialManagement from './pages/CredentialManagement';
 import Reports from './pages/Reports';
 import RosterManagement from './pages/RosterManagement';
 import PortalHomeManagement from './pages/PortalHomeManagement';
+import AnnouncementManagement from './pages/AnnouncementManagement';
+import NewsAnnouncementsManagement from './pages/NewsAnnouncementsManagement';
 
 // Global 401 interceptor — clears stale token and forces re-login
 axios.interceptors.response.use(
@@ -139,6 +141,12 @@ function App() {
 
         {/* Portal Home Management */}
         <Route path="/portal-home" element={<ProtectedRoute><PortalHomeManagement /></ProtectedRoute>} />
+
+        {/* Announcement Management Engine */}
+        <Route path="/announcements" element={<ProtectedRoute><AnnouncementManagement /></ProtectedRoute>} />
+
+        {/* News & Announcements Module */}
+        <Route path="/news-announcements" element={<ProtectedRoute><NewsAnnouncementsManagement /></ProtectedRoute>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

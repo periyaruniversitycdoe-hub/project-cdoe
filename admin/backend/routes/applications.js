@@ -203,9 +203,9 @@ router.put('/entrance-settings/config', verifyToken, isAdmin, async (req, res) =
 router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
   try {
     const {
-      search, status, session_id, payment_status,
+      search, status, session_id, year, month, course, department, result_status, payment_status,
       attendance_status, qualification_status, admission_approved,
-      report_type = 'applications'
+      report_type = 'applications', ignore_filters
     } = req.query;
 
     // ── 1. Resolve session ────────────────────────────────────
@@ -213,20 +213,32 @@ router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
     let sessionLabel      = 'All Sessions';
     const sid = session_id;
 
-    if (!sid || sid === 'active') {
-      const [[active]] = await pool.execute(
-        'SELECT id, month, year FROM sessions WHERE is_active = 1 LIMIT 1'
-      );
-      if (active) {
-        resolvedSessionId = active.id;
-        sessionLabel      = `${active.month} ${active.year} (Active)`;
+    if (year || month) {
+      if (sid && sid !== 'all' && sid !== 'active') {
+        resolvedSessionId = sid;
+        const [[sess]] = await pool.execute(
+          'SELECT month, year FROM sessions WHERE id = ? LIMIT 1', [resolvedSessionId]
+        );
+        if (sess) sessionLabel = `${sess.month} ${sess.year}`;
+      } else {
+        sessionLabel = `Filtered (${year || ''} ${month || ''})`;
       }
-    } else if (sid !== 'all') {
-      resolvedSessionId = sid;
-      const [[sess]] = await pool.execute(
-        'SELECT month, year FROM sessions WHERE id = ? LIMIT 1', [resolvedSessionId]
-      );
-      if (sess) sessionLabel = `${sess.month} ${sess.year}`;
+    } else {
+      if (!sid || sid === 'active') {
+        const [[active]] = await pool.execute(
+          'SELECT id, month, year FROM sessions WHERE is_active = 1 LIMIT 1'
+        );
+        if (active) {
+          resolvedSessionId = active.id;
+          sessionLabel      = `${active.month} ${active.year} (Active)`;
+        }
+      } else if (sid !== 'all') {
+        resolvedSessionId = sid;
+        const [[sess]] = await pool.execute(
+          'SELECT month, year FROM sessions WHERE id = ? LIMIT 1', [resolvedSessionId]
+        );
+        if (sess) sessionLabel = `${sess.month} ${sess.year}`;
+      }
     }
 
     // ── 2. University settings ────────────────────────────────
@@ -244,46 +256,110 @@ router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
       }
     } catch (_) {}
 
+    // Get pass mark used
+    const [[passSettings]] = await pool.execute('SELECT passing_mark FROM entrance_settings WHERE id = 1');
+    const passMarkUsed = passSettings ? parseFloat(passSettings.passing_mark) : 50;
+
+    // Get published status
+    const [[pubSettings]] = await pool.execute('SELECT entrance_result_publish FROM settings LIMIT 1');
+    const publishedStatus = pubSettings && pubSettings.entrance_result_publish ? 'Published' : 'Not Published';
+
     // ── 3. Build SQL query ────────────────────────────────────
+    const conditions = [];
+    const params     = [];
+    const isIgnore   = ignore_filters === 'true';
+
+    if (!isIgnore) {
+      if (resolvedSessionId) { conditions.push('COALESCE(a.session_id, u.session_id) = ?'); params.push(resolvedSessionId); }
+      if (search) {
+        conditions.push('(u.full_name LIKE ? OR a.application_id LIKE ? OR u.email LIKE ? OR a.subject LIKE ?)');
+        const w = `%${search}%`;
+        params.push(w, w, w, w);
+      }
+      if (status && status !== 'All')   { conditions.push('a.status = ?');               params.push(status); }
+      if (payment_status)               { conditions.push('a.payment_status = ?');        params.push(payment_status); }
+      if (attendance_status)            { conditions.push('a.attendance_status = ?');     params.push(attendance_status); }
+      if (qualification_status)         { conditions.push('a.qualification_status = ?');  params.push(qualification_status); }
+      if (year)                         { conditions.push('s.year = ?');                 params.push(parseInt(year, 10)); }
+      if (month)                        { conditions.push('s.month = ?');                params.push(month); }
+      if (department)                   { conditions.push('a.subject = ?');               params.push(department); }
+      if (course) {
+        if (course === 'Integrated Course') {
+          conditions.push("a.has_integrated = 1");
+        } else if (course === 'M.Phil') {
+          conditions.push("(a.has_mphil = 1 OR a.program_offered_name LIKE 'M.Phil.%')");
+        } else if (course === 'Part-Time Ph.D') {
+          conditions.push("a.category = 'Part Time' AND a.has_integrated = 0 AND a.has_mphil = 0 AND (a.program_offered_name IS NULL OR a.program_offered_name NOT LIKE 'M.Phil.%')");
+        } else if (course === 'Full-Time Ph.D') {
+          conditions.push("a.category = 'Full Time' AND a.has_integrated = 0 AND a.has_mphil = 0 AND (a.program_offered_name IS NULL OR a.program_offered_name NOT LIKE 'M.Phil.%')");
+        } else if (course === 'Ph.D') {
+          conditions.push("a.has_integrated = 0 AND a.has_mphil = 0 AND (a.program_offered_name IS NULL OR a.program_offered_name NOT LIKE 'M.Phil.%') AND (a.category IS NULL OR (a.category != 'Part Time' AND a.category != 'Full Time'))");
+        }
+      }
+      if (admission_approved !== undefined && admission_approved !== '') {
+        conditions.push('a.admission_approved = ?');
+        params.push(parseInt(admission_approved, 10));
+      }
+      if (result_status && result_status !== 'All') {
+        if (result_status === 'Pass') {
+          conditions.push("a.attendance_status = 'Present' AND a.entrance_mark >= ?");
+          params.push(passMarkUsed);
+        } else if (result_status === 'Fail') {
+          conditions.push("a.attendance_status = 'Present' AND a.entrance_mark < ?");
+          params.push(passMarkUsed);
+        } else if (result_status === 'Absent') {
+          conditions.push("a.attendance_status = 'Absent'");
+        } else if (result_status === 'Pending') {
+          conditions.push("(a.attendance_status IS NULL OR (a.attendance_status = 'Present' AND a.entrance_mark IS NULL))");
+        } else if (result_status === 'Qualified') {
+          conditions.push("a.qualification_status = 'Qualified'");
+        } else if (result_status === 'Not Qualified') {
+          conditions.push("a.qualification_status = 'Failed'");
+        } else if (result_status === 'Direct Qualified') {
+          conditions.push("a.qualification_status = 'Direct Qualified'");
+        }
+      }
+    }
+
+    // Enterprise downstream dependency lock
+    if (req.query.source === 'entrance_marks') {
+      conditions.push("(a.attendance_status IS NOT NULL OR a.entrance_exam_status = 'Exempted')");
+    }
+    if (req.query.source === 'attendance') {
+      conditions.push("EXISTS (SELECT 1 FROM hall_tickets ht WHERE ht.application_id = a.application_id)");
+    }
+
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : 'WHERE 1=1';
+
     let query = `
       SELECT a.id, a.application_id, u.full_name, u.email, a.mobile,
              a.subject, a.status, a.payment_status, a.attendance_status,
              a.entrance_mark, a.qualification_status,
              a.admission_approved, a.remarks,
+             s.year AS session_year, s.month AS session_month,
              CONCAT(s.month, ' ', s.year) AS session_name,
-             a.created_at
+             a.created_at,
+             (CASE
+               WHEN a.has_integrated = 1 THEN 'Integrated Course'
+               WHEN (a.has_mphil = 1 OR a.program_offered_name LIKE 'M.Phil.%') THEN 'M.Phil'
+               WHEN a.category = 'Part Time' THEN 'Part-Time Ph.D'
+               WHEN a.category = 'Full Time' THEN 'Full-Time Ph.D'
+               ELSE 'Ph.D'
+             END) AS applied_course,
+             (CASE
+               WHEN a.attendance_status = 'Absent' THEN 'ABSENT'
+               WHEN a.entrance_mark IS NULL THEN 'PENDING'
+               WHEN a.entrance_mark >= ? THEN 'PASS'
+               ELSE 'FAIL'
+             END) AS result_status
       FROM applications a
       JOIN users u ON a.user_id = u.id
-      LEFT JOIN sessions s ON a.session_id = s.id
-      WHERE 1=1
+      LEFT JOIN sessions s ON s.id = COALESCE(a.session_id, u.session_id)
+      ${whereClause}
+      ORDER BY a.created_at DESC
     `;
-    const params = [];
-
-    if (resolvedSessionId)  { query += ` AND COALESCE(a.session_id, u.session_id) = ?`; params.push(resolvedSessionId); }
-    if (search) {
-      query += ` AND (u.full_name LIKE ? OR a.application_id LIKE ? OR u.email LIKE ? OR a.subject LIKE ?)`;
-      const w = `%${search}%`;
-      params.push(w, w, w, w);
-    }
-    if (status && status !== 'All')   { query += ` AND a.status = ?`;               params.push(status); }
-    if (payment_status)               { query += ` AND a.payment_status = ?`;        params.push(payment_status); }
-    if (attendance_status)            { query += ` AND a.attendance_status = ?`;     params.push(attendance_status); }
-    if (qualification_status)         { query += ` AND a.qualification_status = ?`;  params.push(qualification_status); }
-    if (admission_approved !== undefined && admission_approved !== '') {
-      query += ` AND a.admission_approved = ?`;
-      params.push(parseInt(admission_approved, 10));
-    }
-    
-    // Enterprise downstream dependency lock
-    if (req.query.source === 'entrance_marks') {
-      query += ` AND (a.attendance_status IS NOT NULL OR a.entrance_exam_status = 'Exempted')`;
-    }
-    if (req.query.source === 'attendance') {
-      query += ` AND EXISTS (SELECT 1 FROM hall_tickets ht WHERE ht.application_id = a.application_id)`;
-    }
-    query += ` ORDER BY a.created_at DESC`;
-
-    const [rows] = await pool.execute(query, params);
+    const finalParams = [passMarkUsed, ...params];
+    const [rows] = await pool.execute(query, finalParams);
 
     // ── 4. Column definitions per report type ─────────────────
     const REPORT_CONFIGS = {
@@ -384,28 +460,36 @@ router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
         sheetName:   'Entrance Marks',
         filename:    'entrance_mark_report',
         columns: [
-          { header: 'S.No',                key: 'sno',                  width: 6  },
+          { header: 'Session Year',         key: 'session_year',         width: 14 },
+          { header: 'Session Month',        key: 'session_month',        width: 14 },
           { header: 'Application ID',       key: 'application_id',       width: 18 },
           { header: 'Applicant Name',       key: 'full_name',            width: 26 },
           { header: 'Email',                key: 'email',                width: 30 },
-          { header: 'Mobile',               key: 'mobile',               width: 14 },
-          { header: 'Subject / Department', key: 'subject',              width: 24 },
-          { header: 'Session',              key: 'session_name',         width: 18 },
-          { header: 'Attendance',           key: 'attendance_status',    width: 14 },
+          { header: 'Department',           key: 'subject',              width: 24 },
+          { header: 'Applied Course',       key: 'applied_course',       width: 22 },
+          { header: 'Attendance Status',    key: 'attendance_status',    width: 18 },
           { header: 'Entrance Mark',        key: 'entrance_mark',        width: 14 },
-          { header: 'Qualification Status', key: 'qualification_status', width: 20 },
+          { header: 'Pass Mark Used',       key: 'pass_mark_used',       width: 16 },
+          { header: 'Result Status',        key: 'result_status',        width: 16 },
+          { header: 'Qualification Status', key: 'qualification_status', width: 22 },
+          { header: 'Published Status',     key: 'published_status',     width: 18 },
+          { header: 'Generated Date',       key: 'generated_date',       width: 18 },
         ],
-        mapRow: (r, i) => ({
-          sno:                  i + 1,
+        mapRow: (r) => ({
+          session_year:         r.session_year || '—',
+          session_month:        r.session_month || '—',
           application_id:       r.application_id,
           full_name:            r.full_name,
           email:                r.email,
-          mobile:               r.mobile || '—',
           subject:              r.subject || '—',
-          session_name:         r.session_name || '—',
+          applied_course:       r.applied_course || '—',
           attendance_status:    r.attendance_status || 'Not Set',
           entrance_mark:        r.entrance_mark != null ? r.entrance_mark : '—',
+          pass_mark_used:       passMarkUsed,
+          result_status:        r.result_status || 'PENDING',
           qualification_status: r.qualification_status || 'Pending',
+          published_status:     publishedStatus,
+          generated_date:       new Date().toLocaleDateString('en-IN'),
         }),
       },
       interview: {
@@ -587,6 +671,115 @@ router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
   }
 });
 
+// ─── Filters ──────────────────────────────────────────────────
+
+/**
+ * GET /api/applications/filters
+ * Retrieves distinct years, months, and courses dynamically based on cascade logic.
+ */
+router.get('/filters', verifyToken, isAdmin, async (req, res) => {
+  try {
+    const { year, month, department, source } = req.query;
+    const isEntrance = source === 'entrance_marks';
+
+    // 1. Dynamic Years (Show only years that actually exist in the database)
+    const yearCond = isEntrance ? "AND (a.attendance_status IS NOT NULL OR a.entrance_exam_status = 'Exempted')" : "";
+    const [yearRows] = await pool.execute(`
+      SELECT DISTINCT s.year 
+      FROM applications a
+      JOIN users u ON a.user_id = u.id
+      LEFT JOIN sessions s ON s.id = COALESCE(a.session_id, u.session_id)
+      WHERE s.year IS NOT NULL ${yearCond}
+      ORDER BY s.year DESC
+    `);
+    const years = yearRows.map(r => r.year);
+
+    // 2. Dynamic Months (Show only months that exist in database, filtered by year if provided)
+    const monthConds = ['s.month IS NOT NULL'];
+    const monthParams = [];
+    if (year) {
+      monthConds.push('s.year = ?');
+      monthParams.push(parseInt(year, 10));
+    }
+    if (isEntrance) {
+      monthConds.push("(a.attendance_status IS NOT NULL OR a.entrance_exam_status = 'Exempted')");
+    }
+    const [monthRows] = await pool.execute(`
+      SELECT DISTINCT s.month 
+      FROM applications a
+      JOIN users u ON a.user_id = u.id
+      LEFT JOIN sessions s ON s.id = COALESCE(a.session_id, u.session_id)
+      WHERE ${monthConds.join(' AND ')}
+      ORDER BY FIELD(s.month, 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December')
+    `, monthParams);
+    const months = monthRows.map(r => r.month);
+
+    // 3. Dynamic Departments (Show only existing departments, filtered by year and month if provided)
+    const deptConds = ["a.subject IS NOT NULL AND a.subject != ''"];
+    const deptParams = [];
+    if (year) {
+      deptConds.push('s.year = ?');
+      deptParams.push(parseInt(year, 10));
+    }
+    if (month) {
+      deptConds.push('s.month = ?');
+      deptParams.push(month);
+    }
+    if (isEntrance) {
+      deptConds.push("(a.attendance_status IS NOT NULL OR a.entrance_exam_status = 'Exempted')");
+    }
+    const [deptRows] = await pool.execute(`
+      SELECT DISTINCT a.subject AS department
+      FROM applications a
+      JOIN users u ON a.user_id = u.id
+      LEFT JOIN sessions s ON s.id = COALESCE(a.session_id, u.session_id)
+      WHERE ${deptConds.join(' AND ')}
+      ORDER BY a.subject ASC
+    `, deptParams);
+    const departments = deptRows.map(r => r.department);
+
+    // 4. Dynamic Courses (Show only courses that actually exist, filtered by year, month, and department if provided)
+    const courseConds = ['1=1'];
+    const courseParams = [];
+    if (year) {
+      courseConds.push('s.year = ?');
+      courseParams.push(parseInt(year, 10));
+    }
+    if (month) {
+      courseConds.push('s.month = ?');
+      courseParams.push(month);
+    }
+    if (department) {
+      courseConds.push('a.subject = ?');
+      courseParams.push(department);
+    }
+    if (isEntrance) {
+      courseConds.push("(a.attendance_status IS NOT NULL OR a.entrance_exam_status = 'Exempted')");
+    }
+    const [courseRows] = await pool.execute(`
+      SELECT DISTINCT CASE
+        WHEN a.has_integrated = 1 THEN 'Integrated Course'
+        WHEN (a.has_mphil = 1 OR a.program_offered_name LIKE 'M.Phil.%') THEN 'M.Phil'
+        WHEN a.category = 'Part Time' THEN 'Part-Time Ph.D'
+        WHEN a.category = 'Full Time' THEN 'Full-Time Ph.D'
+        ELSE 'Ph.D'
+      END AS applied_course
+      FROM applications a
+      JOIN users u ON a.user_id = u.id
+      LEFT JOIN sessions s ON s.id = COALESCE(a.session_id, u.session_id)
+      WHERE ${courseConds.join(' AND ')}
+    `, courseParams);
+    const courses = courseRows.map(r => r.applied_course).filter(Boolean);
+
+    res.json({
+      success: true,
+      data: { years, months, departments, courses }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // ─── List ─────────────────────────────────────────────────────
 
 /**
@@ -597,7 +790,7 @@ router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
 router.get('/', verifyToken, isAdmin, async (req, res) => {
   try {
     const {
-      search, status, session_id, year, month, session_type_id,
+      search, status, session_id, year, month, course, department, result_status, session_type_id,
       payment_status, qualification_status, attendance_status,
       admission_approved, sort_by, sort_dir,
       final_result_status, entrance_exam_status,
@@ -606,9 +799,16 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
 
     // ── Resolve session (cached) ──────────────────────────────────
     let resolvedSessionId = session_id;
-    if (!resolvedSessionId || resolvedSessionId === 'active') {
-      resolvedSessionId = await getActiveSessionId();
-    } else if (resolvedSessionId === 'all') {
+    if (year || month) {
+      if (!resolvedSessionId || resolvedSessionId === 'active') {
+        resolvedSessionId = null;
+      }
+    } else {
+      if (!resolvedSessionId || resolvedSessionId === 'active') {
+        resolvedSessionId = await getActiveSessionId();
+      }
+    }
+    if (resolvedSessionId === 'all') {
       resolvedSessionId = null;
     }
 
@@ -625,6 +825,20 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
     if (status && status !== 'All') { conditions.push('a.status = ?');               params.push(status); }
     if (year)                       { conditions.push('s.year = ?');                  params.push(parseInt(year, 10)); }
     if (month)                      { conditions.push('s.month = ?');                 params.push(month); }
+    if (department)                 { conditions.push('a.subject = ?');               params.push(department); }
+    if (course) {
+      if (course === 'Integrated Course') {
+        conditions.push("a.has_integrated = 1");
+      } else if (course === 'M.Phil') {
+        conditions.push("(a.has_mphil = 1 OR a.program_offered_name LIKE 'M.Phil.%')");
+      } else if (course === 'Part-Time Ph.D') {
+        conditions.push("a.category = 'Part Time' AND a.has_integrated = 0 AND a.has_mphil = 0 AND (a.program_offered_name IS NULL OR a.program_offered_name NOT LIKE 'M.Phil.%')");
+      } else if (course === 'Full-Time Ph.D') {
+        conditions.push("a.category = 'Full Time' AND a.has_integrated = 0 AND a.has_mphil = 0 AND (a.program_offered_name IS NULL OR a.program_offered_name NOT LIKE 'M.Phil.%')");
+      } else if (course === 'Ph.D') {
+        conditions.push("a.has_integrated = 0 AND a.has_mphil = 0 AND (a.program_offered_name IS NULL OR a.program_offered_name NOT LIKE 'M.Phil.%') AND (a.category IS NULL OR (a.category != 'Part Time' AND a.category != 'Full Time'))");
+      }
+    }
     if (session_type_id)            { conditions.push('s.session_type_id = ?');       params.push(session_type_id); }
     if (payment_status)             { conditions.push('a.payment_status = ?');        params.push(payment_status); }
     if (qualification_status)       { conditions.push('a.qualification_status = ?');  params.push(qualification_status); }
@@ -635,6 +849,25 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
     }
     if (final_result_status)  { conditions.push('a.final_result_status = ?');  params.push(final_result_status); }
     if (entrance_exam_status) { conditions.push('a.entrance_exam_status = ?'); params.push(entrance_exam_status); }
+
+    // Result Status dynamic condition mapping
+    if (result_status && result_status !== 'All') {
+      if (result_status === 'Pass') {
+        conditions.push("a.attendance_status = 'Present' AND a.entrance_mark >= (SELECT passing_mark FROM entrance_settings WHERE id = 1)");
+      } else if (result_status === 'Fail') {
+        conditions.push("a.attendance_status = 'Present' AND a.entrance_mark < (SELECT passing_mark FROM entrance_settings WHERE id = 1)");
+      } else if (result_status === 'Absent') {
+        conditions.push("a.attendance_status = 'Absent'");
+      } else if (result_status === 'Pending') {
+        conditions.push("(a.attendance_status IS NULL OR (a.attendance_status = 'Present' AND a.entrance_mark IS NULL))");
+      } else if (result_status === 'Qualified') {
+        conditions.push("a.qualification_status = 'Qualified'");
+      } else if (result_status === 'Not Qualified') {
+        conditions.push("a.qualification_status = 'Failed'");
+      } else if (result_status === 'Direct Qualified') {
+        conditions.push("a.qualification_status = 'Direct Qualified'");
+      }
+    }
 
     // Enterprise downstream dependency lock
     if (req.query.source === 'entrance_marks') {
@@ -665,11 +898,50 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
 
     const selectCols = `a.*, u.full_name, u.email,
       s.year AS session_year, s.month AS session_month,
-      CONCAT(s.month, ' ', s.year) AS session_name`;
+      CONCAT(s.month, ' ', s.year) AS session_name,
+      (CASE
+        WHEN a.has_integrated = 1 THEN 'Integrated Course'
+        WHEN (a.has_mphil = 1 OR a.program_offered_name LIKE 'M.Phil.%') THEN 'M.Phil'
+        WHEN a.category = 'Part Time' THEN 'Part-Time Ph.D'
+        WHEN a.category = 'Full Time' THEN 'Full-Time Ph.D'
+        ELSE 'Ph.D'
+      END) AS applied_course,
+      (CASE
+        WHEN a.attendance_status = 'Absent' THEN 'ABSENT'
+        WHEN a.entrance_mark IS NULL THEN 'PENDING'
+        WHEN a.entrance_mark >= (SELECT passing_mark FROM entrance_settings WHERE id = 1) THEN 'PASS'
+        ELSE 'FAIL'
+      END) AS result_status`;
+
+    // ── Dynamic overall counts for summary cards ───────────────────
+    const summaryQuery = `
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN (a.attendance_status = 'Present' AND a.entrance_mark >= (SELECT passing_mark FROM entrance_settings WHERE id = 1)) THEN 1 ELSE 0 END) as passed,
+        SUM(CASE WHEN (a.attendance_status = 'Present' AND a.entrance_mark < (SELECT passing_mark FROM entrance_settings WHERE id = 1)) THEN 1 ELSE 0 END) as failed,
+        SUM(CASE WHEN a.attendance_status = 'Absent' THEN 1 ELSE 0 END) as absent,
+        SUM(CASE WHEN (a.attendance_status = 'Present' AND a.entrance_mark IS NULL) OR a.attendance_status IS NULL THEN 1 ELSE 0 END) as pending,
+        SUM(CASE WHEN a.qualification_status = 'Qualified' THEN 1 ELSE 0 END) as qualified,
+        SUM(CASE WHEN a.qualification_status = 'Direct Qualified' THEN 1 ELSE 0 END) as direct_qualified
+      ${baseJoin}
+    `;
+    const [[summary]] = await pool.execute(summaryQuery, params);
 
     // ── Pagination (opt-in — backward compatible when page absent) ─
     const page  = parseInt(pageParam,  10);
     const limit = parseInt(limitParam, 10);
+
+    if (limitParam === 'all') {
+      const [rows] = await pool.execute(
+        `SELECT ${selectCols} ${baseJoin} ORDER BY ${sortCol} ${sortDirection}`, params
+      );
+      return res.json({
+        success: true, data: rows,
+        total: rows.length, page: 1, limit: 'all', totalPages: 1,
+        summary,
+        activeSessionId: resolvedSessionId
+      });
+    }
 
     if (page > 0 && limit > 0) {
       const offset = (page - 1) * limit;
@@ -683,6 +955,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
       return res.json({
         success: true, data: rows,
         total, page, limit, totalPages: Math.ceil(total / limit),
+        summary,
         activeSessionId: resolvedSessionId
       });
     }
@@ -691,7 +964,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
     const [rows] = await pool.execute(
       `SELECT ${selectCols} ${baseJoin} ORDER BY ${sortCol} ${sortDirection}`, params
     );
-    res.json({ success: true, data: rows, total: rows.length, activeSessionId: resolvedSessionId });
+    res.json({ success: true, data: rows, total: rows.length, summary, activeSessionId: resolvedSessionId });
 
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

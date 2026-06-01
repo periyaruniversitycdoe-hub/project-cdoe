@@ -9,6 +9,7 @@ const SELECT_JOINED = `
         inst.name AS institute_name,
         inst.college_code AS institute_code,
         inst.principal_name AS institute_principal,
+        inst.principal_mobile AS institute_principal_mobile,
         inst.college_email AS institute_email,
         inst.college_phone AS institute_phone,
         inst.is_active AS institute_active,

@@ -23,36 +23,119 @@ const PaymentManagement = () => {
   const [loading, setLoading]           = useState(true);
   const [updating, setUpdating]         = useState(null);
   const [search, setSearch]             = useState('');
-  const [sessionFilter, setSessionFilter] = useState('active');
+  const [yearFilter, setYearFilter]       = useState('');
+  const [monthFilter, setMonthFilter]     = useState('');
+  const [courseFilter, setCourseFilter]   = useState('');
   const [paymentFilter, setPaymentFilter] = useState('');
+
+  // Pagination
+  const [page,       setPage]       = useState(1);
+  const [limit,      setLimit]      = useState(50);
+  const [totalCount, setTotalCount] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+
+  // Dynamic filter lists
+  const [years, setYears] = useState([]);
+  const [months, setMonths] = useState([]);
+  const [courses, setCourses] = useState([]);
+
   const { sessions, sessionLabel } = useSession();
 
   const token   = localStorage.getItem('adminToken');
   const headers = { Authorization: `Bearer ${token}` };
 
-  const fetchData = useCallback(async () => {
+  // Fetch initial filters on mount
+  useEffect(() => {
+    const fetchInitialFilters = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/applications/filters`, { headers });
+        if (res.data.success) {
+          setYears(res.data.data.years || []);
+          setMonths(res.data.data.months || []);
+          setCourses(res.data.data.courses || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch initial filters', err);
+      }
+    };
+    fetchInitialFilters();
+  }, []);
+
+  // Fetch dynamic cascading filters
+  useEffect(() => {
+    const fetchCascadedFilters = async () => {
+      try {
+        const params = new URLSearchParams();
+        if (yearFilter) params.append('year', yearFilter);
+        if (monthFilter) params.append('month', monthFilter);
+
+        const res = await axios.get(`${API_URL}/applications/filters?${params}`, { headers });
+        if (res.data.success) {
+          if (!yearFilter && !monthFilter) {
+            setMonths(res.data.data.months || []);
+            setCourses(res.data.data.courses || []);
+          } else {
+            if (yearFilter) {
+              setMonths(res.data.data.months || []);
+            }
+            setCourses(res.data.data.courses || []);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch cascaded filters', err);
+      }
+    };
+
+    if (yearFilter || monthFilter) {
+      fetchCascadedFilters();
+    } else {
+      const fetchAll = async () => {
+        try {
+          const res = await axios.get(`${API_URL}/applications/filters`, { headers });
+          if (res.data.success) {
+            setMonths(res.data.data.months || []);
+            setCourses(res.data.data.courses || []);
+          }
+        } catch {}
+      };
+      fetchAll();
+    }
+  }, [yearFilter, monthFilter]);
+
+  const fetchData = useCallback(async (targetPage = page) => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      params.append('session_id', sessionFilter);
+      if (yearFilter)    params.append('year', yearFilter);
+      if (monthFilter)   params.append('month', monthFilter);
+      if (courseFilter)  params.append('course', courseFilter);
       if (search)        params.append('search', search);
       if (paymentFilter) params.append('payment_status', paymentFilter);
       params.append('sort_by', 'created_at');
       params.append('sort_dir', 'desc');
+      params.append('page', targetPage);
+      params.append('limit', limit);
       const res = await axios.get(`${API_URL}/applications?${params}`, { headers });
       setApplications(res.data.data || []);
+      setTotalCount(res.data.total || 0);
+      setTotalPages(res.data.totalPages || 1);
     } catch { toast.error('Failed to fetch'); }
     finally { setLoading(false); }
-  }, [search, sessionFilter, paymentFilter]);
+  }, [search, yearFilter, monthFilter, courseFilter, paymentFilter, page, limit]);
 
-  useEffect(() => { const t = setTimeout(fetchData, 400); return () => clearTimeout(t); }, [fetchData]);
+  useEffect(() => { setPage(1); }, [search, yearFilter, monthFilter, courseFilter, paymentFilter, limit]);
+
+  useEffect(() => {
+    const t = setTimeout(() => fetchData(page), 400);
+    return () => clearTimeout(t);
+  }, [fetchData, page]);
 
   const updatePayment = async (id, payment_status) => {
     setUpdating(id + payment_status);
     try {
       await axios.put(`${API_URL}/applications/${id}/payment-status`, { payment_status }, { headers });
       toast.success(`Payment marked as ${payment_status}`);
-      fetchData();
+      fetchData(page);
     } catch (err) { toast.error(err.response?.data?.message || 'Update failed'); }
     finally { setUpdating(null); }
   };
@@ -61,7 +144,9 @@ const PaymentManagement = () => {
     try {
       const params = new URLSearchParams();
       params.append('report_type', 'payment');
-      params.append('session_id', sessionFilter);
+      if (yearFilter)    params.append('year', yearFilter);
+      if (monthFilter)   params.append('month', monthFilter);
+      if (courseFilter)  params.append('course', courseFilter);
       if (search)        params.append('search', search);
       if (paymentFilter) params.append('payment_status', paymentFilter);
       const res = await axios.get(`${API_URL}/applications/export/excel?${params}`, {
@@ -100,16 +185,27 @@ const PaymentManagement = () => {
       <div className="card mb-3">
         <div className="card-body py-3">
           <div className="row g-2 align-items-end">
-            <div className="col-md-4">
+            <div className="col-md-3">
               <input type="text" className="form-control form-control-sm"
                 placeholder="Search by Name / App ID / Email..."
                 value={search} onChange={e => setSearch(e.target.value)} />
             </div>
-            <div className="col-auto">
-              <select className="form-select form-select-sm" value={sessionFilter} onChange={e => setSessionFilter(e.target.value)}>
-                <option value="active">Active Session</option>
-                <option value="all">All Sessions</option>
-                {sessions.map(s => <option key={s.id} value={s.id}>{sessionLabel(s)}</option>)}
+            <div className="col-auto" style={{ minWidth: 135 }}>
+              <select className="form-select form-select-sm" value={yearFilter} onChange={e => setYearFilter(e.target.value)}>
+                <option value="">Select Year</option>
+                {years.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
+            <div className="col-auto" style={{ minWidth: 135 }}>
+              <select className="form-select form-select-sm" value={monthFilter} onChange={e => setMonthFilter(e.target.value)}>
+                <option value="">Select Month</option>
+                {months.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <div className="col-auto" style={{ minWidth: 140 }}>
+              <select className="form-select form-select-sm" value={courseFilter} onChange={e => setCourseFilter(e.target.value)}>
+                <option value="">Select Course</option>
+                {courses.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div className="col-auto">
@@ -124,9 +220,46 @@ const PaymentManagement = () => {
                 <option value="Rejected">Rejected</option>
               </select>
             </div>
+            <div className="col-auto">
+              <select className="form-select form-select-sm" value={limit} onChange={e => setLimit(e.target.value)}>
+                <option value={10}>10 Per Page</option>
+                <option value={20}>20 Per Page</option>
+                <option value={50}>50 Per Page</option>
+                <option value={100}>100 Per Page</option>
+                <option value={200}>200 Per Page</option>
+                <option value="all">All</option>
+              </select>
+            </div>
           </div>
-          <div className="mt-2 text-end">
-            <small className="text-muted">Showing <strong>{applications.length}</strong> records</small>
+          
+          <div className="d-flex justify-content-between align-items-center mt-2">
+            <div className="d-flex gap-1 flex-wrap">
+              {yearFilter && (
+                <span className="badge bg-secondary text-white" style={{ fontSize: 11 }}>
+                  Year: {yearFilter}
+                  <button className="btn-close btn-close-sm ms-1" style={{ fontSize: 8, filter: 'invert(1)' }} onClick={() => setYearFilter('')} />
+                </span>
+              )}
+              {monthFilter && (
+                <span className="badge bg-secondary text-white" style={{ fontSize: 11 }}>
+                  Month: {monthFilter}
+                  <button className="btn-close btn-close-sm ms-1" style={{ fontSize: 8, filter: 'invert(1)' }} onClick={() => setMonthFilter('')} />
+                </span>
+              )}
+              {courseFilter && (
+                <span className="badge bg-secondary text-white" style={{ fontSize: 11 }}>
+                  Course: {courseFilter}
+                  <button className="btn-close btn-close-sm ms-1" style={{ fontSize: 8, filter: 'invert(1)' }} onClick={() => setCourseFilter('')} />
+                </span>
+              )}
+            </div>
+            <span className="text-muted" style={{ fontSize: 12 }}>
+              {limit === 'all' ? (
+                <>Displaying <strong>1–{totalCount}</strong> of <strong>{totalCount}</strong> records</>
+              ) : (
+                <>Displaying <strong>{totalCount === 0 ? 0 : (page - 1) * limit + 1}–{Math.min(page * limit, totalCount)}</strong> of <strong>{totalCount}</strong> records</>
+              )}
+            </span>
           </div>
         </div>
       </div>
@@ -154,7 +287,7 @@ const PaymentManagement = () => {
                   <tr><td colSpan={8} className="text-center py-5 text-muted">No records found</td></tr>
                 ) : applications.map((app, i) => (
                   <tr key={app.id}>
-                    <td className="ps-3 text-muted">{i + 1}</td>
+                    <td className="ps-3 text-muted">{limit === 'all' ? i + 1 : (page - 1) * limit + i + 1}</td>
                     <td>
                       <div className="fw-bold text-primary" style={{ fontSize: 12 }}>{app.application_id}</div>
                       <div className="text-muted" style={{ fontSize: 10 }}>{app.session_name}</div>
@@ -203,6 +336,29 @@ const PaymentManagement = () => {
           </div>
         </div>
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="d-flex align-items-center justify-content-between mt-3 px-1">
+          <span className="text-muted" style={{ fontSize: 12 }}>
+            Page <strong>{page}</strong> of <strong>{totalPages}</strong>
+          </span>
+          <div className="d-flex gap-1">
+            <button className="btn btn-sm btn-outline-secondary" style={{ fontSize: 12 }} disabled={page === 1} onClick={() => setPage(1)}>«</button>
+            <button className="btn btn-sm btn-outline-secondary" style={{ fontSize: 12 }} disabled={page === 1} onClick={() => setPage(p => p - 1)}>‹ Prev</button>
+            {Array.from({ length: Math.min(5, totalPages) }, (_, idx) => {
+              const start = Math.max(1, Math.min(page - 2, totalPages - 4));
+              const pg = start + idx;
+              return (
+                <button key={pg} className={`btn btn-sm ${pg === page ? 'btn-primary' : 'btn-outline-secondary'}`}
+                  style={{ fontSize: 12, minWidth: 34 }} onClick={() => setPage(pg)}>{pg}</button>
+              );
+            })}
+            <button className="btn btn-sm btn-outline-secondary" style={{ fontSize: 12 }} disabled={page === totalPages} onClick={() => setPage(p => p + 1)}>Next ›</button>
+            <button className="btn btn-sm btn-outline-secondary" style={{ fontSize: 12 }} disabled={page === totalPages} onClick={() => setPage(totalPages)}>»</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -156,6 +156,14 @@ app.use('/api/roster', rosterRoutes);
 const importsRoutes = require('./routes/imports');
 app.use('/api/imports', importsRoutes);
 
+// Announcement Management Engine (centralized university-wide announcements)
+const announcementRoutes = require('./routes/announcements');
+app.use('/api/announcements', announcementRoutes);
+
+// News & Announcements Module (dashboard-level internal communication hub)
+const newsAnnouncementsRoutes = require('./routes/news-announcements');
+app.use('/api/news-announcements', newsAnnouncementsRoutes);
+
 // ── Institute Master auto-migration ──────────────────────────────────────────
 (async () => {
     // 1. Extend master_institutes with enterprise columns
@@ -462,3 +470,4 @@ app.use((err, _req, res, _next) => {
 app.listen(PORT, () => {
     console.log(`Admin Backend Server running on port ${PORT}`);
 });
+// Trigger restart after port termination

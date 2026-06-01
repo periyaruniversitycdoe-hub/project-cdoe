@@ -75,6 +75,7 @@ function validate(step, formData) {
   if (step === 0) {
     if (!formData.name?.trim()) errors.name = 'Centre name is required';
     if (!formData.centre_type_id) errors.centre_type_id = 'Centre type is required';
+    if (!formData.institute_id) errors.institute_id = 'Affiliated institute is required';
   }
   if (step === 1) {
     if (!formData.address_1?.trim()) errors.address_1 = 'Address is required';
@@ -186,28 +187,18 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
     if (errors[name]) setErrors(prev => { const n = { ...prev }; delete n[name]; return n; });
   }, [errors]);
 
-  // ── Bidirectional Institute Sync Engine ────────────────────────────────────
-  const handleCollegeCodeChange = useCallback((e) => {
-    const code = e.target.value;
-    const inst = dropdowns.master_institutes?.find(d => d.college_code === code);
+  // ── Unified Institute Selection Handler ────────────────────────────────────
+  const handleInstituteChange = useCallback((e) => {
+    const id = e.target.value;
+    const inst = dropdowns.master_institutes?.find(d => String(d.id) === String(id));
     setFormData(prev => ({
       ...prev,
-      college_code: code,
-      college_name: inst ? inst.college_name : '',
-      institute_id: inst ? String(inst.id)   : '',
-    }));
-  }, [dropdowns.master_institutes]);
-
-  const handleCollegeNameChange = useCallback((e) => {
-    const name = e.target.value;
-    const inst = dropdowns.master_institutes?.find(d => d.college_name === name);
-    setFormData(prev => ({
-      ...prev,
-      college_name: name,
+      institute_id: id,
       college_code: inst ? inst.college_code : '',
-      institute_id: inst ? String(inst.id)   : '',
+      college_name: inst ? inst.college_name : '',
     }));
-  }, [dropdowns.master_institutes]);
+    if (errors.institute_id) setErrors(prev => { const n = { ...prev }; delete n.institute_id; return n; });
+  }, [dropdowns.master_institutes, errors]);
 
   const handleFile = (e, field) => {
     const file = e.target.files[0];
@@ -353,25 +344,27 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
                 <input style={S.input(errors.name)} name="name" value={formData.name} onChange={handleInput} readOnly={isReadOnly} placeholder="e.g. Department of Computer Science, Periyar University" />
                 {errors.name && <span style={S.errMsg}>{errors.name}</span>}
               </div>
-              {/* ── College Code dropdown ──────────────────────────────────────────
-                   value  = college_code string  (e.g. "101", "102")
-                   sorted ASC by the API (college_code ASC) — no serial numbers    */}
-              <div style={S.group}>
-                <label style={S.label}>College Code</label>
+              {/* ── Unified Institute Selection Dropdown ──────────────────────────── */}
+              <div style={{ ...S.group, gridColumn: '1 / -1' }}>
+                <label style={S.label}><Building size={14} color="#0891b2" /> Affiliated Institute <span style={S.required}>*</span></label>
                 <select
-                  style={S.select(false)}
-                  name="college_code"
-                  value={formData.college_code}
-                  onChange={handleCollegeCodeChange}
+                  style={S.select(errors.institute_id)}
+                  name="institute_id"
+                  value={formData.institute_id}
+                  onChange={handleInstituteChange}
                   disabled={isReadOnly}
                 >
-                  <option value="">— Select Code —</option>
-                  {dropdowns.master_institutes?.map(d => (
-                    <option key={d.college_code} value={d.college_code}>
-                      {d.college_code}
-                    </option>
-                  ))}
+                  <option value="">— Select Affiliated Institute —</option>
+                  {[...(dropdowns.master_institutes || [])]
+                    .sort((a, b) => (a.college_name || '').localeCompare(b.college_name || ''))
+                    .map(d => (
+                      <option key={d.id} value={d.id}>
+                        [{d.college_code}] {d.college_name}
+                      </option>
+                    ))
+                  }
                 </select>
+                {errors.institute_id && <span style={S.errMsg}>{errors.institute_id}</span>}
               </div>
 
               <div style={S.group}>
@@ -381,30 +374,6 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
                   {dropdowns.master_centre_types?.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                 </select>
                 {errors.centre_type_id && <span style={S.errMsg}>{errors.centre_type_id}</span>}
-              </div>
-
-              {/* ── College Name dropdown ──────────────────────────────────────────
-                   value  = college_name string  (e.g. "Arignar Anna Govt Arts College")
-                   sorted alphabetically (frontend sort) so names are easy to find   */}
-              <div style={S.group}>
-                <label style={S.label}>College Name</label>
-                <select
-                  style={S.select(false)}
-                  name="college_name"
-                  value={formData.college_name}
-                  onChange={handleCollegeNameChange}
-                  disabled={isReadOnly}
-                >
-                  <option value="">— Select College —</option>
-                  {[...(dropdowns.master_institutes || [])]
-                    .sort((a, b) => (a.college_name || '').localeCompare(b.college_name || ''))
-                    .map(d => (
-                      <option key={d.college_code} value={d.college_name}>
-                        {d.college_name}
-                      </option>
-                    ))
-                  }
-                </select>
               </div>
               <div style={S.group}>
                 <label style={S.label}>Recognition Ref. No.</label>

@@ -86,6 +86,8 @@ const apiLimiter = rateLimit({
         return p === '/settings' || o === '/api/settings' ||
                p === '/portals/active' || o === '/api/portals/active' ||
                p === '/portal-home/settings' || o === '/api/portal-home/settings' ||
+               p === '/announcements/public'  || o === '/api/announcements/public'  ||
+               p === '/news-announcements'   || o === '/api/news-announcements'   ||
                p === '/portal-notifications' || o === '/api/portal-notifications' ||
                p === '/active-session' || o === '/api/active-session' ||
                p.startsWith('/dropdowns') || o.startsWith('/api/dropdowns') ||
@@ -971,6 +973,54 @@ app.get('/api/portals/active', async (_req, res) => {
         res.json({ success: true, data: rows });
     } catch (err) {
         res.status(500).json({ success: false, message: 'Failed to load active portals' });
+    }
+});
+
+// News & Announcements board — auth-protected, audience = all | student
+app.get('/api/news-announcements', async (_req, res) => {
+    try {
+        const now = new Date();
+        const [rows] = await db.query(
+            `SELECT id, title, description, category, priority, audience,
+                    attachment_path, attachment_name,
+                    publish_date, expiry_date, is_pinned, created_at
+             FROM news_announcements
+             WHERE is_deleted = 0
+               AND status = 'published'
+               AND publish_date <= ?
+               AND expiry_date  >= ?
+               AND (audience = 'all' OR audience = 'student')
+             ORDER BY is_pinned DESC,
+               FIELD(priority,'urgent','high','medium','low'),
+               publish_date DESC`,
+            [now, now]
+        );
+        res.json({ success: true, data: rows });
+    } catch (err) {
+        res.json({ success: true, data: [] });
+    }
+});
+
+// Public announcements endpoint for the landing page (served from student API so portal-dashboard
+// doesn't need a separate cross-origin call to the admin backend)
+app.get('/api/announcements/public', async (_req, res) => {
+    try {
+        const now = new Date();
+        const [rows] = await db.query(
+            `SELECT a.*, c.name AS category_name
+             FROM announcements a
+             JOIN announcement_categories c ON a.category_id = c.id
+             WHERE a.is_deleted = 0
+               AND a.status = 'published'
+               AND a.start_at <= ?
+               AND a.end_at   >= ?
+             ORDER BY FIELD(a.priority,'critical','high','medium','normal','low'), a.created_at DESC`,
+            [now, now]
+        );
+        res.json({ success: true, data: rows });
+    } catch (err) {
+        // Return empty array gracefully if table doesn't exist yet
+        res.json({ success: true, data: [] });
     }
 });
 

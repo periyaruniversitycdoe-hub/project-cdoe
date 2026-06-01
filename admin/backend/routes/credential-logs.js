@@ -36,38 +36,68 @@ pool.execute(`
 router.get('/', verifyToken, isAdmin, async (req, res) => {
     try {
         const page      = Math.max(1, parseInt(req.query.page)  || 1);
-        const limit     = Math.min(100, parseInt(req.query.limit) || 20);
-        const offset    = (page - 1) * limit;
+        const isAll     = req.query.limit === 'all';
+        const limit     = isAll ? null : Math.min(200, parseInt(req.query.limit) || 20);
+        const offset    = isAll ? null : (page - 1) * limit;
         const portal    = req.query.portal  || '';   // 'Student'|'Supervisor'|'Center'|'Admin'
         const search    = (req.query.search || '').trim();
         const status    = req.query.status  || '';
+        const { year, month, course } = req.query;
 
         const conditions = [];
         const params     = [];
 
-        if (portal) { conditions.push('portal_type = ?'); params.push(portal); }
-        if (status) { conditions.push('account_status = ?'); params.push(status); }
+        if (portal) { conditions.push('cl.portal_type = ?'); params.push(portal); }
+        if (status) { conditions.push('cl.account_status = ?'); params.push(status); }
         if (search) {
-            conditions.push('(user_name LIKE ? OR email LIKE ?)');
+            conditions.push('(cl.user_name LIKE ? OR cl.email LIKE ?)');
             params.push(`%${search}%`, `%${search}%`);
+        }
+        if (year) {
+            conditions.push('s.year = ?');
+            params.push(parseInt(year, 10));
+        }
+        if (month) {
+            conditions.push('s.month = ?');
+            params.push(month);
+        }
+        if (course) {
+            if (course === 'Ph.D') {
+                conditions.push("(a.program_offered_name LIKE 'Ph.D.%' OR (a.program_offered_name IS NOT NULL AND a.program_offered_name != ''))");
+            } else if (course === 'M.Phil') {
+                conditions.push("(a.has_mphil = 1 OR a.program_offered_name LIKE 'M.Phil.%')");
+            } else if (course === 'Integrated Course') {
+                conditions.push("a.has_integrated = 1");
+            } else if (course === 'Full Time') {
+                conditions.push("a.category = 'Full Time'");
+            } else if (course === 'Part Time') {
+                conditions.push("a.category = 'Part Time'");
+            }
         }
 
         const WHERE = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
 
+        const baseQuery = `FROM credential_logs cl
+             LEFT JOIN users u ON cl.email COLLATE utf8mb4_unicode_ci = u.email AND cl.portal_type = 'Student'
+             LEFT JOIN applications a ON a.user_id = u.id
+             LEFT JOIN sessions s ON s.id = COALESCE(a.session_id, u.session_id)
+             ${WHERE}`;
+
         const [[{ total }]] = await pool.execute(
-            `SELECT COUNT(*) AS total FROM credential_logs ${WHERE}`,
+            `SELECT COUNT(*) AS total ${baseQuery}`,
             params
         );
 
-        const [rows] = await pool.execute(
-            `SELECT id, user_name, email, plain_password, portal_type, account_status, login_url,
-                    email_sent, password_changed, password_changed_at, password_change_ip, created_at
-               FROM credential_logs
-              ${WHERE}
-              ORDER BY created_at DESC
-              LIMIT ${limit} OFFSET ${offset}`,
-            params
-        );
+        const selectQuery = `SELECT cl.id, cl.user_name, cl.email, cl.plain_password, cl.portal_type, cl.account_status, cl.login_url,
+                    cl.email_sent, cl.password_changed, cl.password_changed_at, cl.password_change_ip, cl.created_at
+               ${baseQuery}
+               ORDER BY cl.created_at DESC`;
+
+        // pool.execute (prepared stmts) misfires on LIMIT/OFFSET — embed as integers and use pool.query
+        const finalQuery = isAll
+            ? selectQuery
+            : `${selectQuery} LIMIT ${limit} OFFSET ${offset}`;
+        const [rows] = await pool.query(finalQuery, params);
 
         // Portal-wise summary counts
         const [summaryRows] = await pool.execute(
@@ -82,7 +112,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
         res.json({
             success: true,
             data:    rows,
-            meta:    { total, page, limit, pages: Math.ceil(total / limit) },
+            meta:    { total, page, limit: isAll ? 'all' : limit, pages: isAll ? 1 : Math.ceil(total / limit) },
             summary,
         });
     } catch (err) {

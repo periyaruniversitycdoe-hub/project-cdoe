@@ -146,6 +146,9 @@ const DetailModal = ({ log, onClose, onDelete }) => {
 };
 
 // ─── Main Component ───────────────────────────────────────────────────────────
+// ─── Main Component ───────────────────────────────────────────────────────────
+const API_FILTERS = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api/applications/filters';
+
 const CredentialManagement = () => {
   const [logs, setLogs]         = useState([]);
   const [summary, setSummary]   = useState({ total: 0, Student: 0, Supervisor: 0, Center: 0, Admin: 0 });
@@ -154,15 +157,92 @@ const CredentialManagement = () => {
   const [search, setSearch]     = useState('');
   const [portal, setPortal]     = useState('');
   const [page, setPage]         = useState(1);
+  const [limit, setLimit]       = useState(20);
   const [selectedLog, setSelectedLog] = useState(null);
   const [visiblePass, setVisiblePass] = useState({});
+
+  const [yearFilter, setYearFilter]       = useState('');
+  const [monthFilter, setMonthFilter]     = useState('');
+  const [courseFilter, setCourseFilter]   = useState('');
+
+  // Dynamic filter lists
+  const [years, setYears] = useState([]);
+  const [months, setMonths] = useState([]);
+  const [courses, setCourses] = useState([]);
+
+  // Fetch initial filters on mount
+  useEffect(() => {
+    const fetchInitialFilters = async () => {
+      try {
+        const res = await axios.get(API_FILTERS, { headers: authHdr() });
+        if (res.data.success) {
+          setYears(res.data.data.years || []);
+          setMonths(res.data.data.months || []);
+          setCourses(res.data.data.courses || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch initial filters', err);
+      }
+    };
+    fetchInitialFilters();
+  }, []);
+
+  // Fetch dynamic cascading filters
+  useEffect(() => {
+    const fetchCascadedFilters = async () => {
+      try {
+        const params = new URLSearchParams();
+        if (yearFilter) params.append('year', yearFilter);
+        if (monthFilter) params.append('month', monthFilter);
+
+        const res = await axios.get(`${API_FILTERS}?${params}`, { headers: authHdr() });
+        if (res.data.success) {
+          if (!yearFilter && !monthFilter) {
+            setMonths(res.data.data.months || []);
+            setCourses(res.data.data.courses || []);
+          } else {
+            if (yearFilter) {
+              setMonths(res.data.data.months || []);
+            }
+            setCourses(res.data.data.courses || []);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch cascaded filters', err);
+      }
+    };
+
+    if (yearFilter || monthFilter) {
+      fetchCascadedFilters();
+    } else {
+      const fetchAll = async () => {
+        try {
+          const res = await axios.get(API_FILTERS, { headers: authHdr() });
+          if (res.data.success) {
+            setMonths(res.data.data.months || []);
+            setCourses(res.data.data.courses || []);
+          }
+        } catch {}
+      };
+      fetchAll();
+    }
+  }, [yearFilter, monthFilter]);
 
   const fetchLogs = useCallback(async (params = {}) => {
     setLoading(true);
     try {
       const res = await axios.get(API, {
         headers: authHdr(),
-        params: { page, limit: 20, search, portal, ...params }
+        params: { 
+          page, 
+          limit, 
+          search, 
+          portal, 
+          year: yearFilter,
+          month: monthFilter,
+          course: courseFilter,
+          ...params 
+        }
       });
       if (res.data.success) {
         setLogs(res.data.data);
@@ -174,7 +254,9 @@ const CredentialManagement = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, search, portal]);
+  }, [page, limit, search, portal, yearFilter, monthFilter, courseFilter]);
+
+  useEffect(() => { setPage(1); }, [search, portal, yearFilter, monthFilter, courseFilter, limit]);
 
   useEffect(() => { fetchLogs(); }, [fetchLogs]);
 
@@ -220,23 +302,83 @@ const CredentialManagement = () => {
 
       {/* Toolbar */}
       <div className="card shadow-sm mb-0 border-0" style={{ borderRadius: 10, overflow: 'hidden' }}>
-        <div className="card-header bg-white border-bottom py-3 px-4 d-flex align-items-center justify-content-between flex-wrap gap-3">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 200 }}>
-            <Search size={16} className="text-muted" />
-            <input
-              type="text"
-              className="form-control form-control-sm border-0 shadow-none"
-              placeholder="Search by name or email…"
-              value={search}
-              onChange={handleSearch}
-              style={{ maxWidth: 320 }}
-            />
+        <div className="card-header bg-white border-bottom py-3 px-4">
+          <div className="row g-2 align-items-end">
+            <div className="col-md-3">
+              <div className="d-flex align-items-center gap-2 border rounded px-2 py-1">
+                <Search size={14} className="text-muted" />
+                <input
+                  type="text"
+                  className="form-control form-control-sm border-0 p-0 shadow-none"
+                  placeholder="Search by name or email…"
+                  value={search}
+                  onChange={handleSearch}
+                />
+              </div>
+            </div>
+            <div className="col-auto" style={{ minWidth: 135 }}>
+              <select className="form-select form-select-sm" value={yearFilter} onChange={e => setYearFilter(e.target.value)}>
+                <option value="">Select Year</option>
+                {years.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
+            <div className="col-auto" style={{ minWidth: 135 }}>
+              <select className="form-select form-select-sm" value={monthFilter} onChange={e => setMonthFilter(e.target.value)}>
+                <option value="">Select Month</option>
+                {months.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <div className="col-auto" style={{ minWidth: 140 }}>
+              <select className="form-select form-select-sm" value={courseFilter} onChange={e => setCourseFilter(e.target.value)}>
+                <option value="">Select Course</option>
+                {courses.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div className="col-auto">
+              <select className="form-select form-select-sm" value={limit} onChange={e => setLimit(e.target.value)}>
+                <option value={10}>10 Per Page</option>
+                <option value={20}>20 Per Page</option>
+                <option value={50}>50 Per Page</option>
+                <option value={100}>100 Per Page</option>
+                <option value={200}>200 Per Page</option>
+                <option value="all">All</option>
+              </select>
+            </div>
+            <div className="col-auto ms-auto">
+              <button className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1" onClick={() => fetchLogs()} style={{ fontSize: 12 }}>
+                <RefreshCw size={13} /> Refresh
+              </button>
+            </div>
           </div>
-          <div className="d-flex gap-2 align-items-center">
-            <span className="text-muted small">{meta.total} record{meta.total !== 1 ? 's' : ''}</span>
-            <button className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1" onClick={() => fetchLogs()} style={{ fontSize: 12 }}>
-              <RefreshCw size={13} /> Refresh
-            </button>
+
+          <div className="d-flex justify-content-between align-items-center mt-3">
+            <div className="d-flex gap-1 flex-wrap">
+              {yearFilter && (
+                <span className="badge bg-secondary text-white" style={{ fontSize: 11 }}>
+                  Year: {yearFilter}
+                  <button className="btn-close btn-close-sm ms-1" style={{ fontSize: 8, filter: 'invert(1)' }} onClick={() => setYearFilter('')} />
+                </span>
+              )}
+              {monthFilter && (
+                <span className="badge bg-secondary text-white" style={{ fontSize: 11 }}>
+                  Month: {monthFilter}
+                  <button className="btn-close btn-close-sm ms-1" style={{ fontSize: 8, filter: 'invert(1)' }} onClick={() => setMonthFilter('')} />
+                </span>
+              )}
+              {courseFilter && (
+                <span className="badge bg-secondary text-white" style={{ fontSize: 11 }}>
+                  Course: {courseFilter}
+                  <button className="btn-close btn-close-sm ms-1" style={{ fontSize: 8, filter: 'invert(1)' }} onClick={() => setCourseFilter('')} />
+                </span>
+              )}
+            </div>
+            <span className="text-muted small">
+              {limit === 'all' ? (
+                <>Displaying <strong>1–{meta.total}</strong> of <strong>{meta.total}</strong> records</>
+              ) : (
+                <>Displaying <strong>{meta.total === 0 ? 0 : (page - 1) * limit + 1}–{Math.min(page * limit, meta.total)}</strong> of <strong>{meta.total}</strong> records</>
+              )}
+            </span>
           </div>
         </div>
 
@@ -274,7 +416,7 @@ const CredentialManagement = () => {
                 return (
                   <tr key={log.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedLog(log)}>
                     <td style={{ padding: '11px 16px', color: '#a0aec0', fontWeight: 600 }}>
-                      {(page - 1) * 20 + idx + 1}
+                      {limit === 'all' ? idx + 1 : (page - 1) * limit + idx + 1}
                     </td>
                     <td style={{ padding: '11px 16px' }}>
                       <div className="fw-semibold text-dark">{log.user_name}</div>

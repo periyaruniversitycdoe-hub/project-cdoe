@@ -10,19 +10,28 @@ const { verifyToken, isAdmin } = require('../middleware/auth');
  */
 router.get('/', verifyToken, isAdmin, async (req, res) => {
   try {
-    const { session_id, search } = req.query;
+    const { session_id, search, year, month, course } = req.query;
     const pageNum  = Math.max(1, parseInt(req.query.page)  || 1);
-    const limitNum = Math.min(200, parseInt(req.query.limit) || 50);
-    const offset   = (pageNum - 1) * limitNum;
+    const isAll    = req.query.limit === 'all';
+    const limitNum = isAll ? null : Math.min(200, parseInt(req.query.limit) || 50);
+    const offset   = isAll ? null : (pageNum - 1) * limitNum;
 
     const conditions = ["u.role = 'student'"];
     const filterParams = [];
 
-    if (!session_id || session_id === 'active') {
-      conditions.push('s.is_active = 1');
-    } else if (session_id !== 'all') {
+    let resolvedSessionId = session_id;
+    if (year || month) {
+      if (!resolvedSessionId || resolvedSessionId === 'active') {
+        resolvedSessionId = null;
+      }
+    } else {
+      if (!resolvedSessionId || resolvedSessionId === 'active') {
+        conditions.push('s.is_active = 1');
+      }
+    }
+    if (resolvedSessionId && resolvedSessionId !== 'all') {
       conditions.push('u.session_id = ?');
-      filterParams.push(parseInt(session_id, 10));
+      filterParams.push(parseInt(resolvedSessionId, 10));
     }
 
     if (search && search.trim()) {
@@ -31,10 +40,31 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
       filterParams.push(like, like, like, like);
     }
 
+    if (year) {
+      conditions.push('s.year = ?');
+      filterParams.push(parseInt(year, 10));
+    }
+    if (month) {
+      conditions.push('s.month = ?');
+      filterParams.push(month);
+    }
+    if (course) {
+      if (course === 'Ph.D') {
+        conditions.push("(a.program_offered_name LIKE 'Ph.D.%' OR (a.program_offered_name IS NOT NULL AND a.program_offered_name != ''))");
+      } else if (course === 'M.Phil') {
+        conditions.push("(a.has_mphil = 1 OR a.program_offered_name LIKE 'M.Phil.%')");
+      } else if (course === 'Integrated Course') {
+        conditions.push("a.has_integrated = 1");
+      } else if (course === 'Full Time') {
+        conditions.push("a.category = 'Full Time'");
+      } else if (course === 'Part Time') {
+        conditions.push("a.category = 'Part Time'");
+      }
+    }
+
     const whereClause = conditions.join(' AND ');
 
-    const [rows] = await pool.query(
-      `SELECT
+    const selectQuery = `SELECT
           u.id,
           u.application_id,
           u.full_name,
@@ -77,15 +107,18 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
            GROUP  BY sq.application_id
        ) qt_summary ON qt_summary.application_id = u.application_id
        WHERE ${whereClause}
-       ORDER BY u.created_at DESC
-       LIMIT ? OFFSET ?`,
-      [...filterParams, limitNum, offset]
+       ORDER BY u.created_at DESC`;
+
+    const [rows] = await pool.query(
+      isAll ? selectQuery : `${selectQuery} LIMIT ? OFFSET ?`,
+      isAll ? filterParams : [...filterParams, limitNum, offset]
     );
 
     const [[{ total }]] = await pool.query(
       `SELECT COUNT(*) AS total
        FROM   users u
        LEFT JOIN sessions s ON s.id = u.session_id
+       LEFT JOIN applications a ON a.application_id = u.application_id
        WHERE  ${whereClause}`,
       filterParams
     );
@@ -94,8 +127,8 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
       success: true,
       data: rows,
       total,
-      totalPages: Math.ceil(total / limitNum),
-      page: pageNum,
+      totalPages: isAll ? 1 : Math.ceil(total / limitNum),
+      page: isAll ? 1 : pageNum,
     });
   } catch (err) {
     console.error('Student tracking error:', err);

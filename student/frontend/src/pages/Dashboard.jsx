@@ -9,6 +9,7 @@ import {
   Download, ReceiptText, Mail, CalendarClock, AlertTriangle, Timer
 } from 'lucide-react';
 import './Dashboard.css';
+import NewsAnnouncementsBoard from '../../../../shared/components/NewsAnnouncementsBoard';
 
 // ─── Counselling Countdown Timer ──────────────────────────────────────────────
 // Shows time until counselling opens (upcoming) or closes (active). Re-renders every minute.
@@ -837,6 +838,14 @@ const Dashboard = () => {
             </div>
           </div>
         )}
+
+        {/* ── News & Announcements Board ── */}
+        <div className="mb-3">
+          <NewsAnnouncementsBoard
+            apiBase={(import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api'}
+            accentColor="#0f766e"
+          />
+        </div>
       </div>
     </>
   );

@@ -20,7 +20,7 @@ async function create(body, files) {
     const errors = validateCentre(body);
     if (errors.length) throw Object.assign(new Error(errors.join('; ')), { status: 422 });
 
-    if (body.college_code) {
+    if (!body.institute_id && body.college_code) {
         const [[inst]] = await pool.execute(
             'SELECT id FROM master_institutes WHERE college_code = ? AND is_active = 1 LIMIT 1',
             [body.college_code.trim()]
@@ -45,7 +45,7 @@ async function update(id, body, files) {
     const errors = validateCentre(body, true);
     if (errors.length) throw Object.assign(new Error(errors.join('; ')), { status: 422 });
 
-    if (body.college_code) {
+    if (!body.institute_id && body.college_code) {
         const [[inst]] = await pool.execute(
             'SELECT id FROM master_institutes WHERE college_code = ? AND is_active = 1 LIMIT 1',
             [body.college_code.trim()]
@@ -130,8 +130,8 @@ function buildCentreData(body, files, existing = {}) {
         abbreviation:             nullable(body.abbreviation),
         category_id:              nullableInt(body.category_id),
         institute_id:             nullableInt(body.institute_id),
-        institute_name_override:  nullable(body.institute_name_override),
-        institute_abbreviation:   nullable(body.institute_abbreviation),
+        institute_name_override:  null,
+        institute_abbreviation:   null,
         address_1:                nullable(body.address_1),
         address_2:                nullable(body.address_2),
         address_3:                nullable(body.address_3),

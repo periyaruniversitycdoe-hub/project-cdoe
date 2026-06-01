@@ -15,24 +15,58 @@ const QUAL_BADGE = {
 };
 
 const EntranceMarks = () => {
+  // --- Data states ---
   const [applications, setApplications] = useState([]);
   const [loading, setLoading]           = useState(true);
   const [markUpdating, setMarkUpdating] = useState(null);
   const [editingMark, setEditingMark]   = useState(null);
+
+  // --- Search state ---
   const [search, setSearch]             = useState('');
-  const [sessionFilter, setSessionFilter] = useState('active');
-  const [attFilter, setAttFilter]       = useState('');
-  const [qualFilter, setQualFilter]     = useState('');
+
+  // --- Dynamic Cascade Filters states ---
+  const [years, setYears]               = useState([]);
+  const [months, setMonths]             = useState([]);
+  const [departments, setDepartments]   = useState([]);
+  const [courses, setCourses]           = useState([]);
+
+  // --- Selected Filter states ---
+  const [selectedYear, setSelectedYear]     = useState('');
+  const [selectedMonth, setSelectedMonth]   = useState('');
+  const [selectedDept, setSelectedDept]     = useState('');
+  const [selectedCourse, setSelectedCourse] = useState('');
+  const [selectedResultStatus, setSelectedResultStatus] = useState('All');
+
+  // --- Pagination states ---
+  const [page, setPage]                 = useState(1);
+  const [limit, setLimit]               = useState(20);
+  const [total, setTotal]               = useState(0);
+  const [totalPages, setTotalPages]     = useState(1);
+
+  // --- Settings states ---
   const [isPublished, setIsPublished]   = useState(false);
   const [passingMark, setPassingMark]   = useState(50);
   const [savingMark, setSavingMark]     = useState(false);
   const [toggling, setToggling]         = useState(false);
+
+  // --- Summary Counts state ---
+  const [summary, setSummary]           = useState({
+    total: 0,
+    passed: 0,
+    failed: 0,
+    absent: 0,
+    pending: 0,
+    qualified: 0,
+    direct_qualified: 0
+  });
+
   const { sessions, sessionLabel } = useSession();
   const inputRef = useRef(null);
 
   const token   = localStorage.getItem('adminToken');
   const headers = { Authorization: `Bearer ${token}` };
 
+  // --- Fetch global entrance settings ---
   const fetchSettings = async () => {
     try {
       const res = await axios.get(`${API_URL}/settings`, { headers });
@@ -46,6 +80,7 @@ const EntranceMarks = () => {
     } catch (_) {}
   };
 
+  // --- Publish results toggle ---
   const togglePublish = async () => {
     setToggling(true);
     const newStatus = !isPublished;
@@ -64,6 +99,7 @@ const EntranceMarks = () => {
     }
   };
 
+  // --- Update Passing Mark ---
   const updatePassingMark = async () => {
     setSavingMark(true);
     try {
@@ -73,7 +109,7 @@ const EntranceMarks = () => {
         { headers }
       );
       toast.success('Qualification Pass Mark updated successfully!');
-      fetchData(); // re-fetch data so it can re-compute if the backend computed it (actually wait, they just recalculate in upload currently, but a bulk recalculate API would be better. For now update is fine).
+      fetchData();
     } catch {
       toast.error('Failed to update pass mark');
     } finally {
@@ -81,31 +117,118 @@ const EntranceMarks = () => {
     }
   };
 
+  // --- Fetch cascading filter options dynamically ---
+  const fetchFilterOptions = useCallback(async () => {
+    try {
+      const params = new URLSearchParams();
+      params.append('source', 'entrance_marks');
+      if (selectedYear) params.append('year', selectedYear);
+      if (selectedMonth) params.append('month', selectedMonth);
+      if (selectedDept) params.append('department', selectedDept);
+
+      const res = await axios.get(`${API_URL}/applications/filters?${params}`, { headers });
+      if (res.data.success && res.data.data) {
+        const { years, months, departments, courses } = res.data.data;
+        setYears(years || []);
+        setMonths(months || []);
+        setDepartments(departments || []);
+        setCourses(courses || []);
+      }
+    } catch (_) {}
+  }, [selectedYear, selectedMonth, selectedDept]);
+
+  // --- Load filter choices on selections changes ---
+  useEffect(() => {
+    fetchFilterOptions();
+  }, [fetchFilterOptions]);
+
+  // --- Reset child cascading filters ---
+  const handleYearChange = (val) => {
+    setSelectedYear(val);
+    setSelectedMonth('');
+    setSelectedDept('');
+    setSelectedCourse('');
+    setPage(1);
+  };
+
+  const handleMonthChange = (val) => {
+    setSelectedMonth(val);
+    setSelectedDept('');
+    setSelectedCourse('');
+    setPage(1);
+  };
+
+  const handleDeptChange = (val) => {
+    setSelectedDept(val);
+    setSelectedCourse('');
+    setPage(1);
+  };
+
+  const handleCourseChange = (val) => {
+    setSelectedCourse(val);
+    setPage(1);
+  };
+
+  const handleResultStatusChange = (val) => {
+    setSelectedResultStatus(val);
+    setPage(1);
+  };
+
+  // --- Fetch application student list based on pagination + filters ---
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      params.append('session_id', sessionFilter);
-      if (search)     params.append('search', search);
-      if (attFilter)  params.append('attendance_status', attFilter);
-      if (qualFilter) params.append('qualification_status', qualFilter);
+      params.append('source', 'entrance_marks');
       params.append('sort_by', 'created_at');
       params.append('sort_dir', 'desc');
-      params.append('source', 'entrance_marks');
+
+      // Set pagination
+      params.append('page', page);
+      params.append('limit', limit);
+
+      // Set active filters
+      if (search)               params.append('search', search);
+      if (selectedYear)         params.append('year', selectedYear);
+      if (selectedMonth)        params.append('month', selectedMonth);
+      if (selectedDept)         params.append('department', selectedDept);
+      if (selectedCourse)       params.append('course', selectedCourse);
+      if (selectedResultStatus) params.append('result_status', selectedResultStatus);
+
       const res = await axios.get(`${API_URL}/applications?${params}`, { headers });
-      setApplications(res.data.data || []);
-    } catch { toast.error('Failed to fetch'); }
-    finally { setLoading(false); }
-  }, [search, sessionFilter, attFilter, qualFilter]);
+      if (res.data.success) {
+        setApplications(res.data.data || []);
+        setTotal(res.data.total || 0);
+        setTotalPages(res.data.totalPages || 1);
+        if (res.data.summary) {
+          setSummary(res.data.summary);
+        }
+      }
+    } catch {
+      toast.error('Failed to fetch applicant data');
+    } finally {
+      setLoading(false);
+    }
+  }, [search, selectedYear, selectedMonth, selectedDept, selectedCourse, selectedResultStatus, page, limit]);
 
-  useEffect(() => { const t = setTimeout(fetchData, 400); return () => clearTimeout(t); }, [fetchData]);
-  useEffect(() => { fetchSettings(); }, []);
+  // --- Fetch applications with debounce for search ---
+  useEffect(() => {
+    const t = setTimeout(fetchData, 300);
+    return () => clearTimeout(t);
+  }, [fetchData]);
 
+  // --- Mount settings ---
+  useEffect(() => {
+    fetchSettings();
+  }, []);
+
+  // --- Open inline edit ---
   const openEdit = (app) => {
     setEditingMark({ id: app.id, value: app.entrance_mark ?? '' });
-    setTimeout(() => inputRef.current?.focus(), 0);
+    setTimeout(() => inputRef.current?.focus(), 50);
   };
 
+  // --- Save edited mark ---
   const saveMark = async (id) => {
     if (!editingMark || editingMark.id !== id) return;
     setMarkUpdating(id);
@@ -115,191 +238,325 @@ const EntranceMarks = () => {
         { entrance_mark: editingMark.value },
         { headers }
       );
-      toast.success(`Entrance mark saved — ${res.data.qualification_status}`);
+      toast.success(`Entrance mark saved successfully!`);
       setEditingMark(null);
       fetchData();
-    } catch (err) { toast.error(err.response?.data?.message || 'Save failed'); }
-    finally { setMarkUpdating(null); }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Save failed');
+    } finally {
+      setMarkUpdating(null);
+    }
   };
 
-  const handleExport = async () => {
+  // --- Export Excel ---
+  // mode = 'filtered' or 'all'
+  const handleExport = async (mode) => {
     try {
       const params = new URLSearchParams();
       params.append('report_type', 'entrance');
-      params.append('session_id', sessionFilter);
-      if (search)     params.append('search', search);
-      if (attFilter)  params.append('attendance_status', attFilter);
-      if (qualFilter) params.append('qualification_status', qualFilter);
       params.append('source', 'entrance_marks');
+
+      if (mode === 'all') {
+        params.append('ignore_filters', 'true');
+      } else {
+        if (search)               params.append('search', search);
+        if (selectedYear)         params.append('year', selectedYear);
+        if (selectedMonth)        params.append('month', selectedMonth);
+        if (selectedDept)         params.append('department', selectedDept);
+        if (selectedCourse)       params.append('course', selectedCourse);
+        if (selectedResultStatus) params.append('result_status', selectedResultStatus);
+      }
+
       const res = await axios.get(`${API_URL}/applications/export/excel?${params}`, {
         headers, responseType: 'blob'
       });
       const url  = window.URL.createObjectURL(new Blob([res.data]));
       const link = document.createElement('a');
       link.href  = url;
-      link.setAttribute('download', `entrance_marks_${Date.now()}.xlsx`);
+      link.setAttribute('download', `entrance_marks_${mode === 'all' ? 'complete' : 'filtered'}_${Date.now()}.xlsx`);
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-    } catch { toast.error('Export failed'); }
+      toast.success('Excel generated successfully!');
+    } catch {
+      toast.error('Export failed');
+    }
   };
 
+  // --- Helper to instantly recalculate result status in UI ---
+  const getResultStatus = (app) => {
+    if (app.attendance_status === 'Absent') return 'ABSENT';
+    const mark = editingMark && editingMark.id === app.id ? editingMark.value : app.entrance_mark;
+    if (mark === null || mark === undefined || mark === '') return 'PENDING';
+    return parseFloat(mark) >= parseFloat(passingMark) ? 'PASS' : 'FAIL';
+  };
 
-  const totalStudents  = applications.length;
-  const passedStudents = applications.filter(a =>
-    a.qualification_status === 'Qualified' || a.qualification_status === 'Direct Qualified'
-  ).length;
-  const failedStudents = applications.filter(a => a.qualification_status === 'Failed').length;
-  const absentStudents = applications.filter(a => a.qualification_status === 'Absent').length;
+  const getResultStatusBadge = (status) => {
+    if (status === 'PASS') return 'bg-success bg-opacity-10 text-success border border-success border-opacity-25';
+    if (status === 'FAIL') return 'bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25';
+    if (status === 'ABSENT') return 'bg-dark bg-opacity-10 text-dark border border-dark border-opacity-25';
+    return 'bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25';
+  };
 
   return (
-    <div>
-      <div className="d-flex flex-column flex-sm-row align-items-start align-items-sm-center justify-content-between gap-3 mb-3">
+    <div className="container-fluid px-4 py-3" style={{ background: '#f8fafc', minHeight: '100vh' }}>
+      
+      {/* Header section */}
+      <div className="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-3 mb-4">
         <div>
-          <h2 className="fw-bold mb-0" style={{ color: '#32c5d2', fontSize: 22 }}>Entrance Mark Management</h2>
+          <h2 className="fw-bold mb-1" style={{ color: '#1e293b', fontSize: 24, letterSpacing: '-0.5px' }}>
+            Entrance Mark Management
+          </h2>
           <nav aria-label="breadcrumb">
-            <ol className="breadcrumb mb-0" style={{ fontSize: 12 }}>
-              <li className="breadcrumb-item"><Link to="/" className="text-decoration-none">Home</Link></li>
-              <li className="breadcrumb-item active">Entrance Marks</li>
+            <ol className="breadcrumb mb-0" style={{ fontSize: 13 }}>
+              <li className="breadcrumb-item"><Link to="/" className="text-decoration-none text-muted">Home</Link></li>
+              <li className="breadcrumb-item active text-secondary" aria-current="page">Entrance Marks</li>
             </ol>
           </nav>
         </div>
-        <div className="d-flex gap-2 flex-wrap align-items-center">
-          <div className="d-flex align-items-center me-3 border rounded px-2 bg-light">
-            <label className="small fw-semibold me-2 mb-0 py-1" style={{ fontSize: 11 }}>Pass Mark =</label>
+        
+        {/* Pass mark configuration & Actions */}
+        <div className="d-flex gap-2 flex-wrap align-items-center bg-white p-2 rounded-3 shadow-sm border">
+          <div className="d-flex align-items-center me-2 border rounded px-2 bg-light bg-opacity-50">
+            <span className="small fw-bold text-secondary me-2 mb-0" style={{ fontSize: 11 }}>Pass Mark:</span>
             <input 
               type="number" 
-              className="form-control form-control-sm border-0 bg-transparent text-center px-0 fw-bold" 
+              className="form-control form-control-sm border-0 bg-transparent text-center px-0 fw-bold text-dark" 
               style={{ width: 45, outline: 'none', boxShadow: 'none' }}
               value={passingMark} 
               onChange={e => setPassingMark(e.target.value)} 
             />
-            <button className="btn btn-sm text-primary p-0 ms-1 fw-semibold" style={{ fontSize: 11 }} onClick={updatePassingMark} disabled={savingMark}>
+            <button className="btn btn-sm text-primary p-0 ms-1 fw-bold" style={{ fontSize: 11 }} onClick={updatePassingMark} disabled={savingMark}>
               {savingMark ? '...' : 'Save'}
             </button>
           </div>
           <button
-            className={`btn btn-sm fw-semibold ${isPublished ? 'btn-success' : 'btn-outline-primary'}`}
-            style={{ fontSize: 11 }}
+            className={`btn btn-sm fw-semibold transition-all px-3 ${isPublished ? 'btn-success text-white' : 'btn-outline-primary'}`}
+            style={{ fontSize: 12, borderRadius: '6px' }}
             onClick={togglePublish}
             disabled={toggling}
           >
-            {toggling ? '…' : isPublished ? 'Results Published ✓' : 'Publish Entrance Results'}
+            {toggling ? '…' : isPublished ? '✓ Results Published' : 'Publish Entrance Results'}
           </button>
-          <button className="btn btn-sm btn-outline-success" style={{ fontSize: 11, fontWeight: 600 }} onClick={handleExport}>Export Excel</button>
-          <button className="btn btn-sm btn-outline-secondary" style={{ fontSize: 11 }} onClick={fetchData}>Refresh</button>
+          <button 
+            className="btn btn-sm btn-outline-secondary px-3" 
+            style={{ fontSize: 12, borderRadius: '6px' }} 
+            onClick={() => fetchData()}
+          >
+            Refresh
+          </button>
         </div>
       </div>
 
-      {/* Summary cards */}
-      <div className="row g-3 mb-3">
+      {/* Summary stats cards */}
+      <div className="row g-3 mb-4">
         {[
-          { label: 'Total Students', count: totalStudents,  cls: 'bg-light border',                                  text: '#333' },
-          { label: 'Passed',         count: passedStudents, cls: 'bg-success bg-opacity-10 border border-success',   text: '#155724' },
-          { label: 'Failed',         count: failedStudents, cls: 'bg-danger bg-opacity-10 border border-danger',     text: '#721c24' },
-          { label: 'Absent',         count: absentStudents, cls: 'bg-dark bg-opacity-10 border border-dark',         text: '#333' },
-        ].map(({ label, count, cls, text }) => (
-          <div key={label} className="col-md-3">
-            <div className={`card border-0 rounded-3 p-3 ${cls}`}>
-              <div className="fw-bold" style={{ fontSize: 24, color: text }}>{count}</div>
-              <div className="small fw-semibold" style={{ color: text }}>{label}</div>
+          { label: 'Total Students', count: summary.total,  cls: 'bg-white text-dark border shadow-sm' },
+          { label: 'Passed (CET)',   count: summary.passed, cls: 'bg-success bg-opacity-10 text-success border border-success border-opacity-25 shadow-sm' },
+          { label: 'Failed (CET)',   count: summary.failed, cls: 'bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25 shadow-sm' },
+          { label: 'Absent (CET)',   count: summary.absent, cls: 'bg-dark bg-opacity-10 text-secondary border border-secondary border-opacity-25 shadow-sm' },
+          { label: 'Pending Marks',  count: summary.pending, cls: 'bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25 shadow-sm' },
+          { label: 'Qualified',      count: summary.qualified, cls: 'bg-info bg-opacity-10 text-info border border-info border-opacity-25 shadow-sm' },
+          { label: 'Direct Qualified',count: summary.direct_qualified, cls: 'bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 shadow-sm' },
+        ].map(({ label, count, cls }) => (
+          <div key={label} className="col-6 col-sm-4 col-md-3 col-lg">
+            <div className={`card border-0 rounded-3 p-3 text-center h-100 ${cls}`} style={{ transition: 'transform 0.2s' }}>
+              <div className="fw-extrabold mb-1" style={{ fontSize: 26, letterSpacing: '-1px', fontWeight: 800 }}>{count ?? 0}</div>
+              <div className="text-uppercase tracking-wider fw-bold text-muted" style={{ fontSize: 10.5, fontWeight: 700 }}>{label}</div>
             </div>
           </div>
         ))}
       </div>
 
-      <div className="card mb-3">
-        <div className="card-body py-3">
-          <div className="row g-2 align-items-end">
-            <div className="col-md-4">
-              <input type="text" className="form-control form-control-sm"
-                placeholder="Search by Name / App ID / Email..."
-                value={search} onChange={e => setSearch(e.target.value)} />
+      {/* Search & Cascading Dropdown Filters Panel */}
+      <div className="card border-0 shadow-sm rounded-3 mb-4">
+        <div className="card-body py-3 px-4">
+          <div className="row g-3 align-items-center">
+            
+            {/* Search Input */}
+            <div className="col-12 col-md-3">
+              <label className="form-label small fw-bold text-secondary mb-1">Search Candidate</label>
+              <input 
+                type="text" 
+                className="form-control form-control-sm rounded-2"
+                placeholder="Name / App ID / Email..."
+                value={search} 
+                onChange={e => setSearch(e.target.value)} 
+              />
             </div>
-            <div className="col-auto">
-              <select className="form-select form-select-sm" value={sessionFilter} onChange={e => setSessionFilter(e.target.value)}>
-                <option value="active">Active Session</option>
-                <option value="all">All Sessions</option>
-                {sessions.map(s => <option key={s.id} value={s.id}>{sessionLabel(s)}</option>)}
+
+            {/* Dynamic Session Year filter */}
+            <div className="col-6 col-md-2 col-lg">
+              <label className="form-label small fw-bold text-secondary mb-1">Session Year</label>
+              <select 
+                className="form-select form-select-sm rounded-2 fw-semibold" 
+                value={selectedYear} 
+                onChange={e => handleYearChange(e.target.value)}
+              >
+                <option value="">All Years</option>
+                {years.map(y => <option key={y} value={y}>{y}</option>)}
               </select>
             </div>
-            <div className="col-auto">
-              <select className="form-select form-select-sm" value={attFilter} onChange={e => setAttFilter(e.target.value)}>
-                <option value="">All Attendance</option>
-                <option value="Present">Present</option>
-                <option value="Absent">Absent</option>
+
+            {/* Dynamic Session Month filter */}
+            <div className="col-6 col-md-2 col-lg">
+              <label className="form-label small fw-bold text-secondary mb-1">Session Month</label>
+              <select 
+                className="form-select form-select-sm rounded-2 fw-semibold" 
+                value={selectedMonth} 
+                onChange={e => handleMonthChange(e.target.value)}
+                disabled={!selectedYear && months.length === 0}
+              >
+                <option value="">All Months</option>
+                {months.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>
-            <div className="col-auto">
-              <select className="form-select form-select-sm" value={qualFilter} onChange={e => setQualFilter(e.target.value)}>
-                <option value="">All Qualification</option>
+
+            {/* Dynamic Department filter */}
+            <div className="col-12 col-md-3 col-lg">
+              <label className="form-label small fw-bold text-secondary mb-1">Department</label>
+              <select 
+                className="form-select form-select-sm rounded-2 fw-semibold" 
+                value={selectedDept} 
+                onChange={e => handleDeptChange(e.target.value)}
+              >
+                <option value="">All Departments</option>
+                {departments.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+
+            {/* Dynamic Applied Course filter */}
+            <div className="col-6 col-md-2 col-lg">
+              <label className="form-label small fw-bold text-secondary mb-1">Applied Course</label>
+              <select 
+                className="form-select form-select-sm rounded-2 fw-semibold" 
+                value={selectedCourse} 
+                onChange={e => handleCourseChange(e.target.value)}
+              >
+                <option value="">All Courses</option>
+                {courses.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+
+            {/* Result Status filter */}
+            <div className="col-6 col-md-2 col-lg">
+              <label className="form-label small fw-bold text-secondary mb-1">Result Status</label>
+              <select 
+                className="form-select form-select-sm rounded-2 fw-semibold" 
+                value={selectedResultStatus} 
+                onChange={e => handleResultStatusChange(e.target.value)}
+              >
+                <option value="All">All Results</option>
+                <option value="Pass">Pass</option>
+                <option value="Fail">Fail</option>
                 <option value="Pending">Pending</option>
-                <option value="Qualified">Qualified</option>
-                <option value="Direct Qualified">Direct Qualified</option>
-                <option value="Failed">Failed</option>
                 <option value="Absent">Absent</option>
+                <option value="Qualified">Qualified</option>
+                <option value="Not Qualified">Not Qualified</option>
+                <option value="Direct Qualified">Direct Qualified</option>
               </select>
             </div>
           </div>
-          <div className="mt-2 text-end">
-            <small className="text-muted">Showing <strong>{applications.length}</strong> records</small>
+
+          {/* Export and filter stats buttons panel */}
+          <div className="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center border-top mt-3 pt-3 gap-2">
+            <div className="text-secondary small">
+              Filtered database records match count: <strong className="text-dark">{total}</strong>
+            </div>
+            
+            {/* Dual export modes */}
+            <div className="d-flex gap-2">
+              <button 
+                type="button" 
+                className="btn btn-sm btn-outline-success fw-bold d-inline-flex align-items-center gap-1"
+                style={{ fontSize: 12, borderRadius: '6px' }}
+                onClick={() => handleExport('filtered')}
+                disabled={total === 0}
+              >
+                <span>Export Filtered Data</span>
+              </button>
+              <button 
+                type="button" 
+                className="btn btn-sm btn-success fw-bold d-inline-flex align-items-center gap-1 text-white border-0 shadow-sm"
+                style={{ fontSize: 12, borderRadius: '6px', backgroundColor: '#10b981' }}
+                onClick={() => handleExport('all')}
+              >
+                <span>Export Complete Dataset</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="card">
+      {/* Main Student Data Table */}
+      <div className="card border-0 shadow-sm rounded-3 overflow-hidden">
         <div className="card-body p-0">
-          <div className="table-responsive">
-            <table className="table table-hover align-middle mb-0" style={{ fontSize: 13 }}>
-              <thead className="table-light">
+          <div className="table-responsive" style={{ maxHeight: '600px' }}>
+            <table className="table table-hover align-middle mb-0" style={{ fontSize: 13.5 }}>
+              <thead className="table-light text-secondary uppercase fw-bold border-bottom" style={{ fontSize: 12 }}>
                 <tr>
-                  <th className="ps-3 py-3" style={{ width: 40 }}>#</th>
+                  <th className="ps-4 py-3" style={{ width: 50 }}>#</th>
+                  <th className="py-3">Session</th>
                   <th className="py-3">Application ID</th>
                   <th className="py-3">Applicant Name</th>
                   <th className="py-3">Email</th>
-                  <th className="py-3">Subject</th>
-                  <th className="py-3">Attendance</th>
-                  <th className="py-3 text-center" style={{ minWidth: 200 }}>Entrance Mark</th>
-                  <th className="py-3">Qualification Status</th>
+                  <th className="py-3">Department</th>
+                  <th className="py-3">Applied Course</th>
+                  <th className="py-3 text-center">Attendance</th>
+                  <th className="py-3 text-center" style={{ minWidth: 160 }}>Entrance Mark</th>
+                  <th className="py-3 text-center">Result Status</th>
+                  <th className="py-3 text-center">Qualification Status</th>
+                  <th className="py-3 text-center pe-4" style={{ width: 100 }}>Actions</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="border-0">
                 {loading ? (
-                  <tr><td colSpan={8} className="text-center py-5 text-muted">Loading...</td></tr>
+                  <tr><td colSpan={12} className="text-center py-5 text-secondary"><div className="spinner-border spinner-border-sm me-2 text-primary" role="status" />Loading applications...</td></tr>
                 ) : applications.length === 0 ? (
-                  <tr><td colSpan={8} className="text-center py-5 text-muted">No records found</td></tr>
+                  <tr><td colSpan={12} className="text-center py-5 text-muted">No records match the current filters</td></tr>
                 ) : applications.map((app, i) => {
-                  const isEditing = editingMark?.id === app.id;
-                  const isSaving  = markUpdating === app.id;
+                  const isEditing    = editingMark?.id === app.id;
+                  const isSaving     = markUpdating === app.id;
+                  const resultStatus = getResultStatus(app);
+
                   return (
-                    <tr key={app.id}>
-                      <td className="ps-3 text-muted">{i + 1}</td>
+                    <tr key={app.id} className="transition-all hover-row">
+                      <td className="ps-4 text-muted small">{((page - 1) * limit) + i + 1}</td>
                       <td>
-                        <div className="fw-bold text-primary" style={{ fontSize: 12 }}>{app.application_id}</div>
-                        <div className="text-muted" style={{ fontSize: 10 }}>{app.session_name}</div>
+                        <span className="fw-semibold text-dark">{app.session_name || '—'}</span>
                       </td>
-                      <td className="fw-semibold">{app.full_name}</td>
-                      <td className="text-muted" style={{ fontSize: 12 }}>{app.email}</td>
-                      <td className="text-muted" style={{ fontSize: 12 }}>{app.subject || '—'}</td>
                       <td>
+                        <div className="fw-bold text-primary" style={{ fontSize: 12.5 }}>{app.application_id}</div>
+                      </td>
+                      <td className="fw-bold text-dark">{app.full_name}</td>
+                      <td className="text-secondary small">{app.email}</td>
+                      <td className="text-dark small fw-semibold">{app.subject || '—'}</td>
+                      <td className="small">
+                        <span className="badge bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-10 rounded-pill px-2.5 py-1">
+                          {app.applied_course || '—'}
+                        </span>
+                      </td>
+                      <td className="text-center">
                         <span className={`badge rounded-pill px-3 py-1 ${
                           app.attendance_status === 'Present' ? 'bg-success text-white' :
                           app.attendance_status === 'Absent'  ? 'bg-danger text-white' : 'bg-secondary text-white'
-                        }`} style={{ fontSize: 11 }}>{app.attendance_status || 'Not Set'}</span>
+                        }`} style={{ fontSize: 11, fontWeight: 600 }}>
+                          {app.attendance_status || 'Not Set'}
+                        </span>
                       </td>
                       <td className="text-center">
                         {app.attendance_status === 'Absent' ? (
-                          <span className="text-muted">—</span>
+                          <span className="text-secondary small">—</span>
                         ) : isSaving ? (
-                          <small className="text-muted">Saving...</small>
+                          <div className="spinner-border spinner-border-xs text-secondary" role="status" />
                         ) : isEditing ? (
-                          <div className="d-flex align-items-center justify-content-center gap-2">
+                          <div className="d-flex align-items-center justify-content-center gap-2 animate-fade-in">
                             <input
                               ref={inputRef}
                               type="number" min={0} max={100} step={0.5}
-                              className="form-control form-control-sm"
-                              style={{ width: 90, textAlign: 'center' }}
+                              className="form-control form-control-sm text-center px-1 fw-bold"
+                              style={{ width: 75, height: 28, borderRadius: '4px' }}
                               value={editingMark.value}
                               onChange={e => setEditingMark(prev => ({ ...prev, value: e.target.value }))}
                               onKeyDown={e => {
@@ -308,31 +565,44 @@ const EntranceMarks = () => {
                               }}
                             />
                             <button
-                              className="btn btn-sm btn-success fw-semibold"
-                              style={{ fontSize: 11, padding: '3px 12px' }}
+                              className="btn btn-sm btn-success py-0 px-2 fw-bold text-white shadow-sm"
+                              style={{ fontSize: 11, height: 26 }}
                               onClick={() => saveMark(app.id)}
                             >Enter</button>
                             <button
-                              className="btn btn-sm btn-outline-secondary"
-                              style={{ fontSize: 11, padding: '3px 8px' }}
+                              className="btn btn-sm btn-outline-secondary py-0 px-1.5"
+                              style={{ fontSize: 11, height: 26 }}
                               onClick={() => setEditingMark(null)}
                             >✕</button>
                           </div>
                         ) : (
-                          <button
-                            className="btn btn-link p-0 text-decoration-none fw-bold"
-                            style={{ fontSize: 13, color: app.entrance_mark != null ? '#198754' : '#adb5bd' }}
-                            onClick={() => openEdit(app)}
-                            title="Click to edit entrance mark"
-                          >
-                            {app.entrance_mark != null ? app.entrance_mark : 'Click to Enter'}
-                          </button>
+                          <span className="fw-bold" style={{ color: app.entrance_mark != null ? '#16a34a' : '#94a3b8' }}>
+                            {app.entrance_mark != null ? app.entrance_mark : '—'}
+                          </span>
                         )}
                       </td>
-                      <td>
-                        <span className={`badge rounded-pill px-3 py-1 ${QUAL_BADGE[app.qualification_status] || 'bg-secondary text-white'}`} style={{ fontSize: 11 }}>
+                      <td className="text-center">
+                        <span className={`badge rounded-pill px-3 py-1 fw-extrabold ${getResultStatusBadge(resultStatus)}`} style={{ fontSize: 11 }}>
+                          {resultStatus}
+                        </span>
+                      </td>
+                      <td className="text-center">
+                        <span className={`badge rounded-pill px-3 py-1 fw-semibold ${QUAL_BADGE[app.qualification_status] || 'bg-secondary text-white'}`} style={{ fontSize: 11 }}>
                           {app.qualification_status || 'Pending'}
                         </span>
+                      </td>
+                      <td className="text-center pe-4">
+                        {app.attendance_status === 'Absent' || app.entrance_exam_status === 'Exempted' ? (
+                          <button className="btn btn-sm btn-light disabled text-muted rounded-2 border" style={{ fontSize: 11.5 }} disabled>Edit Mark</button>
+                        ) : (
+                          <button 
+                            className="btn btn-sm btn-outline-primary fw-semibold rounded-2 py-1 px-2.5 transition-all shadow-sm" 
+                            style={{ fontSize: 11.5, borderWidth: '1px' }}
+                            onClick={() => openEdit(app)}
+                          >
+                            Edit Mark
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -340,6 +610,115 @@ const EntranceMarks = () => {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination controls footer */}
+          {limit !== 'all' && totalPages > 1 && (
+            <div className="d-flex flex-column flex-sm-row align-items-center justify-content-between px-4 py-3 bg-light border-top gap-3">
+              <div className="d-flex align-items-center gap-2">
+                <span className="small text-secondary">Records per page:</span>
+                <select 
+                  className="form-select form-select-sm rounded-2 fw-semibold py-1 px-2"
+                  style={{ width: 'fit-content' }}
+                  value={limit}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setLimit(val === 'all' ? 'all' : parseInt(val, 10));
+                    setPage(1);
+                  }}
+                >
+                  <option value="10">10</option>
+                  <option value="20">20</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                  <option value="200">200</option>
+                </select>
+                <span className="small text-secondary text-muted ms-2">
+                  Showing <strong>{((page - 1) * limit) + 1}</strong> to <strong>{Math.min(page * limit, total)}</strong> of <strong>{total}</strong> records
+                </span>
+              </div>
+
+              {/* Navigation buttons */}
+              <div className="d-flex align-items-center gap-1">
+                <button 
+                  className="btn btn-sm btn-outline-secondary rounded-2 py-1 px-2.5 fw-semibold border"
+                  disabled={page === 1}
+                  onClick={() => setPage(1)}
+                >
+                  « First
+                </button>
+                <button 
+                  className="btn btn-sm btn-outline-secondary rounded-2 py-1 px-2.5 fw-semibold border"
+                  disabled={page === 1}
+                  onClick={() => setPage(p => p - 1)}
+                >
+                  ‹ Prev
+                </button>
+                
+                {/* Pages array */}
+                {Array.from({ length: Math.min(5, totalPages) }, (_, idx) => {
+                  let pageNum = page - 2 + idx;
+                  if (page === 1 || page === 2) pageNum = idx + 1;
+                  else if (page === totalPages || page === totalPages - 1) pageNum = totalPages - 4 + idx;
+                  
+                  if (pageNum < 1 || pageNum > totalPages) return null;
+                  return (
+                    <button
+                      key={pageNum}
+                      className={`btn btn-sm rounded-2 py-1 px-2.5 fw-bold border ${page === pageNum ? 'btn-primary text-white border-primary shadow-sm' : 'btn-outline-secondary'}`}
+                      onClick={() => setPage(pageNum)}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+
+                <button 
+                  className="btn btn-sm btn-outline-secondary rounded-2 py-1 px-2.5 fw-semibold border"
+                  disabled={page === totalPages}
+                  onClick={() => setPage(p => p + 1)}
+                >
+                  Next ›
+                </button>
+                <button 
+                  className="btn btn-sm btn-outline-secondary rounded-2 py-1 px-2.5 fw-semibold border"
+                  disabled={page === totalPages}
+                  onClick={() => setPage(totalPages)}
+                >
+                  Last »
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Simple footer for 'All' pagination or simple cases */}
+          {(limit === 'all' || totalPages <= 1) && (
+            <div className="d-flex flex-column flex-sm-row align-items-center justify-content-between px-4 py-3 bg-light border-top gap-2">
+              <div className="d-flex align-items-center gap-2">
+                <span className="small text-secondary">Records per page:</span>
+                <select 
+                  className="form-select form-select-sm rounded-2 fw-semibold py-1 px-2"
+                  style={{ width: 'fit-content' }}
+                  value={limit}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setLimit(val === 'all' ? 'all' : parseInt(val, 10));
+                    setPage(1);
+                  }}
+                >
+                  <option value="10">10</option>
+                  <option value="20">20</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                  <option value="200">200</option>
+                  <option value="all">All</option>
+                </select>
+                <span className="small text-secondary text-muted ms-2">
+                  Showing all <strong>{total}</strong> records
+                </span>
+              </div>
+            </div>
+          )}
+
         </div>
       </div>
     </div>

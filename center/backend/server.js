@@ -49,6 +49,31 @@ app.use('/api/portal', require('./routes/portal'));
 app.use('/api/dropdowns', require('./routes/dropdowns'));
 app.use('/api/notifications', require('./routes/notifications'));
 
+// News & Announcements board — audience = all | centre
+app.get('/api/news-announcements', async (_req, res) => {
+    try {
+        const now = new Date();
+        const [rows] = await db.query(
+            `SELECT id, title, description, category, priority, audience,
+                    attachment_path, attachment_name,
+                    publish_date, expiry_date, is_pinned, created_at
+             FROM news_announcements
+             WHERE is_deleted = 0
+               AND status = 'published'
+               AND publish_date <= ?
+               AND expiry_date  >= ?
+               AND (audience = 'all' OR audience = 'centre')
+             ORDER BY is_pinned DESC,
+               FIELD(priority,'urgent','high','medium','low'),
+               publish_date DESC`,
+            [now, now]
+        );
+        res.json({ success: true, data: rows });
+    } catch (_err) {
+        res.json({ success: true, data: [] });
+    }
+});
+
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'center-portal', port: PORT }));
 
 app.use((err, _req, res, _next) => {

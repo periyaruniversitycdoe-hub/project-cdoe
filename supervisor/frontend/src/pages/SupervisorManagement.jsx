@@ -42,8 +42,20 @@ export function SupervisorEditPage() {
 // ─── List View ────────────────────────────────────────────────────────────────
 function SupervisorList({ onAdd, onEdit }) {
     const [data, setData] = useState({ rows: [], total: 0 });
-    const [filters, setFilters] = useState({ status: '', search: '', page: 1, limit: 20 });
+    const [filters, setFilters] = useState({
+        status: '', search: '',
+        institute_id: '', department_id: '', designation_id: '',
+        page: 1, limit: 20,
+    });
+    const [filterOptions, setFilterOptions] = useState({ institutes: [], departments: [], designations: [] });
     const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        fetch(`${API}/supervisors/filter-options`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(j => { if (j.success) setFilterOptions(j.data); })
+            .catch(() => {});
+    }, []);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -111,8 +123,11 @@ function SupervisorList({ onAdd, onEdit }) {
                     'Authorization': `Bearer ${getToken()}`
                 },
                 body: JSON.stringify({
-                    search: filters.search,
-                    status: filters.status
+                    search:         filters.search,
+                    status:         filters.status,
+                    institute_id:   filters.institute_id,
+                    department_id:  filters.department_id,
+                    designation_id: filters.designation_id,
                 })
             });
             const blob = await res.blob();
@@ -169,8 +184,8 @@ function SupervisorList({ onAdd, onEdit }) {
             {/* Filters */}
             <div className="card mb-3 border-0 shadow-sm">
                 <div className="card-body py-3">
-                    <div className="row g-2">
-                        <div className="col-md-6">
+                    <div className="row g-2 mb-2">
+                        <div className="col-md-5">
                             <input
                                 className="form-control"
                                 placeholder="Search by name, email, mobile, ID..."
@@ -178,7 +193,7 @@ function SupervisorList({ onAdd, onEdit }) {
                                 onChange={e => setFilters(f => ({ ...f, search: e.target.value, page: 1 }))}
                             />
                         </div>
-                        <div className="col-md-3">
+                        <div className="col-md-2">
                             <select
                                 className="form-select"
                                 value={filters.status}
@@ -205,6 +220,65 @@ function SupervisorList({ onAdd, onEdit }) {
                             <button className="btn btn-outline-secondary w-100" onClick={load}>Refresh</button>
                         </div>
                     </div>
+
+                    {/* Advanced filters row: College Code, College Name, Department, Designation */}
+                    <div className="row g-2">
+                        {/* College Code — same institute_id dimension as College Name */}
+                        <div className="col-md-3">
+                            <select
+                                className="form-select"
+                                value={filters.institute_id}
+                                onChange={e => setFilters(f => ({ ...f, institute_id: e.target.value, page: 1 }))}
+                            >
+                                <option value="">All College Codes</option>
+                                {filterOptions.institutes.map(inst => (
+                                    <option key={inst.id} value={inst.id}>{inst.college_code}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* College Name — linked to same institute_id */}
+                        <div className="col-md-3">
+                            <select
+                                className="form-select"
+                                value={filters.institute_id}
+                                onChange={e => setFilters(f => ({ ...f, institute_id: e.target.value, page: 1 }))}
+                            >
+                                <option value="">All College Names</option>
+                                {filterOptions.institutes.map(inst => (
+                                    <option key={inst.id} value={inst.id}>{inst.name}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* Department — from supervisor records only */}
+                        <div className="col-md-3">
+                            <select
+                                className="form-select"
+                                value={filters.department_id}
+                                onChange={e => setFilters(f => ({ ...f, department_id: e.target.value, page: 1 }))}
+                            >
+                                <option value="">All Departments</option>
+                                {filterOptions.departments.map(dept => (
+                                    <option key={dept.id} value={dept.id}>{dept.name}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* Designation — from Supervisor Masters */}
+                        <div className="col-md-3">
+                            <select
+                                className="form-select"
+                                value={filters.designation_id}
+                                onChange={e => setFilters(f => ({ ...f, designation_id: e.target.value, page: 1 }))}
+                            >
+                                <option value="">All Designations</option>
+                                {filterOptions.designations.map(desig => (
+                                    <option key={desig.id} value={desig.id}>{desig.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -222,7 +296,8 @@ function SupervisorList({ onAdd, onEdit }) {
                                         <th>Name</th>
                                         <th>Designation</th>
                                         <th>Department</th>
-                                        <th>Institute</th>
+                                        <th>College Code</th>
+                                        <th>College Name</th>
                                         <th>Mobile</th>
                                         <th>Vacancy</th>
                                         <th>Status</th>
@@ -231,7 +306,7 @@ function SupervisorList({ onAdd, onEdit }) {
                                 </thead>
                                 <tbody>
                                     {data.rows.length === 0 ? (
-                                        <tr><td colSpan={9} className="text-center py-4 text-muted">No supervisors found</td></tr>
+                                        <tr><td colSpan={10} className="text-center py-4 text-muted">No supervisors found</td></tr>
                                     ) : data.rows.map((s, i) => (
                                         <tr key={s.id}>
                                             <td className="text-muted small">{(filters.page - 1) * filters.limit + i + 1}</td>
@@ -241,6 +316,7 @@ function SupervisorList({ onAdd, onEdit }) {
                                             </td>
                                             <td className="small">{s.designation_name || '—'}</td>
                                             <td className="small">{s.department_name || '—'}</td>
+                                            <td className="small fw-semibold text-secondary">{s.serving_institute_code || '—'}</td>
                                             <td className="small">{s.serving_institute_name || '—'}</td>
                                             <td className="small">{s.mobile || '—'}</td>
                                             <td className="text-center">

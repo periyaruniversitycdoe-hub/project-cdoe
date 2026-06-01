@@ -24,7 +24,9 @@ const Applications = () => {
 
   const [search, setSearch]               = useState('');
   const [statusFilter, setStatusFilter]   = useState('All');
-  const [sessionFilter, setSessionFilter] = useState('active');
+  const [yearFilter, setYearFilter]       = useState('');
+  const [monthFilter, setMonthFilter]     = useState('');
+  const [courseFilter, setCourseFilter]   = useState('');
   const [qualFilter, setQualFilter]       = useState('');
   const [admFilter, setAdmFilter]         = useState('');
   const [sortBy, setSortBy]               = useState('created_at');
@@ -32,9 +34,14 @@ const Applications = () => {
 
   // Pagination
   const [page,       setPage]       = useState(1);
-  const [limit]                     = useState(50);
+  const [limit,      setLimit]      = useState(50);
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
+
+  // Dynamic filter lists
+  const [years, setYears] = useState([]);
+  const [months, setMonths] = useState([]);
+  const [courses, setCourses] = useState([]);
 
   // Sessions come from the shared context (no extra fetch needed)
   const { sessions, activeSession } = useSession();
@@ -42,6 +49,64 @@ const Applications = () => {
 
   const token   = localStorage.getItem('adminToken');
   const headers = { Authorization: `Bearer ${token}` };
+
+  // Fetch initial filters on mount
+  useEffect(() => {
+    const fetchInitialFilters = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/applications/filters`, { headers });
+        if (res.data.success) {
+          setYears(res.data.data.years || []);
+          setMonths(res.data.data.months || []);
+          setCourses(res.data.data.courses || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch initial filters', err);
+      }
+    };
+    fetchInitialFilters();
+  }, []);
+
+  // Fetch dynamic cascading filters
+  useEffect(() => {
+    const fetchCascadedFilters = async () => {
+      try {
+        const params = new URLSearchParams();
+        if (yearFilter) params.append('year', yearFilter);
+        if (monthFilter) params.append('month', monthFilter);
+
+        const res = await axios.get(`${API_URL}/applications/filters?${params}`, { headers });
+        if (res.data.success) {
+          if (!yearFilter && !monthFilter) {
+            setMonths(res.data.data.months || []);
+            setCourses(res.data.data.courses || []);
+          } else {
+            if (yearFilter) {
+              setMonths(res.data.data.months || []);
+            }
+            setCourses(res.data.data.courses || []);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch cascaded filters', err);
+      }
+    };
+
+    if (yearFilter || monthFilter) {
+      fetchCascadedFilters();
+    } else {
+      const fetchAll = async () => {
+        try {
+          const res = await axios.get(`${API_URL}/applications/filters`, { headers });
+          if (res.data.success) {
+            setMonths(res.data.data.months || []);
+            setCourses(res.data.data.courses || []);
+          }
+        } catch {}
+      };
+      fetchAll();
+    }
+  }, [yearFilter, monthFilter]);
 
   // `page` is intentionally excluded from the useCallback deps — it is passed
   // as an explicit argument so the function reference only changes when filters
@@ -54,7 +119,9 @@ const Applications = () => {
       const params = new URLSearchParams();
       if (search)                 params.append('search', search);
       if (statusFilter !== 'All') params.append('status', statusFilter);
-      params.append('session_id', sessionFilter);
+      if (yearFilter)             params.append('year', yearFilter);
+      if (monthFilter)            params.append('month', monthFilter);
+      if (courseFilter)           params.append('course', courseFilter);
       if (qualFilter)             params.append('qualification_status', qualFilter);
       if (admFilter !== '')       params.append('admission_approved', admFilter);
       params.append('sort_by', sortBy);
@@ -70,12 +137,12 @@ const Applications = () => {
       if (err?.code !== 'ERR_CANCELED') toast.error('Failed to fetch applications');
     } finally { setLoading(false); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, statusFilter, sessionFilter, qualFilter, admFilter, sortBy, sortDir, limit]);
+  }, [search, statusFilter, yearFilter, monthFilter, courseFilter, qualFilter, admFilter, sortBy, sortDir, limit]);
 
   // Reset to page 1 when any filter changes.
   useEffect(() => {
     setPage(1);
-  }, [search, statusFilter, sessionFilter, qualFilter, admFilter, sortBy, sortDir]);
+  }, [search, statusFilter, yearFilter, monthFilter, courseFilter, qualFilter, admFilter, sortBy, sortDir, limit]);
 
   // Debounced fetch — AbortController cancels the previous in-flight request
   // before the new one fires, preventing out-of-order response races.
@@ -118,7 +185,9 @@ const Applications = () => {
     try {
       const params = new URLSearchParams();
       params.append('report_type', 'applications');
-      params.append('session_id', sessionFilter);
+      if (yearFilter)             params.append('year', yearFilter);
+      if (monthFilter)            params.append('month', monthFilter);
+      if (courseFilter)           params.append('course', courseFilter);
       if (statusFilter !== 'All') params.append('status', statusFilter);
       if (qualFilter)             params.append('qualification_status', qualFilter);
       if (admFilter !== '')       params.append('admission_approved', admFilter);
@@ -196,11 +265,22 @@ const Applications = () => {
               <input type="text" className="form-control form-control-sm" placeholder="Search by Name / App ID / Email..."
                 value={search} onChange={e => setSearch(e.target.value)} />
             </div>
-            <div className="col-auto">
-              <select className="form-select form-select-sm" value={sessionFilter} onChange={e => setSessionFilter(e.target.value)}>
-                <option value="active">Active Session</option>
-                <option value="all">All Sessions</option>
-                {sessions.map(s => <option key={s.id} value={s.id}>{sessionLabel(s)}</option>)}
+            <div className="col-auto" style={{ minWidth: 135 }}>
+              <select className="form-select form-select-sm" value={yearFilter} onChange={e => setYearFilter(e.target.value)}>
+                <option value="">Select Year</option>
+                {years.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
+            <div className="col-auto" style={{ minWidth: 135 }}>
+              <select className="form-select form-select-sm" value={monthFilter} onChange={e => setMonthFilter(e.target.value)}>
+                <option value="">Select Month</option>
+                {months.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <div className="col-auto" style={{ minWidth: 140 }}>
+              <select className="form-select form-select-sm" value={courseFilter} onChange={e => setCourseFilter(e.target.value)}>
+                <option value="">Select Course</option>
+                {courses.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div className="col-auto">
@@ -226,12 +306,37 @@ const Applications = () => {
                 <option value="0">Not Approved</option>
               </select>
             </div>
+            <div className="col-auto">
+              <select className="form-select form-select-sm" value={limit} onChange={e => setLimit(e.target.value)}>
+                <option value={10}>10 Per Page</option>
+                <option value={20}>20 Per Page</option>
+                <option value={50}>50 Per Page</option>
+                <option value={100}>100 Per Page</option>
+                <option value={200}>200 Per Page</option>
+                <option value="all">All</option>
+              </select>
+            </div>
           </div>
 
           <div className="d-flex justify-content-between align-items-center mt-2">
             <div className="d-flex gap-1 flex-wrap">
-              {sessionFilter === 'active' && activeSessionId && (
-                <span className="badge bg-info text-dark" style={{ fontSize: 11 }}>Active Session</span>
+              {yearFilter && (
+                <span className="badge bg-secondary text-white" style={{ fontSize: 11 }}>
+                  Year: {yearFilter}
+                  <button className="btn-close btn-close-sm ms-1" style={{ fontSize: 8, filter: 'invert(1)' }} onClick={() => setYearFilter('')} />
+                </span>
+              )}
+              {monthFilter && (
+                <span className="badge bg-secondary text-white" style={{ fontSize: 11 }}>
+                  Month: {monthFilter}
+                  <button className="btn-close btn-close-sm ms-1" style={{ fontSize: 8, filter: 'invert(1)' }} onClick={() => setMonthFilter('')} />
+                </span>
+              )}
+              {courseFilter && (
+                <span className="badge bg-secondary text-white" style={{ fontSize: 11 }}>
+                  Course: {courseFilter}
+                  <button className="btn-close btn-close-sm ms-1" style={{ fontSize: 8, filter: 'invert(1)' }} onClick={() => setCourseFilter('')} />
+                </span>
               )}
               {qualFilter && (
                 <span className="badge bg-primary text-white" style={{ fontSize: 11 }}>
@@ -247,7 +352,11 @@ const Applications = () => {
               )}
             </div>
             <span className="text-muted" style={{ fontSize: 12 }}>
-              Showing <strong>{(page - 1) * limit + 1}–{Math.min(page * limit, totalCount)}</strong> of <strong>{totalCount}</strong> records
+              {limit === 'all' ? (
+                <>Displaying <strong>1–{totalCount}</strong> of <strong>{totalCount}</strong> records</>
+              ) : (
+                <>Displaying <strong>{totalCount === 0 ? 0 : (page - 1) * limit + 1}–{Math.min(page * limit, totalCount)}</strong> of <strong>{totalCount}</strong> records</>
+              )}
             </span>
           </div>
         </div>

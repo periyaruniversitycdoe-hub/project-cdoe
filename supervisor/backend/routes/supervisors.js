@@ -38,6 +38,9 @@ const supervisorUpload = upload.fields([
 // Auxiliary: active centres list for discipline dropdowns
 router.get('/active-centres', ctrl.getActiveCentres);
 
+// Filter options: institutes (from Institute Master), departments, designations
+router.get('/filter-options', verifyToken, isAdmin, ctrl.getFilterOptions);
+
 // ENTERPRISE CAPACITY AUTOMATION ROUTES
 router.get('/capacity/config',        verifyToken, isAdmin, ctrl.listCapacityConfigs);
 router.post('/capacity/config',       verifyToken, isAdmin, ctrl.upsertCapacityConfig);

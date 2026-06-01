@@ -6,10 +6,13 @@ const wrap = fn => async (req, res) => {
 };
 
 const list = wrap(req => svc.list({
-    status: req.query.status,
-    search: req.query.search,
-    page:   parseInt(req.query.page)  || 1,
-    limit:  parseInt(req.query.limit) || 20,
+    status:        req.query.status        || '',
+    search:        req.query.search        || '',
+    page:          parseInt(req.query.page)  || 1,
+    limit:         parseInt(req.query.limit) || 20,
+    institute_id:  req.query.institute_id  || '',
+    department_id: req.query.department_id || '',
+    designation_id:req.query.designation_id|| '',
 }));
 
 const get  = wrap(req => svc.get(req.params.id));
@@ -36,5 +39,6 @@ const getActiveCentres = wrap(() => svc.getActiveCentres());
 const listCapacityConfigs = wrap(() => svc.listCapacityConfigs());
 const upsertCapacityConfig = wrap(req => svc.upsertCapacityConfig(req.body));
 const getCapacityByDesignation = wrap(req => svc.getCapacityByDesignation(req.params.designationId));
+const getFilterOptions = wrap(() => svc.getFilterOptions());
 
-module.exports = { list, get, create, update, updateStatus, remove, removeAll, getActiveCentres, listCapacityConfigs, upsertCapacityConfig, getCapacityByDesignation };
+module.exports = { list, get, create, update, updateStatus, remove, removeAll, getActiveCentres, listCapacityConfigs, upsertCapacityConfig, getCapacityByDesignation, getFilterOptions };

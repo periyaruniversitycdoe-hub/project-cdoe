@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
-import { 
-  Building, Users, ShieldCheck, Clock, ChevronRight, 
+import {
+  Building, Users, ShieldCheck, Clock, ChevronRight,
   PlusCircle, Eye, Mail
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import NewsAnnouncementsBoard from '../../../../shared/components/NewsAnnouncementsBoard';
 
 const API = (import.meta.env.VITE_CENTER_API_URL || 'http://localhost:5003') + '/api';
 
@@ -242,6 +243,14 @@ export default function Dashboard() {
               </div>
             </div>
           )}
+
+          {/* ── News & Announcements Board ── */}
+          <div style={{ marginBottom: 24 }}>
+            <NewsAnnouncementsBoard
+              apiBase={(import.meta.env.VITE_CENTER_API_URL || 'http://localhost:5003') + '/api'}
+              accentColor="#0891b2"
+            />
+          </div>
 
           {/* Supervisors Table */}
           {supervisors.length > 0 && (

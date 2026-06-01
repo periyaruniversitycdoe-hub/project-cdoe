@@ -7,7 +7,8 @@ const SELECT_JOINED = `
         d.name  AS designation_name,
         sd.name AS special_designation_name,
         dept.name AS department_name,
-        inst.name AS serving_institute_name,
+        inst.name        AS serving_institute_name,
+        inst.college_code AS serving_institute_code,
         dist.name AS district_name
     FROM supervisors s
     LEFT JOIN master_designations        d    ON s.designation_id         = d.id
@@ -28,16 +29,19 @@ function enrichCapacity(row) {
     return row;
 }
 
-async function findAll({ status, search, page = 1, limit = 20 }) {
+async function findAll({ status, search, page = 1, limit = 20, institute_id, department_id, designation_id }) {
     const conditions = [];
     const vals = [];
 
-    if (status) { conditions.push('s.status = ?'); vals.push(status); }
+    if (status)        { conditions.push('s.status = ?');               vals.push(status); }
     if (search) {
         conditions.push('(s.name LIKE ? OR s.email LIKE ? OR s.mobile LIKE ? OR s.supervisor_no LIKE ?)');
         const like = `%${search}%`;
         vals.push(like, like, like, like);
     }
+    if (institute_id)   { conditions.push('s.serving_institute_id = ?'); vals.push(parseInt(institute_id)); }
+    if (department_id)  { conditions.push('s.department_id = ?');        vals.push(parseInt(department_id)); }
+    if (designation_id) { conditions.push('s.designation_id = ?');       vals.push(parseInt(designation_id)); }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const offset = (page - 1) * limit;
@@ -50,6 +54,28 @@ async function findAll({ status, search, page = 1, limit = 20 }) {
         vals
     );
     return { rows: rows.map(enrichCapacity), total, page, limit };
+}
+
+async function getFilterOptions() {
+    const [institutes] = await pool.execute(
+        `SELECT id, college_code, name
+         FROM   master_institutes
+         WHERE  is_active = 1
+         ORDER  BY college_code ASC`
+    );
+    const [departments] = await pool.execute(
+        `SELECT DISTINCT d.id, d.name
+         FROM   master_departments d
+         INNER  JOIN supervisors s ON s.department_id = d.id
+         ORDER  BY d.name ASC`
+    );
+    const [designations] = await pool.execute(
+        `SELECT id, name
+         FROM   master_designations
+         WHERE  is_active = 1
+         ORDER  BY name ASC`
+    );
+    return { institutes, departments, designations };
 }
 
 async function findById(id) {
@@ -133,4 +159,4 @@ async function isEmailTaken(email, excludeId = null) {
     return !!row;
 }
 
-module.exports = { findAll, findById, getDisciplines, create, update, upsertDisciplines, updateStatus, remove, removeAll, isEmailTaken };
+module.exports = { findAll, findById, getDisciplines, create, update, upsertDisciplines, updateStatus, remove, removeAll, isEmailTaken, getFilterOptions };

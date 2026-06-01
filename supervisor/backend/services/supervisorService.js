@@ -208,4 +208,8 @@ async function getCapacityByDesignation(designationId) {
     return capacityEngine.calculateCapacityDetails(designationId);
 }
 
-module.exports = { list, get, create, update, updateStatus, remove, removeAll, getActiveCentres, listCapacityConfigs, upsertCapacityConfig, getCapacityByDesignation };
+async function getFilterOptions() {
+    return repo.getFilterOptions();
+}
+
+module.exports = { list, get, create, update, updateStatus, remove, removeAll, getActiveCentres, listCapacityConfigs, upsertCapacityConfig, getCapacityByDesignation, getFilterOptions };

@@ -28,19 +28,20 @@ export default function CentreManagement() {
 // ─── List View ────────────────────────────────────────────────────────────────
 function CentreList({ onAdd, onEdit }) {
     const [data, setData] = useState({ rows: [], total: 0 });
-    const [filters, setFilters] = useState({ status: '', search: '', page: 1, limit: 20 });
+    const [page, setPage] = useState(1);
+    const limit = 20;
     const [loading, setLoading] = useState(false);
 
     const load = useCallback(async () => {
         setLoading(true);
         try {
-            const q = new URLSearchParams({ ...filters }).toString();
+            const q = new URLSearchParams({ page, limit }).toString();
             const res = await fetch(`${API}/centres?${q}`, { headers: authHeaders() });
             const json = await res.json();
             if (json.success) setData(json.data);
         } catch { /* ignore */ }
         finally { setLoading(false); }
-    }, [filters]);
+    }, [page]);
 
     useEffect(() => { load(); }, [load]);
 
@@ -68,50 +69,16 @@ function CentreList({ onAdd, onEdit }) {
         load();
     }
 
-    const totalPages = Math.ceil(data.total / filters.limit);
+    const totalPages = Math.ceil(data.total / limit);
 
     return (
         <div className="container-fluid py-4">
             <div className="d-flex justify-content-between align-items-center mb-4">
                 <div>
                     <h4 className="mb-0 fw-bold text-primary">Research Centre Management</h4>
-                    <small className="text-muted">PhD Research Centres & Affiliated Institutes Master Sync</small>
+                    <small className="text-muted">PhD Research Centres</small>
                 </div>
                 <button className="btn btn-primary" onClick={onAdd}>+ Register Centre</button>
-            </div>
-
-            {/* Filters */}
-            <div className="card mb-3 border-0 shadow-sm">
-                <div className="card-body py-3">
-                    <div className="row g-2">
-                        <div className="col-md-6">
-                            <input className="form-control" placeholder="Search by name, ref no, email..."
-                                value={filters.search}
-                                onChange={e => setFilters(f => ({ ...f, search: e.target.value, page: 1 }))} />
-                        </div>
-                        <div className="col-md-3">
-                            <select className="form-select" value={filters.status}
-                                onChange={e => setFilters(f => ({ ...f, status: e.target.value, page: 1 }))}>
-                                <option value="">All Statuses</option>
-                                <option value="Pending">Pending</option>
-                                <option value="Approved">Approved</option>
-                                <option value="Rejected">Rejected</option>
-                                <option value="Suspended">Suspended</option>
-                            </select>
-                        </div>
-                        <div className="col-md-2">
-                            <select className="form-select" value={filters.limit}
-                                onChange={e => setFilters(f => ({ ...f, limit: parseInt(e.target.value), page: 1 }))}>
-                                <option value={10}>10 / page</option>
-                                <option value={20}>20 / page</option>
-                                <option value={50}>50 / page</option>
-                            </select>
-                        </div>
-                        <div className="col-md-1">
-                            <button className="btn btn-outline-secondary w-100" onClick={load}>Refresh</button>
-                        </div>
-                    </div>
-                </div>
             </div>
 
             {/* Table */}
@@ -125,32 +92,61 @@ function CentreList({ onAdd, onEdit }) {
                                 <thead className="table-light">
                                     <tr>
                                         <th>#</th>
-                                        <th>Institute Code</th>
-                                        <th>Institute Name</th>
-                                        <th>Centre Name</th>
-                                        <th>Centre Type</th>
-                                        <th>Recognition Number</th>
-                                        <th>Recognition Date</th>
-                                        <th>District</th>
-                                        <th>Status</th>
+                                        <th>Institute Details</th>
+                                        <th>Principal Info</th>
+                                        <th>College Contact</th>
+                                        <th>Institute Status</th>
+                                        <th>Centre Details</th>
+                                        <th>Recognition Details</th>
+                                        <th>Centre Status</th>
                                         <th>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {data.rows.length === 0 ? (
-                                        <tr><td colSpan={10} className="text-center py-4 text-muted">No research centres found</td></tr>
+                                        <tr><td colSpan={9} className="text-center py-4 text-muted">No research centres found</td></tr>
                                     ) : data.rows.map((c, i) => (
                                         <tr key={c.id}>
-                                            <td className="text-muted small">{(filters.page - 1) * filters.limit + i + 1}</td>
-                                            <td className="small fw-semibold text-primary">{c.institute_code || '—'}</td>
-                                            <td className="small text-muted">{c.institute_name || '—'}</td>
+                                            <td className="text-muted small">{(page - 1) * limit + i + 1}</td>
+                                            
+                                            {/* Institute Details */}
+                                            <td>
+                                                <div className="fw-semibold text-primary">{c.institute_code || '—'}</div>
+                                                <div className="small text-muted">{c.institute_name || '—'}</div>
+                                            </td>
+
+                                            {/* Principal Info */}
+                                            <td>
+                                                <div className="fw-semibold text-dark">{c.institute_principal || '—'}</div>
+                                                <div className="small text-muted">{c.institute_principal_mobile || '—'}</div>
+                                            </td>
+
+                                            {/* College Contact */}
+                                            <td>
+                                                <div className="small fw-semibold">{c.institute_email || '—'}</div>
+                                                <div className="small text-muted">{c.institute_phone || '—'}</div>
+                                            </td>
+
+                                            {/* Institute Status */}
+                                            <td>
+                                                <span className={`badge bg-${c.institute_active ? 'success' : 'danger'}`}>
+                                                    {c.institute_active ? 'Active' : 'Inactive'}
+                                                </span>
+                                            </td>
+
+                                            {/* Centre Details */}
                                             <td>
                                                 <div className="fw-semibold">{c.name}</div>
+                                                <div className="small text-muted">{c.centre_type_name || '—'}</div>
                                             </td>
-                                            <td className="small">{c.centre_type_name || '—'}</td>
-                                            <td className="small text-muted">{c.centre_ref_no || '—'}</td>
-                                            <td className="small text-muted">{c.recognition_date ? c.recognition_date.substring(0, 10) : '—'}</td>
-                                            <td className="small">{c.district_name || '—'}</td>
+
+                                            {/* Recognition Details */}
+                                            <td>
+                                                <div className="small fw-semibold">{c.centre_ref_no || '—'}</div>
+                                                <div className="small text-muted">{c.recognition_date ? c.recognition_date.substring(0, 10) : '—'}</div>
+                                            </td>
+
+                                            {/* Centre Status */}
                                             <td>
                                                 <span className={`badge bg-${STATUS_BADGE[c.status] || 'secondary'}`}>
                                                     {c.status}
@@ -211,11 +207,11 @@ function CentreList({ onAdd, onEdit }) {
                     <div className="card-footer d-flex justify-content-between align-items-center">
                         <span className="text-muted small">Total: {data.total} centres</span>
                         <div className="d-flex gap-1">
-                            <button className="btn btn-sm btn-outline-secondary" disabled={filters.page === 1}
-                                onClick={() => setFilters(f => ({ ...f, page: f.page - 1 }))}>Previous</button>
-                            <span className="btn btn-sm btn-light disabled">Page {filters.page} / {totalPages}</span>
-                            <button className="btn btn-sm btn-outline-secondary" disabled={filters.page === totalPages}
-                                onClick={() => setFilters(f => ({ ...f, page: f.page + 1 }))}>Next</button>
+                            <button className="btn btn-sm btn-outline-secondary" disabled={page === 1}
+                                onClick={() => setPage(p => p - 1)}>Previous</button>
+                            <span className="btn btn-sm btn-light disabled">Page {page} / {totalPages}</span>
+                            <button className="btn btn-sm btn-outline-secondary" disabled={page === totalPages}
+                                onClick={() => setPage(p => p + 1)}>Next</button>
                         </div>
                     </div>
                 )}
