@@ -661,6 +661,20 @@ const ApplicationForm = () => {
 
         reset(data);
 
+        // Pre-load districts for existing work experience entries
+        if (data.experience_details && data.experience_details.length > 0) {
+          data.experience_details.forEach(async (exp, idx) => {
+            if (exp.state_id) {
+              try {
+                const r = await axios.get(`${API}/districts?state_id=${exp.state_id}`);
+                setExpDistricts(prev => ({ ...prev, [idx]: r.data.data || [] }));
+              } catch (e) {
+                console.error('[loadExpDistricts on mount] error:', e);
+              }
+            }
+          });
+        }
+
         // Restore eligibility dropdowns: if a department_id is saved, pre-load
         // its programmes so the programme dropdown shows the correct saved value.
         if (data.department_id) {
@@ -2409,6 +2423,15 @@ const ApplicationForm = () => {
     const removeExperience = (idx) => {
       const current = getValues('experience_details');
       setValue('experience_details', current.filter((_, i) => i !== idx));
+      setExpDistricts(prev => {
+        const next = {};
+        Object.keys(prev).forEach(key => {
+          const k = parseInt(key);
+          if (k < idx) next[k] = prev[k];
+          else if (k > idx) next[k - 1] = prev[k];
+        });
+        return next;
+      });
     };
 
     return (
