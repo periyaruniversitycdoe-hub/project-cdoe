@@ -23,7 +23,12 @@ pool.getConnection()
         conn.release();
     })
     .catch(err => {
-        console.error('❌ MySQL Database Connection Failed:', err.message);
+        console.error('❌ MySQL Database Connection Failed:', err.message, 'with config:', {
+            host: process.env.DB_HOST,
+            port: process.env.DB_PORT,
+            user: process.env.DB_USER,
+            database: process.env.DB_NAME
+        });
     });
 
 module.exports = pool;

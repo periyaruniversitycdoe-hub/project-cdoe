@@ -45,6 +45,7 @@ import EmailLogsPage from './modules/admin/email-services/pages/EmailLogsPage';
 import EmailTemplateListPage from './modules/admin/email-builder/pages/EmailTemplateListPage';
 import CredentialManagement from './pages/CredentialManagement';
 import Reports from './pages/Reports';
+import RosterManagement from './pages/RosterManagement';
 import PortalHomeManagement from './pages/PortalHomeManagement';
 
 // Global 401 interceptor — clears stale token and forces re-login
@@ -132,6 +133,9 @@ function App() {
 
         {/* Enterprise Reports & Analytics Engine */}
         <Route path="/reports/*" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+
+        {/* Dynamic Roster Management Engine */}
+        <Route path="/roster-management" element={<ProtectedRoute><RosterManagement /></ProtectedRoute>} />
 
         {/* Portal Home Management */}
         <Route path="/portal-home" element={<ProtectedRoute><PortalHomeManagement /></ProtectedRoute>} />

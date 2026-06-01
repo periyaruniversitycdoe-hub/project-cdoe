@@ -147,6 +147,10 @@ app.use('/api/notifications', notificationsRoutes);
 const portalHomeRoutes = require('./routes/portal-home');
 app.use('/api/portal-home', portalHomeRoutes);
 
+// Enterprise Dynamic Roster Management Engine
+const rosterRoutes = require('./routes/roster');
+app.use('/api/roster', rosterRoutes);
+
 // ── Institute Master auto-migration ──────────────────────────────────────────
 (async () => {
     // 1. Extend master_institutes with enterprise columns
@@ -348,6 +352,75 @@ app.use('/api/portal-home', portalHomeRoutes);
     }
     console.log('✅ Part-Time engine schema verified.');
 })();
+
+// ── Roster Management Engine auto-migration ──────────────────────────────────
+(async () => {
+    const tables = [
+        `CREATE TABLE IF NOT EXISTS roster_configurations (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            session_id INT UNIQUE NOT NULL,
+            pg_eligibility_pct DECIMAL(5,2) DEFAULT 70.00,
+            integrated_eligibility_pct DECIMAL(5,2) DEFAULT 70.00,
+            merit_percentage DECIMAL(5,2) DEFAULT 30.00,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+        `CREATE TABLE IF NOT EXISTS roster_allocations (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            application_id VARCHAR(50) NOT NULL UNIQUE,
+            academic_weightage DECIMAL(5,2) DEFAULT 0.00,
+            final_score DECIMAL(5,2) DEFAULT 0.00,
+            merit_rank INT DEFAULT NULL,
+            reservation_rank INT DEFAULT NULL,
+            selection_status ENUM('Selected', 'Waiting', 'Not Selected') DEFAULT 'Not Selected',
+            roster_status ENUM('Selected', 'Waiting', 'Joined', 'Rejected', 'No Show', 'Verification Failed', 'Withdrawn', 'Cancelled') DEFAULT 'Selected',
+            allotted_seat_type ENUM('Merit', 'Reservation') DEFAULT NULL,
+            allotted_category VARCHAR(50) DEFAULT NULL,
+            allotted_supervisor_id INT DEFAULT NULL,
+            is_excluded TINYINT(1) DEFAULT 0,
+            exclusion_reason VARCHAR(255) DEFAULT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            FOREIGN KEY (application_id) REFERENCES applications(application_id) ON DELETE CASCADE,
+            FOREIGN KEY (allotted_supervisor_id) REFERENCES supervisors(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+        `CREATE TABLE IF NOT EXISTS scholars (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            supervisor_id INT NOT NULL,
+            application_id VARCHAR(50) NULL UNIQUE,
+            scholar_name VARCHAR(255) NOT NULL,
+            scholar_type ENUM('Full-Time', 'Part-Time') NOT NULL DEFAULT 'Full-Time',
+            programme_id INT NULL,
+            department_id INT NULL,
+            enrollment_no VARCHAR(100) UNIQUE NULL,
+            admission_date DATE NULL,
+            status ENUM('Admitted', 'Withdrawn', 'Cancelled', 'Completed', 'Transferred') DEFAULT 'Admitted',
+            transfer_details TEXT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            FOREIGN KEY (supervisor_id) REFERENCES supervisors(id) ON DELETE CASCADE,
+            FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE SET NULL,
+            FOREIGN KEY (programme_id) REFERENCES programs_offered(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+        `CREATE TABLE IF NOT EXISTS roster_audit_logs (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            admin_id INT NULL,
+            admin_email VARCHAR(255) NOT NULL,
+            action VARCHAR(255) NOT NULL,
+            module VARCHAR(100) DEFAULT 'Roster Management',
+            old_value LONGTEXT NULL,
+            new_value LONGTEXT NULL,
+            ip_address VARCHAR(45) NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+    ];
+    for (const sql of tables) {
+        try { await db.execute(sql); } catch (e) { console.error('Roster migration table error:', e.message); }
+    }
+    console.log('✅ Roster Management Engine schema verified.');
+})();
+
 
 // Error Handling
 app.use((err, _req, res, _next) => {
