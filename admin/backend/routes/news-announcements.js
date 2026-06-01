@@ -71,6 +71,7 @@ const upload = multer({
                                  NOT NULL DEFAULT 'all',
                 attachment_path  VARCHAR(500)  NULL,
                 attachment_name  VARCHAR(255)  NULL,
+                redirect_url     VARCHAR(500)  NULL,
                 publish_date     DATETIME      NOT NULL,
                 expiry_date      DATETIME      NOT NULL,
                 status           ENUM('draft','published','archived') NOT NULL DEFAULT 'draft',
@@ -92,6 +93,14 @@ const upload = multer({
                 MODIFY COLUMN category VARCHAR(100) NOT NULL DEFAULT 'announcement'
             `);
         } catch (e) { /* ignore */ }
+
+        // 5. Add redirect_url column if not exists
+        try {
+            await pool.execute(`
+                ALTER TABLE news_announcements 
+                ADD COLUMN redirect_url VARCHAR(500) NULL AFTER attachment_name
+            `);
+        } catch (e) { /* ignore if already exists */ }
 
         console.log('✅ News & Announcements & Categories schema verified.');
     } catch (err) {
@@ -172,7 +181,7 @@ router.post('/', verifyToken, isAdmin, upload.single('attachment'), async (req, 
     const {
         title, description, category = 'announcement', priority = 'medium',
         audience = 'all', publish_date, expiry_date,
-        status = 'draft', is_pinned = 0,
+        status = 'draft', is_pinned = 0, redirect_url,
     } = req.body;
 
     if (!title || !description || !publish_date || !expiry_date) {
@@ -187,12 +196,12 @@ router.post('/', verifyToken, isAdmin, upload.single('attachment'), async (req, 
         const [result] = await pool.execute(
             `INSERT INTO news_announcements
                 (title, description, category, priority, audience,
-                 attachment_path, attachment_name,
+                 attachment_path, attachment_name, redirect_url,
                  publish_date, expiry_date, status, is_pinned,
                  created_by, created_by_email)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
             [title, description, category, priority, audience,
-             attachmentPath, attachmentName,
+             attachmentPath, attachmentName, redirect_url || null,
              publish_date, expiry_date, status, is_pinned ? 1 : 0,
              actor.id, actor.email]
         );
@@ -209,7 +218,7 @@ router.put('/:id', verifyToken, isAdmin, upload.single('attachment'), async (req
     const {
         title, description, category, priority, audience,
         publish_date, expiry_date, status, is_pinned,
-        remove_attachment,
+        remove_attachment, redirect_url,
     } = req.body;
 
     try {
@@ -241,12 +250,12 @@ router.put('/:id', verifyToken, isAdmin, upload.single('attachment'), async (req
         await pool.execute(
             `UPDATE news_announcements SET
                 title=?, description=?, category=?, priority=?, audience=?,
-                attachment_path=?, attachment_name=?,
+                attachment_path=?, attachment_name=?, redirect_url=?,
                 publish_date=?, expiry_date=?, status=?, is_pinned=?,
                 updated_by=?, updated_by_email=?, updated_at=NOW()
              WHERE id=?`,
             [title, description, category, priority, audience,
-             attachPath, attachName,
+             attachPath, attachName, redirect_url || null,
              publish_date, expiry_date, status, is_pinned ? 1 : 0,
              actor.id, actor.email,
              req.params.id]

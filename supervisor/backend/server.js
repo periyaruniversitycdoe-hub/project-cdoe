@@ -57,7 +57,7 @@ app.get('/api/news-announcements', async (_req, res) => {
         const now = new Date();
         const [rows] = await db.query(
             `SELECT id, title, description, category, priority, audience,
-                    attachment_path, attachment_name,
+                    attachment_path, attachment_name, redirect_url,
                     publish_date, expiry_date, is_pinned, created_at
              FROM news_announcements
              WHERE is_deleted = 0

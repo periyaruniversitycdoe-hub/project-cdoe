@@ -47,7 +47,7 @@ const STATUSES = [
 
 const BLANK = {
   title: '', description: '', category: 'announcement',
-  priority: 'medium', audience: 'all',
+  priority: 'medium', audience: 'all', redirect_url: '',
   publish_date: '', expiry_date: '', status: 'draft', is_pinned: false,
   attachment: null, remove_attachment: false,
 };
@@ -130,6 +130,14 @@ function ViewModal({ item, onClose, onEdit }) {
             <div><span style={{ fontSize: 11, color: '#6b7280', display: 'block' }}>Publish Date</span><span style={{ fontWeight: 600, fontSize: 13 }}>{fmtDate(item.publish_date)}</span></div>
             <div><span style={{ fontSize: 11, color: '#6b7280', display: 'block' }}>Expiry Date</span><span style={{ fontWeight: 600, fontSize: 13 }}>{fmtDate(item.expiry_date)}</span></div>
           </div>
+          {item.redirect_url && (
+            <div style={{ marginTop: 14, padding: '8px 12px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontWeight: 700, color: '#1e40af' }}>Redirect Link:</span>
+              <a href={item.redirect_url} target="_blank" rel="noopener noreferrer" style={{ color: '#2563eb', fontWeight: 600, wordBreak: 'break-all' }}>
+                {item.redirect_url}
+              </a>
+            </div>
+          )}
           {item.attachment_path && (
             <a href={`${FILES}${item.attachment_path}`} target="_blank" rel="noopener noreferrer"
               style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 14, padding: '10px 16px', background: '#1e3a5f', color: '#fff', borderRadius: 8, fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>
@@ -150,6 +158,7 @@ function ViewModal({ item, onClose, onEdit }) {
 function FormModal({ editData, onClose, onSaved, fetchCategories }) {
   const [form, setForm] = useState(() => editData ? {
     ...BLANK, ...editData,
+    redirect_url: editData.redirect_url || '',
     publish_date: toLocal(editData.publish_date),
     expiry_date:  toLocal(editData.expiry_date),
     attachment: null, remove_attachment: false,
@@ -301,6 +310,13 @@ function FormModal({ editData, onClose, onSaved, fetchCategories }) {
               <label style={S.lbl}>Expiry Date & Time <span style={{ color: '#ef4444' }}>*</span></label>
               <input type="datetime-local" style={S.input} value={form.expiry_date} onChange={e => set('expiry_date', e.target.value)} />
             </div>
+          </div>
+
+          {/* Redirect URL */}
+          <div style={S.row}>
+            <label style={S.lbl}>Redirect URL / Action Link <span style={{ fontSize: 11, fontWeight: 400, color: '#64748b' }}>(Optional - e.g. /student/home or custom web URL)</span></label>
+            <input style={S.input} value={form.redirect_url} onChange={e => set('redirect_url', e.target.value)}
+              placeholder="e.g. /student/home or https://example.com" maxLength={500} />
           </div>
 
           {/* Pin toggle */}
