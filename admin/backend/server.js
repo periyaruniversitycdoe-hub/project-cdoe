@@ -88,6 +88,8 @@ const attendanceRoutes         = require('./routes/attendance');
 const mastersRoutes            = require('../../supervisor/backend/routes/masters');
 const supervisorsRoutes        = require('../../supervisor/backend/routes/supervisors');
 const centresRoutes            = require('../../center/backend/routes/centres');
+const supervisorTrackingRoutes = require('../../supervisor/backend/routes/supervisorTracking');
+const centreTrackingRoutes     = require('../../center/backend/routes/centreTracking');
 
 const db = require('./config/db');
 const sharedAuthRoutes = require('../../shared/auth/routes/authRoutes');
@@ -112,6 +114,8 @@ app.use('/api/attendance', attendanceRoutes);
 app.use('/api/masters', mastersRoutes);
 app.use('/api/supervisors', supervisorsRoutes);
 app.use('/api/centres', centresRoutes);
+app.use('/api/supervisor-tracking', supervisorTrackingRoutes);
+app.use('/api/centre-tracking', centreTrackingRoutes);
 const instituteRoutes = require('./routes/institutes');
 app.use('/api/institutes', instituteRoutes);
 const eligibilityRoutes = require('./routes/eligibility');
@@ -457,6 +461,57 @@ app.use('/api/news-announcements', newsAnnouncementsRoutes);
     }
 })();
 
+
+// ── Supervisor & Centre Tracking Engine auto-migration ───────────────────────
+(async () => {
+    // 1. Extend supervisors.status ENUM to include Suspended
+    try {
+        await db.execute(`ALTER TABLE supervisors MODIFY COLUMN status ENUM('Active','Inactive','Pending','Approved','Rejected','Draft','Suspended') DEFAULT 'Draft'`);
+    } catch (e) { if (e.errno !== 1060) console.error('supervisors status ENUM extend:', e.message); }
+
+    // 2. Extend research_centres.status ENUM to include Suspended
+    try {
+        await db.execute(`ALTER TABLE research_centres MODIFY COLUMN status ENUM('Pending','Approved','Rejected','Suspended','Inactive','Draft') DEFAULT 'Pending'`);
+    } catch (e) { if (e.errno !== 1060) console.error('research_centres status ENUM extend:', e.message); }
+
+    // 3. Supervisor tracking audit log table
+    try {
+        await db.execute(`CREATE TABLE IF NOT EXISTS supervisor_tracking_audit_log (
+            id                INT AUTO_INCREMENT PRIMARY KEY,
+            supervisor_id     INT NOT NULL,
+            action            VARCHAR(50) NOT NULL,
+            previous_status   VARCHAR(50) DEFAULT NULL,
+            new_status        VARCHAR(50) DEFAULT NULL,
+            performed_by      INT DEFAULT NULL,
+            performed_by_name VARCHAR(255) DEFAULT NULL,
+            reason_category   VARCHAR(100) DEFAULT NULL,
+            custom_reason     TEXT DEFAULT NULL,
+            remarks           TEXT DEFAULT NULL,
+            allow_resubmission TINYINT(1) DEFAULT 1,
+            created_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+    } catch (e) { console.error('supervisor_tracking_audit_log table:', e.message); }
+
+    // 4. Centre tracking audit log table
+    try {
+        await db.execute(`CREATE TABLE IF NOT EXISTS centre_tracking_audit_log (
+            id                INT AUTO_INCREMENT PRIMARY KEY,
+            centre_id         INT NOT NULL,
+            action            VARCHAR(50) NOT NULL,
+            previous_status   VARCHAR(50) DEFAULT NULL,
+            new_status        VARCHAR(50) DEFAULT NULL,
+            performed_by      INT DEFAULT NULL,
+            performed_by_name VARCHAR(255) DEFAULT NULL,
+            reason_category   VARCHAR(100) DEFAULT NULL,
+            custom_reason     TEXT DEFAULT NULL,
+            remarks           TEXT DEFAULT NULL,
+            allow_resubmission TINYINT(1) DEFAULT 1,
+            created_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+    } catch (e) { console.error('centre_tracking_audit_log table:', e.message); }
+
+    console.log('✅ Supervisor & Centre Tracking Engine schema verified.');
+})();
 
 // Error Handling
 app.use((err, _req, res, _next) => {

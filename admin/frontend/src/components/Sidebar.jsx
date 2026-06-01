@@ -6,7 +6,7 @@ import {
   ChevronRight, Ticket, CalendarRange, MapPin, GraduationCap,
   IndianRupee, CreditCard, UserCheck, BookOpen, X, Award, Users,
   BarChart3, ShieldCheck, UserSquare2, Building2, Database, History, Layers, KeyRound,
-  Home, Megaphone
+  Home, Megaphone, ClipboardList
 } from 'lucide-react';
 import { useSession } from '../contexts/SessionContext';
 
@@ -51,7 +51,9 @@ const menuStructure = [
     group: 'SUPERVISOR & CENTRES',
     items: [
       { icon: UserSquare2,     label: 'Supervisors',           path: '/supervisors' },
+      { icon: ClipboardList,   label: 'Supervisor Tracking',   path: '/supervisor-tracking' },
       { icon: Building2,       label: 'Research Centres',      path: '/research-centres' },
+      { icon: ClipboardList,   label: 'Centre Tracking',       path: '/centre-tracking' },
       { icon: Database,        label: 'Supervisor Masters',    path: '/supervisor-masters' },
     ]
   },

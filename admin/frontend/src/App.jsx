@@ -49,6 +49,8 @@ import RosterManagement from './pages/RosterManagement';
 import PortalHomeManagement from './pages/PortalHomeManagement';
 import AnnouncementManagement from './pages/AnnouncementManagement';
 import NewsAnnouncementsManagement from './pages/NewsAnnouncementsManagement';
+import SupervisorTracking from './pages/SupervisorTracking';
+import CentreTracking from './pages/CentreTracking';
 
 // Global 401 interceptor — clears stale token and forces re-login
 axios.interceptors.response.use(
@@ -115,7 +117,9 @@ function App() {
         <Route path="/supervisors"          element={<ProtectedRoute><SupervisorManagement /></ProtectedRoute>} />
         <Route path="/supervisors/new"      element={<ProtectedRoute><SupervisorAddPage  /></ProtectedRoute>} />
         <Route path="/supervisors/edit/:id" element={<ProtectedRoute><SupervisorEditPage /></ProtectedRoute>} />
-        <Route path="/research-centres" element={<ProtectedRoute><CentreManagement /></ProtectedRoute>} />
+        <Route path="/supervisor-tracking"  element={<ProtectedRoute><SupervisorTracking /></ProtectedRoute>} />
+        <Route path="/research-centres"     element={<ProtectedRoute><CentreManagement /></ProtectedRoute>} />
+        <Route path="/centre-tracking"      element={<ProtectedRoute><CentreTracking /></ProtectedRoute>} />
         <Route path="/supervisor-masters" element={<ProtectedRoute><SupervisorMasterManagement /></ProtectedRoute>} />
         <Route path="/institute-master"   element={<ProtectedRoute><InstituteMaster /></ProtectedRoute>} />
 

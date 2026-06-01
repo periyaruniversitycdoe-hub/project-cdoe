@@ -3,7 +3,7 @@ import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import {
   Users, Award, ShieldCheck, Clock, ChevronRight,
-  PlusCircle, Eye, Mail
+  PlusCircle, Eye, Mail, XCircle
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import NewsAnnouncementsBoard from '../../../../shared/components/NewsAnnouncementsBoard';
@@ -107,21 +107,50 @@ export default function Dashboard() {
       ) : null}
 
       {appStatus === 'Rejected' && (
-        <div style={{ ...S.banner, background: 'linear-gradient(135deg, #991b1b, #7f1d1d)' }}>
-           <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-            <div style={{ background: 'rgba(255,255,255,0.1)', padding: 16, borderRadius: 14 }}>
-               <Award size={32} color="#fff" strokeWidth={1.5} style={{ opacity: 0.5 }} />
+        <div style={{ background: '#fff', borderRadius: 16, border: '2px solid #fca5a5', padding: '24px 28px', marginBottom: 20, boxShadow: '0 4px 12px rgba(239,68,68,0.08)' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
+            <div style={{ background: '#fef2f2', padding: 14, borderRadius: 12, flexShrink: 0 }}>
+              <XCircle size={28} color="#ef4444" />
             </div>
-            <div>
-              <h3 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>Application Rejected</h3>
-              <p style={{ margin: '4px 0 0', opacity: 0.8, fontSize: 14 }}>
-                Reason: {profile?.rejection_reason || 'Please contact the research cell for details.'}
-              </p>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 18, fontWeight: 800, color: '#991b1b', marginBottom: 6 }}>Application Status: REJECTED</div>
+              <div style={{ fontSize: 14, color: '#7f1d1d', marginBottom: 8 }}>
+                <strong>Rejection Reason:</strong> {profile?.rejection_reason || 'Please contact the research cell for details.'}
+              </div>
+              {profile?.approved_at && (
+                <div style={{ fontSize: 12, color: '#9ca3af' }}>
+                  Rejected on: {new Date(profile.approved_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                </div>
+              )}
+              <button style={{ marginTop: 12, background: '#ef4444', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: 10, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8 }} onClick={() => navigate('/apply')}>
+                Edit &amp; Resubmit <ChevronRight size={16} />
+              </button>
             </div>
           </div>
-           <button style={S.bannerBtn} onClick={() => navigate('/apply')}>
-             Edit & Resubmit <ChevronRight size={18} />
-           </button>
+        </div>
+      )}
+
+      {appStatus === 'Suspended' && (
+        <div style={{ background: '#fff', borderRadius: 16, border: '2px solid #d1d5db', padding: '24px 28px', marginBottom: 20, boxShadow: '0 4px 12px rgba(107,114,128,0.08)' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
+            <div style={{ background: '#f9fafb', padding: 14, borderRadius: 12, flexShrink: 0 }}>
+              <ShieldCheck size={28} color="#6b7280" />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 18, fontWeight: 800, color: '#374151', marginBottom: 6 }}>Application Status: SUSPENDED</div>
+              <div style={{ fontSize: 14, color: '#4b5563', marginBottom: 8 }}>
+                <strong>Reason:</strong> {profile?.rejection_reason || 'Your account has been suspended. Please contact the university administration for further details.'}
+              </div>
+              {profile?.approved_at && (
+                <div style={{ fontSize: 12, color: '#9ca3af' }}>
+                  Suspended on: {new Date(profile.approved_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                </div>
+              )}
+              <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#6b7280' }}>
+                <Mail size={14} /> Please contact the research cell or university administration for assistance.
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
