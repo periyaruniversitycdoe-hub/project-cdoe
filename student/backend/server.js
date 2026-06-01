@@ -595,9 +595,9 @@ const initDB = async () => {
                     console.error(`Error adding applications.${col.name}:`, err.message);
             }
         }
-        console.log('âœ… Eligibility engine columns verified.');
+        console.log('✅ Eligibility engine columns verified.');
 
-        // â”€â”€ Portal Notifications â€” public admission announcements â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── Portal Notifications ─ public admission announcements ──────────
         await db.query(`
             CREATE TABLE IF NOT EXISTS portal_notifications (
                 id           INT AUTO_INCREMENT PRIMARY KEY,
@@ -611,7 +611,73 @@ const initDB = async () => {
                 updated_at   TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         `);
-        console.log('âœ… portal_notifications table verified.');
+        console.log('✅ portal_notifications table verified.');
+
+        // ── News and Announcements & Categories auto-init ──
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS news_announcement_categories (
+                id           INT AUTO_INCREMENT PRIMARY KEY,
+                category_key VARCHAR(100) NOT NULL UNIQUE,
+                label        VARCHAR(100) NOT NULL,
+                icon         VARCHAR(50)  NOT NULL DEFAULT '📢',
+                color        VARCHAR(50)  NOT NULL DEFAULT '#7c3aed',
+                bg           VARCHAR(50)  NOT NULL DEFAULT '#ede9fe',
+                is_active    TINYINT(1)   NOT NULL DEFAULT 1
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        `);
+
+        await db.query(`
+            INSERT IGNORE INTO news_announcement_categories (category_key, label, icon, color, bg) VALUES 
+            ('news', 'News', '📰', '#0369a1', '#e0f2fe'),
+            ('announcement', 'Announcement', '📢', '#7c3aed', '#ede9fe'),
+            ('circular', 'Circular', '📋', '#0f766e', '#ccfbf1'),
+            ('alert', 'Alert', '🚨', '#dc2626', '#fee2e2'),
+            ('deadline', 'Deadline', '⏰', '#d97706', '#fef3c7'),
+            ('event', 'Event', '🎓', '#059669', '#d1fae5')
+        `);
+
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS news_announcements (
+                id               INT AUTO_INCREMENT PRIMARY KEY,
+                title            VARCHAR(500)  NOT NULL,
+                description      LONGTEXT      NOT NULL,
+                category         VARCHAR(100)  NOT NULL DEFAULT 'announcement',
+                priority         ENUM('low','medium','high','urgent') NOT NULL DEFAULT 'medium',
+                audience         ENUM('all','student','supervisor','centre') NOT NULL DEFAULT 'all',
+                attachment_path  VARCHAR(500)  NULL,
+                attachment_name  VARCHAR(255)  NULL,
+                redirect_url     VARCHAR(500)  NULL,
+                publish_date     DATETIME      NOT NULL,
+                expiry_date      DATETIME      NOT NULL,
+                status           ENUM('draft','published','archived') NOT NULL DEFAULT 'draft',
+                is_pinned        TINYINT(1)    NOT NULL DEFAULT 0,
+                created_by       INT           NOT NULL,
+                created_by_email VARCHAR(255)  NULL,
+                updated_by       INT           NULL,
+                updated_by_email VARCHAR(255)  NULL,
+                is_deleted       TINYINT(1)    NOT NULL DEFAULT 0,
+                created_at       TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at       TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        `);
+
+        // Safely alter category column from ENUM to VARCHAR if it is currently ENUM
+        try {
+            await db.query(`
+                ALTER TABLE news_announcements 
+                MODIFY COLUMN category VARCHAR(100) NOT NULL DEFAULT 'announcement'
+            `);
+        } catch (_) {}
+
+        // Add redirect_url column if not exists
+        try {
+            await db.query(`
+                ALTER TABLE news_announcements 
+                ADD COLUMN redirect_url VARCHAR(500) NULL AFTER attachment_name
+            `);
+        } catch (_) {}
+        
+        console.log('✅ News & Announcements & Categories tables verified.');
 
     } catch (err) {
         console.error('Database init error:', err);
