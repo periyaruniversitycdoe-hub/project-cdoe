@@ -1001,6 +1001,16 @@ app.get('/api/news-announcements', async (_req, res) => {
     }
 });
 
+// News & Announcements active categories
+app.get('/api/news-announcements/categories', async (_req, res) => {
+    try {
+        const [rows] = await db.query('SELECT * FROM news_announcement_categories WHERE is_active = 1 ORDER BY label ASC');
+        res.json({ success: true, data: rows });
+    } catch (err) {
+        res.json({ success: true, data: [] });
+    }
+});
+
 // Public announcements endpoint for the landing page (served from student API so portal-dashboard
 // doesn't need a separate cross-origin call to the admin backend)
 app.get('/api/announcements/public', async (_req, res) => {
