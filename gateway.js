@@ -42,7 +42,8 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 // Explicitly handle OPTIONS preflight for ALL routes BEFORE proxy middleware
-app.options('*', cors(corsOptions));
+// NOTE: Use RegExp instead of '*' string — path-to-regexp v8+ (Node 26) no longer accepts bare '*'
+app.options(/(.*)/, cors(corsOptions));
 
 console.log('=== Starting API Gateway Router ===');
 

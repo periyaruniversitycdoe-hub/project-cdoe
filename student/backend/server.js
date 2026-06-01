@@ -112,9 +112,13 @@ const db = mysqlPromise.createPool({
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
     waitForConnections: true,
-    connectionLimit: 10,
+    connectionLimit: 5,
     queueLimit: 0,
-    charset: 'utf8mb4'
+    charset: 'utf8mb4',
+    connectTimeout: 60000,
+    ssl: process.env.DB_HOST && !process.env.DB_HOST.includes('localhost') && !process.env.DB_HOST.includes('127.0.0.1')
+        ? { rejectUnauthorized: false }
+        : undefined,
 });
 
 // JWT Middleware
