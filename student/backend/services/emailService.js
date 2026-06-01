@@ -536,11 +536,22 @@ async function ensureDefaultTemplates() {
 }
 
 // Initialize/Seed standard templates on module boot
+// Retry up to 3 times with 5s delay to allow DB connection to become ready on cold starts
 (async () => {
-  try {
-    await ensureDefaultTemplates();
-  } catch (err) {
-    console.error('Error seeding default templates:', err.message);
+  const MAX_RETRIES = 3;
+  const RETRY_DELAY_MS = 5000;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      await ensureDefaultTemplates();
+      break; // success — stop retrying
+    } catch (err) {
+      if (attempt < MAX_RETRIES) {
+        console.warn(`[emailService] Template init attempt ${attempt} failed (${err.message}). Retrying in ${RETRY_DELAY_MS / 1000}s...`);
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+      } else {
+        console.error(`[emailService] Template init failed after ${MAX_RETRIES} attempts:`, err.message);
+      }
+    }
   }
 })();
 
