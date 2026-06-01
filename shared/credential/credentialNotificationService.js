@@ -23,7 +23,7 @@ function getBackendBaseUrl() {
   if (studentApiUrl) {
     return studentApiUrl.replace(/\/student\/?$/, '');
   }
-  return 'https://project-cdoe-backend.onrender.com';
+  return 'https://project-cdoe.onrender.com';
 }
 
 const logoUrl = `${getBackendBaseUrl()}/student/uploads/settings/pu_logo.png`;

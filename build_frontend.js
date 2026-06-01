@@ -57,7 +57,7 @@ console.log('==================================================');
 
 builds.forEach(build => {
   console.log(`\n--- Building ${build.name} (Base path: ${build.basePath}) ---`);
-  
+
   const buildDir = path.join(__dirname, build.dir);
   if (!fs.existsSync(buildDir)) {
     console.warn(`Warning: Directory ${build.dir} does not exist. Skipping...`);
@@ -91,7 +91,7 @@ builds.forEach(build => {
       // For the root landing portal-dashboard, copy contents directly to root dist
       fs.cpSync(buildOutput, rootDist, { recursive: true });
     }
-    
+
     console.log(`✅ ${build.name} build successfully consolidated!`);
   } catch (err) {
     console.error(`❌ Error building ${build.name}:`, err.message);
