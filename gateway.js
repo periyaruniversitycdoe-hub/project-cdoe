@@ -15,7 +15,7 @@ const allowedOrigins = [
   'https://phd-cdoe.netlify.app'
 ].filter(Boolean);
 
-app.use(cors({
+const corsOptions = {
   origin: (origin, callback) => {
     // Allow requests with no origin (like mobile apps, curl, or tools)
     if (!origin) return callback(null, true);
@@ -34,16 +34,23 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept']
-}));
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+  optionsSuccessStatus: 200
+};
+
+// Apply CORS middleware globally — handles all preflight OPTIONS automatically
+app.use(cors(corsOptions));
+
+// Explicitly handle OPTIONS preflight for ALL routes BEFORE proxy middleware
+app.options('*', cors(corsOptions));
 
 console.log('=== Starting API Gateway Router ===');
 
 const services = [
-  { path: '/student', target: `http://localhost:${process.env.STUDENT_BACKEND_PORT || 5000}` },
-  { path: '/admin', target: `http://localhost:${process.env.ADMIN_BACKEND_PORT || 5001}` },
+  { path: '/student',    target: `http://localhost:${process.env.STUDENT_BACKEND_PORT    || 5000}` },
+  { path: '/admin',      target: `http://localhost:${process.env.ADMIN_BACKEND_PORT      || 5001}` },
   { path: '/supervisor', target: `http://localhost:${process.env.SUPERVISOR_BACKEND_PORT || 5002}` },
-  { path: '/center', target: `http://localhost:${process.env.CENTER_BACKEND_PORT || 5003}` }
+  { path: '/center',     target: `http://localhost:${process.env.CENTER_BACKEND_PORT     || 5003}` }
 ];
 
 services.forEach(service => {
@@ -52,13 +59,21 @@ services.forEach(service => {
   app.use(service.path, createProxyMiddleware({
     target: service.target,
     changeOrigin: true,
-    onError: (err, req, res) => {
-      console.error(`Proxy error for ${service.path}:`, err.message);
-      res.status(502).json({ success: false, message: 'Bad Gateway - Service is starting up or unreachable.' });
-    },
-    onProxyReq: (proxyReq, req, res) => {
-      // Forward standard headers
-      proxyReq.setHeader('x-forwarded-host', req.headers.host);
+    // Remove the CORS headers set by sub-backends so the gateway's headers win
+    on: {
+      proxyRes: (proxyRes, req, res) => {
+        delete proxyRes.headers['access-control-allow-origin'];
+        delete proxyRes.headers['access-control-allow-credentials'];
+        delete proxyRes.headers['access-control-allow-methods'];
+        delete proxyRes.headers['access-control-allow-headers'];
+      },
+      error: (err, req, res) => {
+        console.error(`Proxy error for ${service.path}:`, err.message);
+        res.status(502).json({ success: false, message: 'Bad Gateway - Service is starting up or unreachable.' });
+      },
+      proxyReq: (proxyReq, req) => {
+        proxyReq.setHeader('x-forwarded-host', req.headers.host);
+      }
     }
   }));
 });
