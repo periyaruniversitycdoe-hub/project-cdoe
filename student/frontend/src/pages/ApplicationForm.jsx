@@ -2416,7 +2416,8 @@ const ApplicationForm = () => {
         designation: '', organization_name: '', employment_type_id: '',
         from_month: '', from_year: '', to_month: '', to_year: '',
         total_years: 0, total_months: 0,
-        state_id: '', district_id: '', experience_certificate_path: ''
+        state_id: '', district_id: '', experience_certificate_path: '',
+        address: ''
       }]);
     };
 
@@ -2507,32 +2508,15 @@ const ApplicationForm = () => {
                         <span className="small text-muted d-block mb-1">Duration:</span>
                         <span className="fw-bold text-primary small">{calculateDuration(idx)}</span>
                       </div>
-                      <div className="col-md-2">
-                        <label className="form-label small fw-bold">State</label>
-                        <select
-                          className="form-select form-select-sm"
-                          {...register(`experience_details.${idx}.state_id`)}
+                      <div className="col-md-12">
+                        <label className="form-label small fw-bold">Organization Address</label>
+                        <input
+                          type="text"
+                          className="form-control form-control-sm"
+                          placeholder="Enter Organization Address"
+                          {...register(`experience_details.${idx}.address`)}
                           disabled={isSubmitted}
-                          onChange={e => handleExpStateChange(idx, e.target.value)}
-                        >
-                          <option value="">Select State</option>
-                          {(states.length > 0 ? states : FALLBACK_STATES.map(s => ({ id: s, state_name: s }))).map(s =>
-                            <option key={s.id} value={s.id}>{s.state_name}</option>
-                          )}
-                        </select>
-                      </div>
-                      <div className="col-md-2">
-                        <label className="form-label small fw-bold">District</label>
-                        <select
-                          className="form-select form-select-sm"
-                          {...register(`experience_details.${idx}.district_id`)}
-                          disabled={isSubmitted}
-                        >
-                          <option value="">Select District</option>
-                          {(expDistricts[idx] || []).map(d =>
-                            <option key={d.id} value={d.id}>{d.district_name}</option>
-                          )}
-                        </select>
+                        />
                       </div>
                       <div className="col-md-12 pt-2 border-top mt-1">
                         <div className="d-flex align-items-center gap-3 flex-wrap">

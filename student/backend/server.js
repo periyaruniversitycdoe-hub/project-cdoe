@@ -1201,7 +1201,7 @@ const APP_ALLOWED_COLUMNS = new Set([
 const COLUMNS = {
     school: ['level', 'institution_name', 'board_id', 'other_board_name', 'passing_month', 'passing_year', 'percentage', 'marksheet_path'],
     higher: ['level', 'degree_id', 'degree_name', 'specialization_id', 'institution_name', 'university_name', 'university_type_id', 'passing_month', 'passing_year', 'score_type', 'score_value', 'marksheet_path', 'consolidated_marksheet_path', 'registration_number', 'upload_mode'],
-    exp:    ['designation', 'organization_name', 'employment_type_id', 'from_month', 'from_year', 'to_month', 'to_year', 'total_years', 'total_months', 'state_id', 'district_id']
+    exp:    ['designation', 'organization_name', 'employment_type_id', 'from_month', 'from_year', 'to_month', 'to_year', 'total_years', 'total_months', 'state_id', 'district_id', 'address']
 };
 
 app.post('/api/applications/save', authenticateToken, upload.any(), async (req, res) => {
