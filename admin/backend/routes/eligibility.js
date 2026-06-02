@@ -345,9 +345,67 @@ router.delete('/programs/:id/mphil/:courseId', verifyToken, isAdmin, async (req,
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// INTEGRATED ELIGIBILITY
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// GET /api/eligibility/programs/:id/integrated  (public)
+router.get('/programs/:id/integrated', async (req, res) => {
+    try {
+        const [rows] = await pool.execute(
+            `SELECT id, course_name FROM program_integrated_eligibility WHERE program_id = ? ORDER BY course_name ASC`,
+            [req.params.id]
+        );
+        res.json({ success: true, data: rows });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// POST /api/eligibility/programs/:id/integrated
+router.post('/programs/:id/integrated', verifyToken, isAdmin, async (req, res) => {
+    const programId = req.params.id;
+    const { course_name } = req.body;
+    if (!course_name?.trim()) return res.status(400).json({ success: false, message: 'course_name is required' });
+    try {
+        const [result] = await pool.execute(
+            `INSERT INTO program_integrated_eligibility (program_id, course_name) VALUES (?, ?)`,
+            [programId, course_name.trim()]
+        );
+        await audit(pool, {
+            adminId: req.user.id, action: 'CREATE', entityType: 'integrated_eligibility',
+            entityId: result.insertId, newValue: { program_id: programId, course_name: course_name.trim() }, ip: req.ip
+        });
+        res.json({ success: true, message: 'Integrated course eligibility added', id: result.insertId });
+    } catch (err) {
+        if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ success: false, message: 'Course already mapped to this programme' });
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// DELETE /api/eligibility/programs/:id/integrated/:courseId
+router.delete('/programs/:id/integrated/:courseId', verifyToken, isAdmin, async (req, res) => {
+    const { id: programId, courseId } = req.params;
+    try {
+        const [[old]] = await pool.execute(
+            `SELECT course_name FROM program_integrated_eligibility WHERE id = ? AND program_id = ?`,
+            [courseId, programId]
+        );
+        if (!old) return res.status(404).json({ success: false, message: 'Mapping not found' });
+        await pool.execute(`DELETE FROM program_integrated_eligibility WHERE id = ?`, [courseId]);
+        await audit(pool, {
+            adminId: req.user.id, action: 'DELETE', entityType: 'integrated_eligibility',
+            entityId: Number(courseId), oldValue: old, ip: req.ip
+        });
+        res.json({ success: true, message: 'Integrated eligibility removed' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // COMBINED HINTS  (public — called by student form on programme change)
 // GET /api/eligibility/programs/:id/hints
-// Returns { pg: [...], mphil: [...] }
+// Returns { pg: [...], mphil: [...], integrated: [...] }
 // ═══════════════════════════════════════════════════════════════════════════════
 router.get('/programs/:id/hints', async (req, res) => {
     const programId = req.params.id;
@@ -360,19 +418,23 @@ router.get('/programs/:id/hints', async (req, res) => {
         );
         if (!prog) return res.status(404).json({ success: false, message: 'Programme not found' });
 
-        const [pg]    = await pool.execute(
-            `SELECT id, course_name FROM program_pg_eligibility    WHERE program_id = ? ORDER BY course_name ASC`, [programId]
+        const [pg]         = await pool.execute(
+            `SELECT id, course_name FROM program_pg_eligibility         WHERE program_id = ? ORDER BY course_name ASC`, [programId]
         );
-        const [mphil] = await pool.execute(
-            `SELECT id, course_name FROM program_mphil_eligibility WHERE program_id = ? ORDER BY course_name ASC`, [programId]
+        const [mphil]      = await pool.execute(
+            `SELECT id, course_name FROM program_mphil_eligibility      WHERE program_id = ? ORDER BY course_name ASC`, [programId]
+        );
+        const [integrated] = await pool.execute(
+            `SELECT id, course_name FROM program_integrated_eligibility WHERE program_id = ? ORDER BY course_name ASC`, [programId]
         );
 
         res.json({
             success: true,
             data: {
-                program: prog,
-                pg:    pg.map(r => r.course_name),
-                mphil: mphil.map(r => r.course_name),
+                program:    prog,
+                pg:         pg.map(r => r.course_name),
+                mphil:      mphil.map(r => r.course_name),
+                integrated: integrated.map(r => r.course_name),
             }
         });
     } catch (err) {

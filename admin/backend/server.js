@@ -265,6 +265,14 @@ app.use('/api/news-announcements', newsAnnouncementsRoutes);
             ip_address VARCHAR(45) NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+        `CREATE TABLE IF NOT EXISTS program_integrated_eligibility (
+            id         INT AUTO_INCREMENT PRIMARY KEY,
+            program_id INT NOT NULL,
+            course_name VARCHAR(255) NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (program_id) REFERENCES programs_offered(id) ON DELETE CASCADE,
+            UNIQUE KEY uq_integrated_elig (program_id, course_name)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
     ];
     for (const sql of tables) {
         try { await db.execute(sql); } catch (e) { console.error('Eligibility migration error:', e.message); }

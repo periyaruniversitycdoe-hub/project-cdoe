@@ -29,7 +29,7 @@ function InlineEdit({ value, onSave, onCancel }) {
   );
 }
 
-// ── course-list panel (PG or MPhil) ──────────────────────────────────────────
+// ── course-list panel (PG / MPhil / Integrated) ──────────────────────────────
 function CoursePanel({ programId, type, label }) {
   const [courses, setCourses] = useState([]);
   const [newCourse, setNewCourse] = useState('');
@@ -396,11 +396,30 @@ export default function EligibilityManagement() {
                   <span style={{ fontSize: 13 }}>Select a programme to manage its eligibility.</span>
                 </div>
               ) : (
-                <div className="row g-3">
-                  <div className="col-md-12">
-                    <CoursePanel programId={selProgram.id} type="pg"    label="PG" />
+                <>
+                  <div className="mb-3 pb-2 border-bottom d-flex align-items-center gap-2">
+                    <GraduationCap size={14} className="text-warning" />
+                    <span className="fw-semibold text-dark" style={{ fontSize: 13 }}>
+                      Eligibility — <span className="text-primary">{selProgram.name}</span>
+                    </span>
                   </div>
-                </div>
+                  <div className="row g-3">
+                    <div className="col-md-6 border-end pe-3">
+                      <div className="d-flex align-items-center gap-2 mb-2">
+                        <span className="badge bg-success-subtle text-success border border-success-subtle" style={{ fontSize: 10 }}>PG</span>
+                        <span className="fw-bold text-success" style={{ fontSize: 12 }}>PG Eligible Courses</span>
+                      </div>
+                      <CoursePanel programId={selProgram.id} type="pg" label="PG" />
+                    </div>
+                    <div className="col-md-6 ps-3">
+                      <div className="d-flex align-items-center gap-2 mb-2">
+                        <span className="badge bg-primary-subtle text-primary border border-primary-subtle" style={{ fontSize: 10 }}>Integrated</span>
+                        <span className="fw-bold text-primary" style={{ fontSize: 12 }}>Integrated Eligible Courses</span>
+                      </div>
+                      <CoursePanel programId={selProgram.id} type="integrated" label="Integrated" />
+                    </div>
+                  </div>
+                </>
               )}
             </div>
           </div>
@@ -409,8 +428,8 @@ export default function EligibilityManagement() {
 
       {/* Info footer */}
       <div className="mt-3 p-3 rounded" style={{ background: '#f0f9ff', border: '1px solid #bae6fd', fontSize: 12, color: '#0369a1' }}>
-        <strong>How to use:</strong> Select a Department → select a Programme → add/remove PG eligible courses.
-        These mappings are reflected instantly in the student registration form and enforced server-side during application submission.
+        <strong>How to use:</strong> Select a Department → select a Programme → add/remove <strong>PG Eligible Courses</strong> and <strong>Integrated Eligible Courses</strong> independently.
+        Both mappings are reflected instantly in the student registration form — PG courses appear when the student selects a PG qualification type, and Integrated courses appear when they select a 5-Year Integrated qualification.
       </div>
     </div>
   );

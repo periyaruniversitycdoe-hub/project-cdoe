@@ -195,7 +195,7 @@ const ApplicationForm = () => {
   // Eligibility engine state
   const [departments,        setDepartments]        = useState([]);
   const [programs,           setPrograms]           = useState([]);
-  const [eligibilityHints,   setEligibilityHints]   = useState({ pg: [], mphil: [] });
+  const [eligibilityHints,   setEligibilityHints]   = useState({ pg: [], mphil: [], integrated: [] });
   const [loadingPrograms,    setLoadingPrograms]    = useState(false);
   const [loadingHints,       setLoadingHints]       = useState(false);
   const [expandedAcademicSections, setExpandedAcademicSections] = useState({
@@ -456,7 +456,7 @@ const ApplicationForm = () => {
 
   // ── Eligibility engine: fetch programs when department changes ───────────────
   useEffect(() => {
-    if (!selectedDeptId) { setPrograms([]); setValue('program_offered_id', ''); setEligibilityHints({ pg: [], mphil: [] }); return; }
+    if (!selectedDeptId) { setPrograms([]); setValue('program_offered_id', ''); setEligibilityHints({ pg: [], mphil: [], integrated: [] }); return; }
     setLoadingPrograms(true);
     axios.get(`${API}/eligibility/programs?department_id=${selectedDeptId}`)
       .then(r => {
@@ -471,16 +471,16 @@ const ApplicationForm = () => {
 
   // ── Eligibility engine: fetch hints when program changes ─────────────────────
   useEffect(() => {
-    if (!selectedProgId) { setEligibilityHints({ pg: [], mphil: [] }); return; }
+    if (!selectedProgId) { setEligibilityHints({ pg: [], mphil: [], integrated: [] }); return; }
     setLoadingHints(true);
     axios.get(`${API}/eligibility/programs/${selectedProgId}/hints`)
       .then(r => {
-        setEligibilityHints({ pg: r.data.data?.pg || [], mphil: r.data.data?.mphil || [] });
+        setEligibilityHints({ pg: r.data.data?.pg || [], mphil: r.data.data?.mphil || [], integrated: r.data.data?.integrated || [] });
         // Store program name for denormalized display
         const prog = programs.find(p => String(p.id) === String(selectedProgId));
         if (prog) setValue('program_offered_name', prog.name);
       })
-      .catch(() => setEligibilityHints({ pg: [], mphil: [] }))
+      .catch(() => setEligibilityHints({ pg: [], mphil: [], integrated: [] }))
       .finally(() => setLoadingHints(false));
   }, [selectedProgId, programs, setValue]);
 
@@ -683,7 +683,7 @@ const ApplicationForm = () => {
             .catch(() => {});
           if (data.program_offered_id) {
             axios.get(`${API}/eligibility/programs/${data.program_offered_id}/hints`)
-              .then(r => setEligibilityHints({ pg: r.data.data?.pg || [], mphil: r.data.data?.mphil || [] }))
+              .then(r => setEligibilityHints({ pg: r.data.data?.pg || [], mphil: r.data.data?.mphil || [], integrated: r.data.data?.integrated || [] }))
               .catch(() => {});
           }
         }
@@ -1193,14 +1193,14 @@ const ApplicationForm = () => {
                 <div className="col-md-12">
                   {loadingHints ? (
                     <div className="text-muted small">Loading eligibility…</div>
-                  ) : (eligibilityHints.pg.length > 0 || eligibilityHints.mphil.length > 0) ? (
+                  ) : (eligibilityHints.pg.length > 0 || eligibilityHints.mphil.length > 0 || eligibilityHints.integrated.length > 0) ? (
                     <div className="p-3 rounded-3" style={{ background: '#f0f9ff', border: '1px solid #bae6fd' }}>
                       <div className="fw-semibold mb-2" style={{ fontSize: 12, color: '#0369a1' }}>
                         Eligibility for the selected programme:
                       </div>
                       <div className="row g-2">
                         {eligibilityHints.pg.length > 0 && (
-                          <div className="col-md-6">
+                          <div className="col-md-4">
                             <div className="fw-semibold text-success mb-1" style={{ fontSize: 11 }}>
                               Eligible PG Degrees ({eligibilityHints.pg.length})
                             </div>
@@ -1215,7 +1215,7 @@ const ApplicationForm = () => {
                           </div>
                         )}
                         {eligibilityHints.mphil.length > 0 && (
-                          <div className="col-md-6">
+                          <div className="col-md-4">
                             <div className="fw-semibold text-warning mb-1" style={{ fontSize: 11 }}>
                               Eligible M.Phil Degrees ({eligibilityHints.mphil.length})
                             </div>
@@ -1223,6 +1223,21 @@ const ApplicationForm = () => {
                               {eligibilityHints.mphil.map((c, i) => (
                                 <div key={i} className="d-flex align-items-center gap-1 mb-1">
                                   <span style={{ width: 5, height: 5, background: '#f59e0b', borderRadius: '50%', flexShrink: 0 }} />
+                                  <span style={{ fontSize: 11 }}>{c}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {eligibilityHints.integrated.length > 0 && (
+                          <div className="col-md-4">
+                            <div className="fw-semibold text-primary mb-1" style={{ fontSize: 11 }}>
+                              Eligible Integrated Courses ({eligibilityHints.integrated.length})
+                            </div>
+                            <div style={{ maxHeight: 120, overflowY: 'auto' }}>
+                              {eligibilityHints.integrated.map((c, i) => (
+                                <div key={i} className="d-flex align-items-center gap-1 mb-1">
+                                  <span style={{ width: 5, height: 5, background: '#3b82f6', borderRadius: '50%', flexShrink: 0 }} />
                                   <span style={{ fontSize: 11 }}>{c}</span>
                                 </div>
                               ))}
@@ -2350,7 +2365,7 @@ const ApplicationForm = () => {
             </div>
             {expandedAcademicSections.integrated && hasIntegrated && (
               <div className="p-3 bg-white border-top">
-                {renderHigherEdRow('integrated', '5-Year Integrated Course Details', 'integrated', 'Integrated', hasIntegrated)}
+                {renderHigherEdRow('integrated', '5-Year Integrated Course Details', 'integrated', 'Integrated', hasIntegrated, eligibilityHints.integrated, eligibilityHints.integrated.length > 0)}
               </div>
             )}
           </div>
