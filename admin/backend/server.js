@@ -47,20 +47,30 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
-// Rate Limiting — auth routes get strict limits; general API is generous but protected
+const isProd = process.env.NODE_ENV === 'production';
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    limit: 20,
+    limit: isProd ? 20 : 1000000,
     message: { success: false, message: 'Too many requests. Please try again later.' },
     standardHeaders: true,
     legacyHeaders: false,
+    skip: (req) => {
+        if (process.env.NODE_ENV !== 'production') return true;
+        const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+        return ip.includes('127.0.0.1') || ip === '::1' || ip.includes('localhost');
+    }
 });
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    limit: 300,
+    limit: isProd ? 300 : 1000000,
     message: { success: false, message: 'Too many requests. Please try again later.' },
     standardHeaders: true,
     legacyHeaders: false,
+    skip: (req) => {
+        if (process.env.NODE_ENV !== 'production') return true;
+        const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+        return ip.includes('127.0.0.1') || ip === '::1' || ip.includes('localhost');
+    }
 });
 app.use('/api/auth', authLimiter);
 app.use('/api/', limiter);

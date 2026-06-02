@@ -148,7 +148,6 @@ async function buildSupervisorData(body, files, existing = {}) {
         name:                    body.name,
         gender:                  body.gender || 'Male',
         designation_id:          nullableInt(body.designation_id),
-        special_designation_id:  nullableInt(body.special_designation_id),
         recognition_ref_no:      nullable(body.recognition_ref_no),
         department_id:           nullableInt(body.department_id),
         area_of_specialization:  nullable(body.area_of_specialization),

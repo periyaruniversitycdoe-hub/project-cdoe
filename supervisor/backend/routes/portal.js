@@ -222,7 +222,65 @@ router.post('/application', verifyToken, upload.fields([
     const data  = req.body;
     const files = req.files || {};
 
+    // Cleanup function for uploaded files
+    const cleanupUploadedFiles = () => {
+        Object.keys(files).forEach(field => {
+            files[field].forEach(f => {
+                if (fs.existsSync(f.path)) {
+                    fs.unlinkSync(f.path);
+                }
+            });
+        });
+    };
+
     try {
+        // Dynamic File Upload Settings validation on backend
+        const [settingsRows] = await pool.query('SELECT * FROM file_upload_settings');
+        const settingsMap = {};
+        settingsRows.forEach(s => { settingsMap[s.file_type] = s; });
+
+        const validateFile = (file, fileType) => {
+            const setting = settingsMap[fileType];
+            if (!setting) return null; // No database setting configured, bypass validation
+            
+            if (setting.is_active === 0) {
+                return `${fileType} uploads are currently deactivated.`;
+            }
+
+            const ext = path.extname(file.originalname).substring(1).toLowerCase();
+            const allowed = setting.allowed_extensions.split(',').map(x => x.trim().toLowerCase());
+            if (!allowed.includes(ext)) {
+                return `File type .${ext} is not allowed for ${fileType}. Allowed: ${setting.allowed_extensions}`;
+            }
+
+            const maxBytes = setting.max_size * (setting.size_unit === 'MB' ? 1024 * 1024 : 1024);
+            if (file.size > maxBytes) {
+                return `File ${file.originalname} for ${fileType} exceeds the allowed size limit of ${setting.max_size} ${setting.size_unit}`;
+            }
+            return null;
+        };
+
+        if (files.profile_image) {
+            const err = validateFile(files.profile_image[0], 'Photo');
+            if (err) {
+                cleanupUploadedFiles();
+                return res.status(400).json({ success: false, message: err });
+            }
+        }
+        if (files.dob_evidence) {
+            const err = validateFile(files.dob_evidence[0], 'DOB Evidence');
+            if (err) {
+                cleanupUploadedFiles();
+                return res.status(400).json({ success: false, message: err });
+            }
+        }
+        if (files.recognition_certificate) {
+            const err = validateFile(files.recognition_certificate[0], 'Recognition Certificate');
+            if (err) {
+                cleanupUploadedFiles();
+                return res.status(400).json({ success: false, message: err });
+            }
+        }
         const parseId = (val) => {
             if (val === undefined || val === null) return null;
             const cleaned = String(val).trim();
@@ -264,7 +322,6 @@ router.post('/application', verifyToken, upload.fields([
         const svData = {
             name:                    data.name,
             designation_id:          designationIdParsed,
-            special_designation_id:  parseId(data.special_designation_id),
             recognition_ref_no:      data.recognition_ref_no || null,
             department_id:           parseId(data.department_id),
             gender:                  data.gender || 'Male',

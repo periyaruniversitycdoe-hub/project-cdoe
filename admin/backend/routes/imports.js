@@ -22,7 +22,6 @@ const DESTINATIONS = {
             { key: 'supervisor_no', label: 'Enrollment No / Guide No', type: 'string', required: false, aliases: ['enrollment_no', 'supervisor_no', 'guide_no', 'supervisor_no_'] },
             { key: 'name', label: 'Supervisor Name *', type: 'string', required: true, aliases: ['name', 'supervisor_name', 'guide_name', 'name_of_the_supervisor'] },
             { key: 'designation_name', label: 'Designation', type: 'master_lookup', lookupTable: 'master_designations', required: false, aliases: ['designation', 'designation_name'] },
-            { key: 'special_designation_name', label: 'Special Designation', type: 'master_lookup', lookupTable: 'master_special_designations', required: false, aliases: ['special_designation', 'special_designation_name'] },
             { key: 'recognition_ref_no', label: 'Reference No / Ref No', type: 'string', required: false, aliases: ['reference_no', 'recognition_ref_no', 'ref_no'] },
             { key: 'department_name', label: 'Department', type: 'master_lookup', lookupTable: 'master_departments', required: false, aliases: ['department', 'department_name', 'dept'] },
             { key: 'area_of_specialization', label: 'Area of Specialization', type: 'string', required: false, aliases: ['area_of_specialization', 'specialization', 'specialisation'] },
@@ -161,7 +160,7 @@ async function getOrInsertMaster(conn, table, nameValue, currentUserId) {
         const generatedCode = 'AUTO_' + Math.random().toString(36).substring(2, 7).toUpperCase();
         insertSql = `INSERT INTO ${table} (name, college_code, abbreviation, is_active) VALUES (?, ?, ?, 1)`;
         params = [cleanName, generatedCode, generatedCode];
-    } else if (table === 'master_designations' || table === 'master_special_designations' || table === 'master_departments' || table === 'master_districts' || table === 'master_centre_types') {
+    } else if (table === 'master_designations' || table === 'master_departments' || table === 'master_districts' || table === 'master_centre_types') {
         insertSql = `INSERT INTO ${table} (name, is_active) VALUES (?, 1)`;
     }
 
@@ -404,7 +403,7 @@ router.post('/preview/:destination', verifyToken, isAdmin, upload.single('file')
                 config.fields.forEach(f => {
                     const dbCol = f.key === 'college_name' ? 'name' : f.key;
                     // Mapped or skipped lookups
-                    if (['designation_name', 'special_designation_name', 'department_name', 'serving_institute_name', 'district_name'].includes(f.key)) {
+                    if (['designation_name', 'department_name', 'serving_institute_name', 'district_name'].includes(f.key)) {
                         // Skip lookups in simple preview diff comparison
                         return;
                     }
@@ -484,7 +483,6 @@ router.post('/confirm/:destination', verifyToken, isAdmin, async (req, res) => {
                     const resolvedId = await getOrInsertMaster(conn, f.lookupTable, value, req.user.id);
                     // Map to corresponding foreign key column in table
                     const fkCol = f.key === 'designation_name' ? 'designation_id' :
-                        f.key === 'special_designation_name' ? 'special_designation_id' :
                             f.key === 'department_name' ? 'department_id' :
                                 f.key === 'serving_institute_name' ? 'serving_institute_id' :
                                     f.key === 'district_name' ? 'district_id' : f.key;
@@ -497,7 +495,7 @@ router.post('/confirm/:destination', verifyToken, isAdmin, async (req, res) => {
                     dataToInsert['college_code'] = normalizeCode(value);
                     dataToInsert['abbreviation'] = normalizeCode(value);
                 } else {
-                    if (['designation_name', 'special_designation_name', 'department_name', 'serving_institute_name', 'district_name'].includes(f.key)) {
+                    if (['designation_name', 'department_name', 'serving_institute_name', 'district_name'].includes(f.key)) {
                         continue;
                     }
                     dataToInsert[f.key] = value !== undefined && value !== '' ? value : null;
@@ -536,7 +534,6 @@ router.post('/confirm/:destination', verifyToken, isAdmin, async (req, res) => {
                 if (f.type === 'master_lookup' && value && value.trim()) {
                     const resolvedId = await getOrInsertMaster(conn, f.lookupTable, value, req.user.id);
                     const fkCol = f.key === 'designation_name' ? 'designation_id' :
-                        f.key === 'special_designation_name' ? 'special_designation_id' :
                             f.key === 'department_name' ? 'department_id' :
                                 f.key === 'serving_institute_name' ? 'serving_institute_id' :
                                     f.key === 'district_name' ? 'district_id' : f.key;
@@ -549,7 +546,7 @@ router.post('/confirm/:destination', verifyToken, isAdmin, async (req, res) => {
                     dataToUpdate['college_code'] = normalizeCode(value);
                     dataToUpdate['abbreviation'] = normalizeCode(value);
                 } else {
-                    if (['designation_name', 'special_designation_name', 'department_name', 'serving_institute_name', 'district_name'].includes(f.key)) {
+                    if (['designation_name', 'department_name', 'serving_institute_name', 'district_name'].includes(f.key)) {
                         continue;
                     }
                     dataToUpdate[f.key] = value !== undefined && value !== '' ? value : null;
@@ -682,13 +679,11 @@ router.post('/export/:destination', verifyToken, isAdmin, async (req, res) => {
             querySql = `
                 SELECT s.*, 
                        d.name AS designation_name, 
-                       sd.name AS special_designation_name,
                        dept.name AS department_name, 
                        inst.name AS serving_institute_name,
                        dist.name AS district_name
                 FROM supervisors s
                 LEFT JOIN master_designations d ON s.designation_id = d.id
-                LEFT JOIN master_special_designations sd ON s.special_designation_id = sd.id
                 LEFT JOIN master_departments dept ON s.department_id = dept.id
                 LEFT JOIN master_institutes inst ON s.serving_institute_id = inst.id
                 LEFT JOIN master_districts dist ON s.district_id = dist.id
@@ -745,7 +740,7 @@ router.post('/export/:destination', verifyToken, isAdmin, async (req, res) => {
                 else if (f.key === 'college_code') dbCol = 'college_code';
 
                 // Lookups mapping
-                if (['designation_name', 'special_designation_name', 'department_name', 'serving_institute_name', 'district_name'].includes(f.key)) {
+                if (['designation_name', 'department_name', 'serving_institute_name', 'district_name'].includes(f.key)) {
                     extract[f.key] = row[f.key] || '—';
                 } else if (f.type === 'date' && row[dbCol]) {
                     extract[f.key] = normalizeDate(row[dbCol]) || '—';

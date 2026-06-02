@@ -452,7 +452,7 @@ function SupervisorList({ onAdd, onEdit }) {
 
 // ─── Supervisor Form ──────────────────────────────────────────────────────────
 const INIT = {
-    name: '', designation_id: '', special_designation_id: '', recognition_ref_no: '',
+    name: '', designation_id: '', recognition_ref_no: '',
     department_id: '', gender: 'Male', serving_institute_id: '', area_of_specialization: '',
     address_1: '', address_2: '', address_3: '', district_id: '', pincode: '',
     aadhaar_no: '', mobile: '', email: '',
@@ -518,7 +518,6 @@ function SupervisorForm({ id, onDone }) {
                         setForm({
                             name: d.name || '',
                             designation_id: d.designation_id || '',
-                            special_designation_id: d.special_designation_id || '',
                             recognition_ref_no: d.recognition_ref_no || '',
                             department_id: d.department_id || '',
                             gender: d.gender || 'Male',
@@ -603,13 +602,9 @@ function SupervisorForm({ id, onDone }) {
                             <label className="form-label fw-semibold">Supervisor Name <span className="text-danger">*</span></label>
                             <input name="name" className="form-control" value={form.name} onChange={handleChange} required />
                         </div>
-                        <div className="col-md-3">
+                        <div className="col-md-6">
                             <DynamicDropdown type="designations" name="designation_id" label="Designation"
                                 value={form.designation_id} onChange={handleChange} />
-                        </div>
-                        <div className="col-md-3">
-                            <DynamicDropdown type="special_designations" name="special_designation_id" label="Special Designation"
-                                value={form.special_designation_id} onChange={handleChange} />
                         </div>
                         <div className="col-md-4">
                             <label className="form-label fw-semibold">Recognition Ref No</label>
@@ -738,18 +733,18 @@ function SupervisorForm({ id, onDone }) {
                         </div>
                         <div className="col-md-3">
                             <label className="form-label fw-semibold">Current Vacancy</label>
-                            <input type="number" min={0} name="current_vacancy" className="form-control bg-light text-success fw-bold"
-                                value={form.current_vacancy} readOnly />
+                            <input type="number" min={0} name="current_vacancy" className="form-control text-success fw-bold"
+                                value={form.current_vacancy} onChange={handleChange} />
                         </div>
                         <div className="col-md-3">
                             <label className="form-label fw-semibold">Max Full-Time</label>
-                            <input type="number" min={0} name="max_full_time" className="form-control bg-light"
-                                value={form.max_full_time} readOnly />
+                            <input type="number" min={0} name="max_full_time" className="form-control"
+                                value={form.max_full_time} onChange={handleChange} />
                         </div>
                         <div className="col-md-3">
                             <label className="form-label fw-semibold">Max Part-Time (½ of Max)</label>
-                            <input type="number" min={0} name="max_part_time" className="form-control bg-light"
-                                value={form.max_part_time} readOnly />
+                            <input type="number" min={0} name="max_part_time" className="form-control"
+                                value={form.max_part_time} onChange={handleChange} />
                         </div>
                         <div className="col-md-3">
                             <label className="form-label fw-semibold text-success">FT Available</label>

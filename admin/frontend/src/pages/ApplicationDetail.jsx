@@ -497,7 +497,7 @@ const ApplicationDetail = () => {
                   <td>
                     {editMode
                       ? <select className="form-select form-select-sm" style={{ width: 200 }} value={formData.status || 'Draft'} onChange={e => handleChange('status', e.target.value)}>
-                          {['Draft','Submitted','Under Review','Approved','Rejected'].map(s => <option key={s}>{s}</option>)}
+                          {['Draft','Submitted','Under Review','Approved'].map(s => <option key={s}>{s}</option>)}
                         </select>
                       : <span className={`status-badge ${app.status === 'Approved' ? 'status-approved' : app.status === 'Rejected' ? 'status-rejected' : app.status === 'Submitted' ? 'bg-info text-white' : app.status === 'Under Review' ? 'status-pending' : 'bg-secondary text-white'}`}>{app.status}</span>
                     }
@@ -764,18 +764,17 @@ const ApplicationDetail = () => {
             </div>
           </div>
         )}
+        {/* Rejection Dialog Modal */}
+        {showRejectDialog && (
+          <RejectionDialog
+            app={app}
+            loading={rejectSubmitting}
+            onConfirm={handleRejectWithReason}
+            onCancel={() => setShowRejectDialog(false)}
+          />
+        )}
       </div>
     </div>
-
-    {/* Rejection Dialog Modal */}
-    {showRejectDialog && (
-      <RejectionDialog
-        app={app}
-        loading={rejectSubmitting}
-        onConfirm={handleRejectWithReason}
-        onCancel={() => setShowRejectDialog(false)}
-      />
-    )}
   );
 };
 
@@ -809,75 +808,108 @@ function RejectionDialog({ app, loading, onConfirm, onCancel }) {
   }
 
   return (
-    <div className="modal d-block" style={{ background: 'rgba(0,0,0,0.55)', zIndex: 9999 }}>
-      <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: 560 }}>
-        <div className="modal-content border-0 shadow-lg">
-          <div className="modal-header border-0 pb-1" style={{ background: '#fef2f2' }}>
-            <div className="d-flex align-items-center gap-2">
-              <XCircle size={20} color="#ef4444" />
-              <h5 className="modal-title fw-bold mb-0" style={{ color: '#991b1b' }}>Reject Application</h5>
-            </div>
-            <button className="btn-close" onClick={onCancel} disabled={loading} />
+    <div style={{
+      position: 'fixed', inset: 0,
+      background: 'rgba(0,0,0,0.6)',
+      zIndex: 99999,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: '16px',
+    }}>
+      <div style={{
+        background: '#fff', borderRadius: 14,
+        boxShadow: '0 24px 80px rgba(0,0,0,0.35)',
+        width: '100%', maxWidth: 560,
+        maxHeight: '90vh', overflowY: 'auto',
+        display: 'flex', flexDirection: 'column',
+      }}>
+        {/* Header */}
+        <div style={{ background: '#fef2f2', borderRadius: '14px 14px 0 0', padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #fca5a5' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <XCircle size={22} color="#ef4444" />
+            <span style={{ fontWeight: 700, fontSize: 17, color: '#991b1b' }}>Reject Application</span>
           </div>
-          <div className="modal-body pt-3">
-            {/* Read-only info */}
-            <div className="p-3 rounded mb-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', fontSize: 13 }}>
-              <div className="row g-2">
-                <div className="col-6">
-                  <span className="text-muted">Application ID</span>
-                  <div className="fw-bold font-monospace">{app?.application_id || '—'}</div>
-                </div>
-                <div className="col-6">
-                  <span className="text-muted">Applicant Name</span>
-                  <div className="fw-bold">{app?.full_name || '—'}</div>
-                </div>
-                <div className="col-12">
-                  <span className="text-muted">Email</span>
-                  <div className="fw-semibold">{app?.email || '—'}</div>
-                </div>
+          <button onClick={onCancel} disabled={loading} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: '#6b7280', lineHeight: 1, padding: '0 4px' }}>×</button>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: '20px 24px', flex: 1 }}>
+          {/* Read-only info */}
+          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 16px', marginBottom: 16, fontSize: 13 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px' }}>
+              <div>
+                <div style={{ color: '#6b7280', fontSize: 11, fontWeight: 600, marginBottom: 2 }}>Application ID</div>
+                <div style={{ fontWeight: 700, fontFamily: 'monospace' }}>{app?.application_id || '—'}</div>
               </div>
-            </div>
-
-            {error && <div className="alert alert-danger py-2 small mb-3">{error}</div>}
-
-            <div className="mb-3">
-              <label className="form-label fw-semibold small">Reason Category <span className="text-danger">*</span></label>
-              <select className="form-select" value={category} onChange={e => setCategory(e.target.value)}>
-                <option value="">— Select Reason Category —</option>
-                {REJECTION_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-
-            <div className="mb-3">
-              <label className="form-label fw-semibold small">Detailed Rejection Reason <span className="text-danger">*</span></label>
-              <textarea
-                className="form-control"
-                rows={4}
-                placeholder="Provide a clear explanation of why the application is being rejected…"
-                value={reason}
-                onChange={e => setReason(e.target.value)}
-              />
-              <div className="text-muted mt-1" style={{ fontSize: 11 }}>{reason.trim().length} characters — minimum detail required.</div>
-            </div>
-
-            <div className="d-flex gap-4">
-              <div className="form-check">
-                <input className="form-check-input" type="checkbox" id="rNotifEmail" checked={notifyEmail} onChange={e => setNotifyEmail(e.target.checked)} />
-                <label className="form-check-label small fw-semibold" htmlFor="rNotifEmail">Send Email Notification</label>
+              <div>
+                <div style={{ color: '#6b7280', fontSize: 11, fontWeight: 600, marginBottom: 2 }}>Applicant Name</div>
+                <div style={{ fontWeight: 700 }}>{app?.full_name || '—'}</div>
               </div>
-              <div className="form-check">
-                <input className="form-check-input" type="checkbox" id="rNotifDash" checked={notifyDash} onChange={e => setNotifyDash(e.target.checked)} />
-                <label className="form-check-label small fw-semibold" htmlFor="rNotifDash">Notify Student Dashboard</label>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <div style={{ color: '#6b7280', fontSize: 11, fontWeight: 600, marginBottom: 2 }}>Email</div>
+                <div style={{ fontWeight: 600 }}>{app?.email || '—'}</div>
               </div>
             </div>
           </div>
-          <div className="modal-footer border-0 pt-1">
-            <button className="btn btn-outline-secondary" onClick={onCancel} disabled={loading}>Cancel</button>
-            <button className="btn btn-danger fw-semibold px-4" onClick={handleSubmit} disabled={loading}>
-              {loading ? <span className="spinner-border spinner-border-sm me-2" /> : <XCircle size={15} className="me-1" />}
-              Reject Application
-            </button>
+
+          {error && (
+            <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '10px 14px', color: '#991b1b', fontSize: 13, marginBottom: 14 }}>
+              {error}
+            </div>
+          )}
+
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: 'block', fontWeight: 600, fontSize: 13, marginBottom: 6 }}>
+              Reason Category <span style={{ color: '#ef4444' }}>*</span>
+            </label>
+            <select
+              className="form-select"
+              value={category}
+              onChange={e => setCategory(e.target.value)}
+              style={{ fontSize: 13 }}
+            >
+              <option value="">— Select Reason Category —</option>
+              {REJECTION_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
           </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: 'block', fontWeight: 600, fontSize: 13, marginBottom: 6 }}>
+              Detailed Rejection Reason <span style={{ color: '#ef4444' }}>*</span>
+            </label>
+            <textarea
+              className="form-control"
+              rows={4}
+              placeholder="Provide a clear explanation of why the application is being rejected…"
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+              style={{ fontSize: 13 }}
+            />
+            <div style={{ color: '#9ca3af', fontSize: 11, marginTop: 4 }}>{reason.trim().length} characters</div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 24, marginBottom: 4 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              <input type="checkbox" checked={notifyEmail} onChange={e => setNotifyEmail(e.target.checked)} />
+              Send Email Notification
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              <input type="checkbox" checked={notifyDash} onChange={e => setNotifyDash(e.target.checked)} />
+              Notify Student Dashboard
+            </label>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: '14px 24px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button className="btn btn-outline-secondary" onClick={onCancel} disabled={loading}>Cancel</button>
+          <button
+            className="btn btn-danger fw-semibold px-4"
+            onClick={handleSubmit}
+            disabled={loading}
+          >
+            {loading ? <span className="spinner-border spinner-border-sm me-2" /> : <XCircle size={15} className="me-1" />}
+            Reject Application
+          </button>
         </div>
       </div>
     </div>

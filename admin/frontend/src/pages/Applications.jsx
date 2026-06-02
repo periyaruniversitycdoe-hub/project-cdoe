@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import { useSession } from '../contexts/SessionContext';
+import { AlertTriangle, XCircle, Eye } from 'lucide-react';
 
 const API_URL = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
 
@@ -21,6 +22,7 @@ const Applications = () => {
   const [loading, setLoading]               = useState(true);
   const [deleting, setDeleting]             = useState(null);
   const [statusUpdating, setStatusUpdating] = useState(null);
+  const [selectedRejectionApp, setSelectedRejectionApp] = useState(null);
 
   const [search, setSearch]               = useState('');
   const [statusFilter, setStatusFilter]   = useState('All');
@@ -458,6 +460,13 @@ const Applications = () => {
                           className="btn btn-sm btn-outline-info fw-semibold"
                           style={{ fontSize: 11, padding: '3px 10px' }}
                         >View</Link>
+                        {app.status === 'Rejected' && (
+                          <button
+                            className="btn btn-sm btn-outline-danger fw-semibold"
+                            style={{ fontSize: 11, padding: '3px 10px' }}
+                            onClick={() => setSelectedRejectionApp(app)}
+                          >View Reason</button>
+                        )}
                         <Link
                           to={`/applications/${app.id}?edit=1`}
                           className="btn btn-sm btn-outline-warning fw-semibold"
@@ -529,6 +538,81 @@ const Applications = () => {
               disabled={page === totalPages}
               onClick={() => setPage(totalPages)}
             >»</button>
+          </div>
+        </div>
+      )}
+
+      {selectedRejectionApp && (
+        <div style={{
+          position: 'fixed', inset: 0,
+          background: 'rgba(0,0,0,0.6)',
+          zIndex: 99999,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: '16px',
+        }}>
+          <div style={{
+            background: '#fff', borderRadius: 14,
+            boxShadow: '0 24px 80px rgba(0,0,0,0.35)',
+            width: '100%', maxWidth: 520,
+            maxHeight: '90vh', overflowY: 'auto',
+            display: 'flex', flexDirection: 'column',
+          }}>
+            {/* Header */}
+            <div style={{ background: '#fef2f2', borderRadius: '14px 14px 0 0', padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #fca5a5' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <AlertTriangle size={22} color="#ef4444" />
+                <span style={{ fontWeight: 700, fontSize: 17, color: '#991b1b' }}>Rejection Details</span>
+              </div>
+              <button onClick={() => setSelectedRejectionApp(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: '#6b7280', lineHeight: 1, padding: '0 4px' }}>×</button>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding: '20px 24px' }}>
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 16px', marginBottom: 16, fontSize: 13 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px' }}>
+                  <div>
+                    <div style={{ color: '#6b7280', fontSize: 11, fontWeight: 600, marginBottom: 2 }}>Application ID</div>
+                    <div style={{ fontWeight: 700, fontFamily: 'monospace' }}>{selectedRejectionApp.application_id || '—'}</div>
+                  </div>
+                  <div>
+                    <div style={{ color: '#6b7280', fontSize: 11, fontWeight: 600, marginBottom: 2 }}>Applicant Name</div>
+                    <div style={{ fontWeight: 700 }}>{selectedRejectionApp.full_name || '—'}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ color: '#6b7280', fontSize: 11, fontWeight: 600, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>Reason Category</div>
+                <div style={{ fontWeight: 700, color: '#991b1b', fontSize: 14 }}>{selectedRejectionApp.rejection_category || 'Other'}</div>
+              </div>
+
+              {selectedRejectionApp.rejection_reason && (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ color: '#6b7280', fontSize: 11, fontWeight: 600, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>Detailed Reason</div>
+                  <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '12px 16px', fontSize: 13, color: '#7f1d1d', lineHeight: 1.5 }}>
+                    {selectedRejectionApp.rejection_reason}
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px', fontSize: 12, borderTop: '1px solid #f1f5f9', paddingTop: 14 }}>
+                <div>
+                  <div style={{ color: '#6b7280', fontSize: 10, fontWeight: 600, marginBottom: 2 }}>REJECTED BY</div>
+                  <div style={{ fontWeight: 600 }}>{selectedRejectionApp.rejected_by_name || 'Admin'}</div>
+                </div>
+                <div>
+                  <div style={{ color: '#6b7280', fontSize: 10, fontWeight: 600, marginBottom: 2 }}>REJECTED DATE</div>
+                  <div style={{ fontWeight: 600 }}>
+                    {selectedRejectionApp.rejection_datetime ? new Date(selectedRejectionApp.rejection_datetime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div style={{ padding: '12px 24px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="btn btn-secondary px-4 btn-sm" onClick={() => setSelectedRejectionApp(null)}>Close</button>
+            </div>
           </div>
         </div>
       )}

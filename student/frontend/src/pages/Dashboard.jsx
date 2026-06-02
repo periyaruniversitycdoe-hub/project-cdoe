@@ -426,12 +426,16 @@ const Dashboard = () => {
         <div className="stat-card">
           <div className="stat-card-header">
             <div className="stat-icon-box" style={{ background: '#fef3c7', color: '#d97706' }}><Clock size={20} /></div>
-            <span className={`pu-badge ${appStatus === 'Approved' ? 'pu-badge-success' : appStatus === 'Submitted' ? 'pu-badge-info' : 'pu-badge-warning'}`}>
-              {appStatus}
+            <span className={`pu-badge ${
+              appStatus === 'Approved' ? 'pu-badge-success' :
+              appStatus === 'Rejected' ? 'pu-badge-danger' :
+              appStatus === 'Submitted' ? 'pu-badge-info' : 'pu-badge-warning'
+            }`}>
+              {appStatus?.toUpperCase() || 'DRAFT'}
             </span>
           </div>
           <div className="stat-title">Application Status</div>
-          <div className="stat-value">{appStatus === 'Draft' ? 'Draft Application' : appStatus}</div>
+          <div className="stat-value">{appStatus === 'Draft' ? 'Draft Application' : appStatus?.toUpperCase()}</div>
         </div>
 
         {/* Payment */}
@@ -485,7 +489,7 @@ const Dashboard = () => {
 
       {/* ── Rejection Reason Card ── shown only when application is rejected */}
       {appStatus === 'Rejected' && (
-        <div className="animate-fade-in mb-4" style={{ borderRadius: 16, border: '2px solid #fca5a5', background: '#fff', boxShadow: '0 4px 16px rgba(239,68,68,0.08)', overflow: 'hidden' }}>
+        <div id="rejection-reason-card" className="animate-fade-in mb-4" style={{ borderRadius: 16, border: '2px solid #fca5a5', background: '#fff', boxShadow: '0 4px 16px rgba(239,68,68,0.08)', overflow: 'hidden', transition: 'transform 0.3s ease' }}>
           <div style={{ background: '#ef4444', padding: '14px 24px', display: 'flex', alignItems: 'center', gap: 10 }}>
             <XCircle size={20} color="#fff" />
             <span style={{ color: '#fff', fontWeight: 700, fontSize: 15 }}>Application Status: REJECTED</span>
@@ -572,6 +576,31 @@ const Dashboard = () => {
 
       {/* Action Center - Banners */}
       <div className="action-center">
+
+        {/* Rejection Notification Banner */}
+        {appStatus === 'Rejected' && (
+          <div className="action-banner border-0 animate-fade-in mb-3 shadow" style={{ background: 'linear-gradient(135deg,#7f1d1d,#991b1b)', borderRadius: 16 }}>
+            <div className="banner-content">
+              <div className="banner-icon-bg" style={{ background: 'rgba(255,255,255,0.08)', borderRadius: '50%', padding: 8 }}>
+                <XCircle size={28} className="text-white" />
+              </div>
+              <div className="banner-text">
+                <h4 className="fw-bold mb-1 text-white">Application Rejected</h4>
+                <p className="text-white-50 mb-0">Your application has been rejected.</p>
+              </div>
+            </div>
+            <button className="banner-btn" onClick={() => {
+              const card = document.getElementById('rejection-reason-card');
+              if (card) {
+                card.scrollIntoView({ behavior: 'smooth' });
+                card.style.transform = 'scale(1.02)';
+                setTimeout(() => card.style.transform = 'none', 1000);
+              }
+            }} style={{ background: '#ef4444', color: '#fff', border: 'none' }}>
+              Click here to view details. <ChevronRight size={18} />
+            </button>
+          </div>
+        )}
 
         {/* DIRECT PASS Banner */}
         {isDirectPass && (

@@ -5,14 +5,12 @@ const SELECT_JOINED = `
         s.*,
         d.max_capacity AS designation_max_capacity,
         d.name  AS designation_name,
-        sd.name AS special_designation_name,
         dept.name AS department_name,
         inst.name        AS serving_institute_name,
         inst.college_code AS serving_institute_code,
         dist.name AS district_name
     FROM supervisors s
     LEFT JOIN master_designations        d    ON s.designation_id         = d.id
-    LEFT JOIN master_special_designations sd   ON s.special_designation_id  = sd.id
     LEFT JOIN master_departments          dept ON s.department_id            = dept.id
     LEFT JOIN master_institutes           inst ON s.serving_institute_id     = inst.id
     LEFT JOIN master_districts            dist ON s.district_id              = dist.id

@@ -76,6 +76,20 @@ router.get('/:type', async (req, res) => {
         }
     }
 
+    if (type === 'communities') {
+        try {
+            const [rows] = await pool.execute(`
+                SELECT id, community_name AS name
+                FROM community_fees
+                WHERE status = 'active'
+                ORDER BY community_name ASC
+            `);
+            return res.json({ success: true, data: rows });
+        } catch (err) {
+            return res.status(500).json({ success: false, message: err.message });
+        }
+    }
+
     const config = tables[type];
     if (!config) return res.status(400).json({ success: false, message: 'Invalid dropdown type' });
 

@@ -66,21 +66,31 @@ app.use(cors({
 }));
 
 // â”€â”€ Rate Limiting (registered AFTER cors() so 429 responses carry CORS headers)
+const isProd = process.env.NODE_ENV === 'production';
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    limit: 50,           // 50 login attempts per 15 min per IP
+    limit: isProd ? 50 : 1000000,
     standardHeaders: true,
     legacyHeaders: false,
     message: { success: false, message: 'Too many login attempts. Please try again later.' },
+    skip: (req) => {
+        if (process.env.NODE_ENV !== 'production') return true;
+        const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+        return ip.includes('127.0.0.1') || ip === '::1' || ip.includes('localhost');
+    }
 });
 const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    limit: 500,          // 500 requests per 15 min per IP â€” generous for dev/prod
+    limit: isProd ? 500 : 1000000,
     standardHeaders: true,
     legacyHeaders: false,
     message: { success: false, message: 'Too many requests. Please try again later.' },
     // Skip rate limiting for high-frequency read-only public endpoints
     skip: (req) => {
+        if (process.env.NODE_ENV !== 'production') return true;
+        const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+        if (ip.includes('127.0.0.1') || ip === '::1' || ip.includes('localhost')) return true;
+
         const p = req.path;
         const o = req.originalUrl || '';
         return p === '/settings' || o === '/api/settings' ||
@@ -683,6 +693,44 @@ const initDB = async () => {
         
         console.log('✅ News & Announcements & Categories tables verified.');
 
+        // ── Application Rejection Workflow columns ─────────────────────────────
+        // Guard is here AND in admin backend so startup order doesn't matter.
+        const rejectionCols = [
+            { col: 'rejection_category',           def: 'VARCHAR(100) DEFAULT NULL' },
+            { col: 'rejection_reason',             def: 'TEXT DEFAULT NULL' },
+            { col: 'rejected_by',                  def: 'INT DEFAULT NULL' },
+            { col: 'rejection_datetime',           def: 'DATETIME DEFAULT NULL' },
+            { col: 'rejection_email_sent',         def: 'TINYINT(1) DEFAULT 0' },
+            { col: 'rejection_notification_sent',  def: 'TINYINT(1) DEFAULT 0' },
+        ];
+        for (const { col, def } of rejectionCols) {
+            try {
+                await db.query(`ALTER TABLE applications ADD COLUMN ${col} ${def}`);
+            } catch (err) {
+                if (err.errno !== 1060 && err.code !== 'ER_DUP_FIELDNAME') {
+                    console.error(`Error adding applications.${col}:`, err.message);
+                }
+            }
+        }
+
+        // application_rejection_log audit table
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS application_rejection_log (
+                id                  INT AUTO_INCREMENT PRIMARY KEY,
+                application_db_id   INT           NOT NULL,
+                application_id      VARCHAR(30)   NOT NULL,
+                rejection_category  VARCHAR(100)  DEFAULT NULL,
+                rejection_reason    TEXT          NOT NULL,
+                rejected_by         INT           NOT NULL,
+                rejected_by_name    VARCHAR(255)  DEFAULT NULL,
+                previous_status     VARCHAR(50)   DEFAULT NULL,
+                email_sent          TINYINT(1)    DEFAULT 0,
+                notification_sent   TINYINT(1)    DEFAULT 0,
+                created_at          DATETIME      DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        `);
+        console.log('✅ Application Rejection Workflow schema verified.');
+
     } catch (err) {
         console.error('Database init error:', err);
     }
@@ -1236,7 +1284,7 @@ const upload = multer({
 app.get('/api/applications/my', authenticateToken, async (req, res) => {
     try {
         const userId = req.user.id;
-        let [appResults] = await db.query('SELECT * FROM applications WHERE user_id = ?', [userId]);
+        let [appResults] = await db.query('SELECT *, (SELECT full_name FROM users WHERE id = applications.rejected_by LIMIT 1) AS rejected_by_name FROM applications WHERE user_id = ?', [userId]);
 
         // Self-heal: if the draft record is missing (e.g. pre-migration user), auto-create it
         if (appResults.length === 0) {
@@ -1246,7 +1294,7 @@ app.get('/api/applications/my', authenticateToken, async (req, res) => {
                 'INSERT INTO applications (user_id, session_id, status) VALUES (?, ?, "Draft")',
                 [userId, sessionId]
             );
-            [appResults] = await db.query('SELECT * FROM applications WHERE user_id = ?', [userId]);
+            [appResults] = await db.query('SELECT *, (SELECT full_name FROM users WHERE id = applications.rejected_by LIMIT 1) AS rejected_by_name FROM applications WHERE user_id = ?', [userId]);
         }
         if (appResults.length === 0) return res.status(404).json({ message: 'Application not found' });
 
@@ -1919,7 +1967,7 @@ app.get('/api/student/eligibility', authenticateToken, async (req, res) => {
                     session_id,
                     payment_decision, payment_due_date, payment_expired_at, payment_resume_count,
                     rejection_category, rejection_reason, rejection_datetime,
-                    (SELECT name FROM admin_users WHERE id = a.rejected_by LIMIT 1) AS rejected_by_name
+                    (SELECT full_name FROM users WHERE id = a.rejected_by LIMIT 1) AS rejected_by_name
              FROM applications a WHERE a.user_id = ? LIMIT 1`,
             [req.user.id]
         );
@@ -2017,6 +2065,11 @@ app.get('/api/student/eligibility', authenticateToken, async (req, res) => {
                     new Date(app.payment_due_date).getTime() < Date.now() &&
                     !['Paid','Verified','Approved'].includes(app.payment_status)
                 ),
+                // Rejection workflow fields — shown on student dashboard when status = Rejected
+                rejection_category:         app.rejection_category || null,
+                rejection_reason:           app.rejection_reason || null,
+                rejection_datetime:         app.rejection_datetime || null,
+                rejected_by_name:           app.rejected_by_name || null,
             }
         });
     } catch (err) {
@@ -3202,6 +3255,21 @@ app.get('/api/dropdowns/:table', async (req, res) => {
     const { table } = req.params;
     const valid = ['exam_centers', 'subjects', 'categories', 'districts', 'genders', 'communities', 'id_types', 'score_types', 'mark_statement_types'];
     if (!valid.includes(table)) return res.status(400).json({ message: 'Invalid table' });
+
+    if (table === 'communities') {
+        try {
+            const [rows] = await db.query(`
+                SELECT id, community_name AS name
+                FROM community_fees
+                WHERE status = 'active'
+                ORDER BY community_name ASC
+            `);
+            return res.json(rows);
+        } catch (err) {
+            return res.status(500).json(err);
+        }
+    }
+
     try {
         const [rows] = await db.query(`SELECT * FROM dropdown_${table} ORDER BY name ASC`);
         res.json(rows);

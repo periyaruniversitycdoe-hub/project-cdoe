@@ -13,7 +13,6 @@ function authHeaders(json = false) {
 
 const MASTER_TYPES = [
     { key: 'designations',         label: 'Designation',           icon: '🎓', hasAbbrev: false },
-    { key: 'special_designations', label: 'Special Designation',   icon: '⭐', hasAbbrev: false },
     { key: 'departments',          label: 'Department',            icon: '🏛️', hasAbbrev: false },
     { key: 'institutes',           label: 'Institute',             icon: '🏫', hasAbbrev: true, isEnterprise: true },
     { key: 'districts',            label: 'District',              icon: '📍', hasAbbrev: false },

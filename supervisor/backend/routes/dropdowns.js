@@ -6,8 +6,7 @@ router.get('/:table', async (req, res) => {
     const { table } = req.params;
     const allowed = [
         'master_designations', 'master_departments', 'master_institutes',
-        'master_districts', 'master_disciplines', 'research_centres',
-        'master_special_designations'
+        'master_districts', 'master_disciplines', 'research_centres'
     ];
 
     if (!allowed.includes(table)) return res.status(400).json({ message: 'Invalid table' });
@@ -15,7 +14,7 @@ router.get('/:table', async (req, res) => {
     // Tables that have an is_active column — only return active rows for dropdowns
     const hasActiveFlag = [
         'master_designations', 'master_departments', 'master_institutes',
-        'master_districts', 'master_disciplines', 'master_special_designations'
+        'master_districts', 'master_disciplines'
     ];
 
     try {

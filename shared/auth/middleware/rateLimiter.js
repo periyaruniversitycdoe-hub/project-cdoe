@@ -29,7 +29,15 @@ module.exports = function createRateLimiter({
   }, 10 * 60 * 1000).unref(); // Run every 10 minutes, unref to not block process exit
 
   return (req, res, next) => {
-    const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    // Bypass rate limiting in non-production environments or for localhost
+    if (process.env.NODE_ENV !== 'production') {
+      return next();
+    }
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+    if (ip.includes('127.0.0.1') || ip === '::1' || ip.includes('localhost')) {
+      return next();
+    }
+
     const now = Date.now();
 
     if (!rateLimitMap.has(ip)) {

@@ -897,6 +897,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
       ${whereClause}`;
 
     const selectCols = `a.*, u.full_name, u.email,
+      (SELECT full_name FROM users WHERE id = a.rejected_by LIMIT 1) AS rejected_by_name,
       s.year AS session_year, s.month AS session_month,
       CONCAT(s.month, ' ', s.year) AS session_name,
       (CASE
@@ -980,10 +981,12 @@ router.get('/:id', verifyToken, isAdmin, async (req, res) => {
   try {
     const [rows] = await pool.execute(`
       SELECT a.*, u.full_name, u.email,
-             CONCAT(s.month, ' ', s.year) AS session_name
+             CONCAT(s.month, ' ', s.year) AS session_name,
+             au.full_name AS rejected_by_name
       FROM applications a
       JOIN users u ON a.user_id = u.id
       LEFT JOIN sessions s ON a.session_id = s.id
+      LEFT JOIN users au ON au.id = a.rejected_by
       WHERE a.id = ?
     `, [req.params.id]);
 
@@ -1400,8 +1403,8 @@ router.put('/:id/status', verifyToken, isAdmin, async (req, res) => {
         // Write audit log
         try {
           let adminName = 'Admin';
-          const [[adm]] = await connection.execute('SELECT name FROM admin_users WHERE id = ? LIMIT 1', [req.user.id]).catch(() => [[null]]);
-          if (adm?.name) adminName = adm.name;
+          const [[adm]] = await connection.execute('SELECT full_name FROM users WHERE id = ? LIMIT 1', [req.user.id]).catch(() => [[null]]);
+          if (adm?.full_name) adminName = adm.full_name;
           await connection.execute(
             `INSERT INTO application_rejection_log
              (application_db_id, application_id, rejection_category, rejection_reason,
@@ -1448,9 +1451,9 @@ router.get('/:id/rejection', verifyToken, isAdmin, async (req, res) => {
     const [[row]] = await pool.execute(
       `SELECT a.status, a.rejection_category, a.rejection_reason, a.rejection_datetime,
               a.rejection_email_sent, a.rejection_notification_sent,
-              au.name AS rejected_by_name
+              au.full_name AS rejected_by_name
        FROM applications a
-       LEFT JOIN admin_users au ON au.id = a.rejected_by
+       LEFT JOIN users au ON au.id = a.rejected_by
        WHERE a.id = ?`,
       [req.params.id]
     );

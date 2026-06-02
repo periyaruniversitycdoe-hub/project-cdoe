@@ -2,7 +2,6 @@ const pool = require('../../../admin/backend/config/db');
 
 const MASTER_TABLES = {
     designations:         { table: 'master_designations',         hasAbbrev: false },
-    special_designations: { table: 'master_special_designations', hasAbbrev: false },
     departments:          { table: 'master_departments',          hasAbbrev: false },
     institutes:           { table: 'master_institutes',           hasAbbrev: true  },
     districts:            { table: 'master_districts',            hasAbbrev: false },

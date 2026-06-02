@@ -3,9 +3,9 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { 
-  User, MapPin, Briefcase, GraduationCap, 
-  ChevronRight, ChevronLeft, Save, Send, 
+import {
+  User, MapPin, Briefcase, GraduationCap,
+  ChevronRight, ChevronLeft, Save, Send,
   CheckCircle, AlertCircle, Plus, Trash2,
   Camera, Lock, Clock, XCircle, FileText, Landmark
 } from 'lucide-react';
@@ -22,9 +22,9 @@ const STEPS = [
 ];
 
 const STATUS_COLORS = {
-  Draft:    { bg: '#fef9c3', color: '#854d0e', icon: FileText },
-  Pending:  { bg: '#eff6ff', color: '#1d4ed8', icon: Clock },
-  Active:   { bg: '#dcfce7', color: '#166534', icon: CheckCircle },
+  Draft: { bg: '#fef9c3', color: '#854d0e', icon: FileText },
+  Pending: { bg: '#eff6ff', color: '#1d4ed8', icon: Clock },
+  Active: { bg: '#dcfce7', color: '#166534', icon: CheckCircle },
   Approved: { bg: '#dcfce7', color: '#166534', icon: CheckCircle },
   Rejected: { bg: '#fee2e2', color: '#991b1b', icon: XCircle },
   Inactive: { bg: '#f1f5f9', color: '#475569', icon: XCircle },
@@ -36,7 +36,7 @@ const S = {
   pageHeader: { marginBottom: 32 },
   pageTitle: { fontSize: 28, fontWeight: 800, color: '#1e293b', margin: 0 },
   pageSub: { fontSize: 14, color: '#64748b', marginTop: 6 },
-  statusBar: { 
+  statusBar: {
     display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px',
     borderRadius: 12, marginBottom: 28, border: '1.5px solid', fontWeight: 600, fontSize: 14
   },
@@ -64,13 +64,13 @@ const S = {
   group: { display: 'flex', flexDirection: 'column', gap: 6 },
   label: { fontSize: 13, fontWeight: 600, color: '#374151' },
   required: { color: '#ef4444', marginLeft: 3 },
-  input: (err) => ({ 
-    padding: '11px 15px', borderRadius: 10, fontSize: 14, outline: 'none', 
+  input: (err) => ({
+    padding: '11px 15px', borderRadius: 10, fontSize: 14, outline: 'none',
     border: `1.5px solid ${err ? '#f87171' : '#e2e8f0'}`, background: err ? '#fff5f5' : '#f8fafc',
     transition: 'all 0.2s', width: '100%', boxSizing: 'border-box'
   }),
-  select: (err) => ({ 
-    padding: '11px 15px', borderRadius: 10, fontSize: 14, outline: 'none', 
+  select: (err) => ({
+    padding: '11px 15px', borderRadius: 10, fontSize: 14, outline: 'none',
     border: `1.5px solid ${err ? '#f87171' : '#e2e8f0'}`, background: err ? '#fff5f5' : '#f8fafc',
     appearance: 'none', cursor: 'pointer', width: '100%', boxSizing: 'border-box'
   }),
@@ -105,23 +105,23 @@ const S = {
 
 const REQUIRED_STEP0 = ['name', 'gender', 'designation_id'];
 const REQUIRED_STEP1 = ['address_1', 'district_id', 'pincode', 'mobile', 'home_address_1', 'home_district_id', 'home_pincode'];
-const REQUIRED_STEP2 = ['dob', 'date_of_joining', 'max_candidates'];
+const REQUIRED_STEP2 = ['dob', 'date_of_joining', 'max_candidates', 'max_full_time', 'max_part_time'];
 const REQUIRED_STEP3 = ['bank_holder_name', 'bank_name', 'account_number', 'ifsc_code'];
 
 function validate(step, formData) {
   const errors = {};
-  const req = 
-    step === 0 ? REQUIRED_STEP0 : 
-    step === 1 ? REQUIRED_STEP1 : 
-    step === 2 ? REQUIRED_STEP2 : 
-    step === 3 ? REQUIRED_STEP3 : [];
+  const req =
+    step === 0 ? REQUIRED_STEP0 :
+      step === 1 ? REQUIRED_STEP1 :
+        step === 2 ? REQUIRED_STEP2 :
+          step === 3 ? REQUIRED_STEP3 : [];
   req.forEach(f => { if (!formData[f] || String(formData[f]).trim() === '') errors[f] = 'This field is required'; });
-  
+
   if (step === 1 && formData.mobile && !/^\d{10}$/.test(formData.mobile)) errors.mobile = 'Enter valid 10-digit mobile number';
   if (step === 1 && formData.aadhaar_no && !/^\d{12}$/.test(formData.aadhaar_no)) errors.aadhaar_no = 'Aadhaar must be 12 digits';
   if (step === 1 && formData.pincode && !/^\d{6}$/.test(formData.pincode)) errors.pincode = 'Pincode must be 6 digits';
   if (step === 1 && formData.home_pincode && !/^\d{6}$/.test(formData.home_pincode)) errors.home_pincode = 'Pincode must be 6 digits';
-  
+
   if (step === 3) {
     if (formData.bank_holder_name && !/^[A-Z\s]{3,}$/.test(formData.bank_holder_name)) {
       errors.bank_holder_name = 'Name must be at least 3 uppercase characters and spaces only';
@@ -148,20 +148,22 @@ export default function ApplicationForm() {
   const [saving, setSaving] = useState(false);
   const [dropdowns, setDropdowns] = useState({});
   const [errors, setErrors] = useState({});
+  const [placeholders, setPlaceholders] = useState({ max_full_time: '', max_part_time: '' });
   const [appStatus, setAppStatus] = useState('Draft');
   const [formData, setFormData] = useState({
-    name: '', gender: 'Male', designation_id: '', special_designation_id: '',
+    name: '', gender: 'Male', designation_id: '',
     department_id: '', area_of_specialization: '', serving_institute_id: '',
     address_1: '', address_2: '', address_3: '', district_id: '', pincode: '',
     home_address_1: '', home_address_2: '', home_address_3: '', home_district_id: '', home_pincode: '',
     aadhaar_no: '', mobile: '', email: '',
     dob: '', date_of_joining: '', date_of_superannuation: '',
     recognition_ref_no: '', max_candidates: 0, current_vacancy: 0,
-    max_part_time: 0, max_full_time: 0, status: 'Draft', disciplines: [],
+    max_part_time: '', max_full_time: '', status: 'Draft', disciplines: [],
     bank_holder_name: '', bank_name: '', account_number: '', ifsc_code: ''
   });
   const [files, setFiles] = useState({ profile_image: null, dob_evidence: null, recognition_certificate: null });
   const [previews, setPreviews] = useState({ profile_image: null });
+  const [fileSettings, setFileSettings] = useState({});
 
   const [ifscResolving, setIfscResolving] = useState(false);
   const [isMasked, setIsMasked] = useState(true);
@@ -181,10 +183,24 @@ export default function ApplicationForm() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    axios.get(`${API}/file-upload-settings`)
+      .then(res => {
+        if (res.data.success) {
+          const map = {};
+          (res.data.data || []).forEach(s => {
+            map[s.file_type] = s;
+          });
+          setFileSettings(map);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const isReadOnly = ['Active', 'Approved'].includes(appStatus);
 
   useEffect(() => {
-    const tables = ['master_designations', 'master_departments', 'master_institutes', 'master_districts', 'master_disciplines', 'research_centres', 'master_special_designations'];
+    const tables = ['master_designations', 'master_departments', 'master_institutes', 'master_districts', 'master_disciplines', 'research_centres'];
     Promise.all(tables.map(t => axios.get(`${API}/dropdowns/${t}`))).then(results => {
       const data = {};
       tables.forEach((t, i) => data[t] = results[i].data || []);
@@ -220,15 +236,15 @@ export default function ApplicationForm() {
           setFormData(f => ({
             ...f,
             disciplines: r.data.map(x => ({
-              discipline_id:   String(x.discipline_id || ''),
-              center_id:       String(x.center_id     || ''),
-              type:            x.type || 'Primary',
+              discipline_id: String(x.discipline_id || ''),
+              center_id: String(x.center_id || ''),
+              type: x.type || 'Primary',
               recognition_date: x.recognition_date ? x.recognition_date.split('T')[0] : '',
             })),
           }));
-        }).catch(() => {});
+        }).catch(() => { });
       }
-    }).catch(() => {}).finally(() => setLoading(false));
+    }).catch(() => { }).finally(() => setLoading(false));
   }, [user]);
 
   // ENTERPRISE CAPACITY AUTOMATION ENGINE — fires when designation changes
@@ -243,15 +259,19 @@ export default function ApplicationForm() {
           max_full_time,
           max_part_time,
         } = res.data.data;
+        setPlaceholders({
+          max_full_time: String(max_full_time),
+          max_part_time: String(max_part_time)
+        });
         setFormData(prev => ({
           ...prev,
           max_candidates,
           current_vacancy,   // = max_candidates − scholars (0 for now)
-          max_full_time,
-          max_part_time,
+          max_full_time: (prev.max_full_time !== undefined && prev.max_full_time !== '') ? prev.max_full_time : '',
+          max_part_time: (prev.max_part_time !== undefined && prev.max_part_time !== '') ? prev.max_part_time : '',
         }));
       }
-    }).catch(() => {});
+    }).catch(() => { });
   }, [formData.designation_id]);
 
   // LIVE CAPACITY VALIDATION
@@ -259,9 +279,9 @@ export default function ApplicationForm() {
     const ft = parseInt(formData.max_full_time) || 0;
     const pt = parseInt(formData.max_part_time) || 0;
     const max = parseInt(formData.max_candidates) || 0;
-    
+
     if (ft + pt > max) {
-      setErrors(prev => ({ ...prev, capacity: `Total capacity (${ft+pt}) cannot exceed designation limit of ${max}` }));
+      setErrors(prev => ({ ...prev, capacity: `Total capacity (${ft + pt}) cannot exceed designation limit of ${max}` }));
     } else {
       setErrors(prev => { const n = { ...prev }; delete n.capacity; return n; });
     }
@@ -303,7 +323,7 @@ export default function ApplicationForm() {
     }
   };
 
-  const filteredBanks = INDIAN_BANKS.filter(b => 
+  const filteredBanks = INDIAN_BANKS.filter(b =>
     b.toLowerCase().includes(bankSearch.toLowerCase())
   );
 
@@ -327,13 +347,53 @@ export default function ApplicationForm() {
     });
   }, []);
 
+  const getFileSetting = (field) => {
+    const FIELD_TO_SETTING = {
+      profile_image: 'Photo',
+      dob_evidence: 'DOB Evidence',
+      recognition_certificate: 'Recognition Certificate'
+    };
+    return fileSettings[FIELD_TO_SETTING[field]] || null;
+  };
+
   const handleFile = (e, field) => {
     const file = e.target.files[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { toast.error('File too large. Max 5MB allowed.'); return; }
+
+    // Dynamic database-driven validation
+    const setting = getFileSetting(field);
+    if (setting) {
+      if (setting.is_active === 0) {
+        toast.error(`${setting.file_type} uploads are currently deactivated by administrator.`);
+        return;
+      }
+      
+      const ext = file.name.split('.').pop().toLowerCase();
+      const allowed = setting.allowed_extensions.split(',').map(x => x.trim().toLowerCase());
+      if (!allowed.includes(ext)) {
+        toast.error(`File extension .${ext} is not allowed. Allowed: ${setting.allowed_extensions.toUpperCase()}`);
+        return;
+      }
+
+      const maxBytes = setting.max_size * (setting.size_unit === 'MB' ? 1024 * 1024 : 1024);
+      if (file.size > maxBytes) {
+        toast.error(`File is too large. Maximum size allowed: ${setting.max_size} ${setting.size_unit}`);
+        return;
+      }
+    } else {
+      // Fallback
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error('File too large. Max 5MB allowed.');
+        return;
+      }
+    }
+
     setFiles(prev => ({ ...prev, [field]: file }));
-    if (field === 'profile_image') setPreviews(prev => ({ ...prev, profile_image: URL.createObjectURL(file) }));
-    toast.success(`${field.replace(/_/g,' ')} uploaded`);
+    if (field === 'profile_image') {
+      setPreviews(prev => ({ ...prev, profile_image: URL.createObjectURL(file) }));
+    }
+    const label = field.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    toast.success(`${label} uploaded successfully`);
   };
 
   const addDiscipline = () => {
@@ -403,7 +463,7 @@ export default function ApplicationForm() {
     <div style={S.page}>
       <div style={S.container}>
         <div style={{ background: '#fff', borderRadius: 20, padding: 40 }}>
-          {[1,2,3].map(i => <div key={i} style={{ ...S.skeleton, marginBottom: 20 }} />)}
+          {[1, 2, 3].map(i => <div key={i} style={{ ...S.skeleton, marginBottom: 20 }} />)}
         </div>
       </div>
     </div>
@@ -411,6 +471,9 @@ export default function ApplicationForm() {
 
   const sc = STATUS_COLORS[appStatus] || STATUS_COLORS.Draft;
   const StatusIcon = sc.icon;
+
+  const dobSetting = getFileSetting('dob_evidence');
+  const recSetting = getFileSetting('recognition_certificate');
 
   return (
     <div style={S.page}>
@@ -513,13 +576,6 @@ export default function ApplicationForm() {
                   {errors.designation_id && <span style={S.errMsg}>{errors.designation_id}</span>}
                 </div>
                 <div style={S.group}>
-                  <label style={S.label}>Special Designation</label>
-                  <select style={S.select(false)} name="special_designation_id" value={formData.special_designation_id} onChange={handleInput} disabled={isReadOnly}>
-                    <option value="">— Select Special Designation —</option>
-                    {dropdowns.master_special_designations?.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                  </select>
-                </div>
-                <div style={S.group}>
                   <label style={S.label}>Department</label>
                   <select style={S.select(false)} name="department_id" value={formData.department_id} onChange={handleInput} disabled={isReadOnly}>
                     <option value="">— Select Department —</option>
@@ -584,9 +640,9 @@ export default function ApplicationForm() {
                 </div>
               </div>
 
-              {/* Home Address Section */}
+              {/* Aadhar Section */}
               <div style={{ fontSize: 16, fontWeight: 700, color: '#4f46e5', marginBottom: 16, borderBottom: '2.5px solid #e0e7ff', paddingBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-                🏠 Home Address
+                🏠 Aadhar Address
               </div>
               <div style={{ ...S.grid2, marginBottom: 32 }}>
                 <div style={{ ...S.group, gridColumn: '1 / -1' }}>
@@ -665,7 +721,7 @@ export default function ApplicationForm() {
                 <div style={{ ...S.notice, background: '#f0f9ff', borderColor: '#bae6fd', color: '#0369a1', marginBottom: 0 }}>
                   <AlertCircle size={18} />
                   <span>
-                    <strong>Flexible Capacity Logic:</strong> Max candidates are determined by your designation. 
+                    <strong>Flexible Capacity Logic:</strong> Max candidates are determined by your designation.
                     You can distribute this between Full-Time and Part-Time research.
                   </span>
                 </div>
@@ -678,33 +734,45 @@ export default function ApplicationForm() {
               </div>
               <div style={S.group}>
                 <label style={S.label}>Current Vacancy</label>
-                <div style={{ ...S.input(false), background: '#f1f5f9', color: '#64748b', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Clock size={14} /> {formData.current_vacancy}
-                </div>
+                <input style={S.input(errors.current_vacancy)} name="current_vacancy" type="number" min={0} value={formData.current_vacancy} onChange={handleInput} readOnly={isReadOnly} />
               </div>
               <div style={S.group}>
                 <label style={S.label}>Max Full-Time Scholars<span style={S.required}>*</span></label>
-                <input style={S.input(errors.capacity)} name="max_full_time" type="number" min={0} value={formData.max_full_time} onChange={handleInput} readOnly={isReadOnly} />
+                <input style={S.input(errors.capacity || errors.max_full_time)} name="max_full_time" type="number" min={0} value={formData.max_full_time} onChange={handleInput} readOnly={isReadOnly} />
               </div>
               <div style={S.group}>
                 <label style={S.label}>Max Part-Time Scholars<span style={S.required}>*</span></label>
-                <input style={S.input(errors.capacity)} name="max_part_time" type="number" min={0} value={formData.max_part_time} onChange={handleInput} readOnly={isReadOnly} />
+                <input style={S.input(errors.capacity || errors.max_part_time)} name="max_part_time" type="number" min={0} value={formData.max_part_time} onChange={handleInput} readOnly={isReadOnly} />
               </div>
               {errors.capacity && (
                 <div style={{ gridColumn: '1 / -1', color: '#ef4444', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <AlertCircle size={14} /> {errors.capacity}
                 </div>
               )}
-              <div style={{ ...S.group, gridColumn: '1 / -1' }}>
-                <label style={S.label}>DOB Evidence (PDF/Image)</label>
-                <input type="file" onChange={e => handleFile(e, 'dob_evidence')} accept=".pdf,.jpg,.jpeg,.png" disabled={isReadOnly} />
-                {files.dob_evidence && <span style={{ fontSize: 12, color: '#10b981', marginTop: 4 }}>✓ {files.dob_evidence.name}</span>}
-              </div>
-              <div style={{ ...S.group, gridColumn: '1 / -1' }}>
-                <label style={S.label}>Recognition Certificate (PDF)</label>
-                <input type="file" onChange={e => handleFile(e, 'recognition_certificate')} accept=".pdf,.jpg,.jpeg,.png" disabled={isReadOnly} />
-                {files.recognition_certificate && <span style={{ fontSize: 12, color: '#10b981', marginTop: 4 }}>✓ {files.recognition_certificate.name}</span>}
-              </div>
+              {(!dobSetting || dobSetting.is_active !== 0) && (
+                <div style={{ ...S.group, gridColumn: '1 / -1' }}>
+                  <label style={S.label}>DOB Evidence (10th mark sheet)</label>
+                  <input type="file" onChange={e => handleFile(e, 'dob_evidence')} accept={dobSetting ? dobSetting.allowed_extensions.split(',').map(ext => `.${ext.trim()}`).join(',') : '.pdf,.jpg,.jpeg,.png'} disabled={isReadOnly} />
+                  {dobSetting && (
+                    <small style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                      Allowed Types: <strong>{dobSetting.allowed_extensions.toUpperCase()}</strong> | Max Size: <strong>{dobSetting.max_size} {dobSetting.size_unit}</strong>
+                    </small>
+                  )}
+                  {files.dob_evidence && <span style={{ fontSize: 12, color: '#10b981', marginTop: 4 }}>✓ {files.dob_evidence.name}</span>}
+                </div>
+              )}
+              {(!recSetting || recSetting.is_active !== 0) && (
+                <div style={{ ...S.group, gridColumn: '1 / -1' }}>
+                  <label style={S.label}>Recognition Certificate (PDF)</label>
+                  <input type="file" onChange={e => handleFile(e, 'recognition_certificate')} accept={recSetting ? recSetting.allowed_extensions.split(',').map(ext => `.${ext.trim()}`).join(',') : '.pdf,.jpg,.jpeg,.png'} disabled={isReadOnly} />
+                  {recSetting && (
+                    <small style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                      Allowed Types: <strong>{recSetting.allowed_extensions.toUpperCase()}</strong> | Max Size: <strong>{recSetting.max_size} {recSetting.size_unit}</strong>
+                    </small>
+                  )}
+                  {files.recognition_certificate && <span style={{ fontSize: 12, color: '#10b981', marginTop: 4 }}>✓ {files.recognition_certificate.name}</span>}
+                </div>
+              )}
             </div>
           )}
 
@@ -786,8 +854,8 @@ export default function ApplicationForm() {
                       <input
                         type="text"
                         className={`form-input ${formData.bank_name ? (errors.bank_name ? 'invalid' : 'valid') : ''}`}
-                        style={{ 
-                          ...S.input(errors.bank_name), 
+                        style={{
+                          ...S.input(errors.bank_name),
                           background: isLockedByIFSC ? '#f1f5f9' : (errors.bank_name ? '#fff5f5' : '#f8fafc'),
                           color: isLockedByIFSC ? '#64748b' : '#1e293b',
                           cursor: isLockedByIFSC ? 'not-allowed' : 'text'
@@ -806,7 +874,7 @@ export default function ApplicationForm() {
                           if (!isLockedByIFSC && !isReadOnly) setShowDropdown(true);
                         }}
                       />
-                      
+
                       {isLockedByIFSC && (
                         <div style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 11, color: '#0369a1', fontWeight: 700 }}>
                           AUTO-LOCKED
@@ -817,9 +885,9 @@ export default function ApplicationForm() {
                         <ul style={S.dropdownMenu}>
                           {filteredBanks.length > 0 ? (
                             filteredBanks.map(b => (
-                              <li 
-                                key={b} 
-                                className="dropdown-item" 
+                              <li
+                                key={b}
+                                className="dropdown-item"
                                 style={S.dropdownItem}
                                 onClick={() => {
                                   setFormData(prev => ({ ...prev, bank_name: b }));
@@ -851,11 +919,11 @@ export default function ApplicationForm() {
                     <input
                       type="text"
                       className={`form-input ${formData.account_number ? (errors.account_number ? 'invalid' : 'valid') : ''}`}
-                      style={{ 
-                        ...S.input(errors.account_number), 
-                        paddingRight: 50, 
-                        fontFamily: isMasked ? 'monospace' : 'inherit', 
-                        letterSpacing: isMasked ? '0.15em' : 'normal' 
+                      style={{
+                        ...S.input(errors.account_number),
+                        paddingRight: 50,
+                        fontFamily: isMasked ? 'monospace' : 'inherit',
+                        letterSpacing: isMasked ? '0.15em' : 'normal'
                       }}
                       placeholder="ENTER 9 TO 18 DIGIT ACCOUNT NUMBER"
                       value={isMasked ? getMaskedAccountNumber() : formData.account_number}
@@ -888,11 +956,11 @@ export default function ApplicationForm() {
                       >
                         {isMasked ? (
                           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
                           </svg>
                         ) : (
                           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>
+                            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" />
                           </svg>
                         )}
                       </button>

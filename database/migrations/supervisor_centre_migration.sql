@@ -19,15 +19,6 @@ CREATE TABLE IF NOT EXISTS master_designations (
     UNIQUE KEY uq_designation_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE IF NOT EXISTS master_special_designations (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(200) NOT NULL,
-    is_active TINYINT(1) NOT NULL DEFAULT 1,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_special_desig_name (name)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
 CREATE TABLE IF NOT EXISTS master_departments (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(200) NOT NULL,
@@ -103,7 +94,6 @@ CREATE TABLE IF NOT EXISTS supervisors (
     -- Basic Info
     name VARCHAR(300) NOT NULL,
     designation_id INT DEFAULT NULL,
-    special_designation_id INT DEFAULT NULL,
     recognition_ref_no VARCHAR(100) DEFAULT NULL,
     profile_image VARCHAR(500) DEFAULT NULL,
 
@@ -147,7 +137,6 @@ CREATE TABLE IF NOT EXISTS supervisors (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
     CONSTRAINT fk_sup_designation FOREIGN KEY (designation_id) REFERENCES master_designations(id) ON DELETE SET NULL,
-    CONSTRAINT fk_sup_special_desig FOREIGN KEY (special_designation_id) REFERENCES master_special_designations(id) ON DELETE SET NULL,
     CONSTRAINT fk_sup_department FOREIGN KEY (department_id) REFERENCES master_departments(id) ON DELETE SET NULL,
     CONSTRAINT fk_sup_institute FOREIGN KEY (serving_institute_id) REFERENCES master_institutes(id) ON DELETE SET NULL,
     CONSTRAINT fk_sup_district FOREIGN KEY (district_id) REFERENCES master_districts(id) ON DELETE SET NULL,
@@ -253,9 +242,6 @@ INSERT IGNORE INTO master_districts (name) VALUES
 INSERT IGNORE INTO master_designations (name) VALUES
     ('Professor'),('Associate Professor'),('Assistant Professor'),
     ('Reader'),('Lecturer'),('Principal'),('Dean'),('HOD');
-
-INSERT IGNORE INTO master_special_designations (name) VALUES
-    ('None'),('Emeritus Professor'),('Adjunct Professor'),('Visiting Professor');
 
 INSERT IGNORE INTO master_centre_types (name) VALUES
     ('University Department'),('Affiliated College'),('Autonomous College'),

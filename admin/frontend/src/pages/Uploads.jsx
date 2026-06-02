@@ -18,6 +18,8 @@ const FILE_TYPE_ICONS = {
   'UG Degree Documents':   '🎓',
   'PG Degree Documents':   '🎓',
   '5-Year Integrated Course': '⚙️',
+  'DOB Evidence':          '🎂',
+  'Recognition Certificate': '📜',
 };
 
 const Uploads = () => {
@@ -124,6 +126,11 @@ const Uploads = () => {
                   'PG Degree Documents',
                   '5-Year Integrated Course'
                 ].includes(row.file_type);
+
+                const isSupervisorDoc = [
+                  'DOB Evidence',
+                  'Recognition Certificate'
+                ].includes(row.file_type);
                 
                 return (
                   <React.Fragment key={row.id}>
@@ -133,6 +140,7 @@ const Uploads = () => {
                         <span className="me-2">{FILE_TYPE_ICONS[row.file_type] || '📎'}</span>
                         <span className="fw-semibold">{row.file_type}</span>
                         {isAcademicDoc && <span className="badge bg-info-subtle text-info ms-2" style={{ fontSize: '10px' }}>Academic Document</span>}
+                        {isSupervisorDoc && <span className="badge bg-success-subtle text-success ms-2" style={{ fontSize: '10px' }}>Supervisor Portal</span>}
                       </td>
                       <td>
                         <input
@@ -296,6 +304,8 @@ const Uploads = () => {
             <li><strong>Community Certificate</strong> — Caste/community certificate document</li>
             <li><strong>PC Certificate</strong> — Physically challenged certificate</li>
             <li><strong>Mark Sheet</strong> — PG semester or consolidated mark sheets</li>
+            <li><strong>DOB Evidence</strong> — 10th Standard marksheet for age proof (Supervisor)</li>
+            <li><strong>Recognition Certificate</strong> — Supervisor guideship recognition letter (Supervisor)</li>
           </ul>
         </div>
       </div>

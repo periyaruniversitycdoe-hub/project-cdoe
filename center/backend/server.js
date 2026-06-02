@@ -35,8 +35,29 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
-const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: true, legacyHeaders: false });
-const apiLimiter  = rateLimit({ windowMs: 15 * 60 * 1000, limit: 200, standardHeaders: true, legacyHeaders: false });
+const isProd = process.env.NODE_ENV === 'production';
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: isProd ? 20 : 1000000,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => {
+        if (process.env.NODE_ENV !== 'production') return true;
+        const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+        return ip.includes('127.0.0.1') || ip === '::1' || ip.includes('localhost');
+    }
+});
+const apiLimiter  = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: isProd ? 200 : 1000000,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => {
+        if (process.env.NODE_ENV !== 'production') return true;
+        const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+        return ip.includes('127.0.0.1') || ip === '::1' || ip.includes('localhost');
+    }
+});
 app.use('/api/auth', authLimiter);
 app.use('/api/', apiLimiter);
 

@@ -117,7 +117,7 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
   const ADMIN_API = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
 
   const activeAPI = isAdminMode ? ADMIN_API : CENTER_API;
-  const tokenKey = isAdminMode ? 'adminToken' : 'token';
+  const tokenKey = isAdminMode ? 'adminToken' : 'ct_token';
   const getHeaders = () => ({
     headers: { Authorization: `Bearer ${localStorage.getItem(tokenKey) || ''}` }
   });
@@ -256,7 +256,7 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
         if (onDone) onDone();
       } else {
         await axios.post(`${activeAPI}/portal/application`, postData, {
-          headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${localStorage.getItem('token') || ''}` }
+          headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${localStorage.getItem('ct_token') || ''}` }
         });
         toast.success(isFinal ? '✅ Registration submitted for university review!' : '💾 Progress saved successfully!', { id: toastId });
         if (isFinal) { await fetchMe(); navigate('/dashboard'); }

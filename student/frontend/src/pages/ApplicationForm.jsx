@@ -2659,6 +2659,47 @@ const ApplicationForm = () => {
 
         {/* Progress Steps */}
         <div className="card border-0 shadow-sm rounded-4 mb-4 p-3">
+          {appStatus === 'Rejected' && (
+            <div className="alert alert-danger py-3 px-4 mb-3 rounded-4 shadow-sm" style={{ borderLeft: '5px solid #dc2626', background: '#fef2f2' }}>
+              <div className="d-flex align-items-center gap-2 mb-2">
+                <XCircle size={22} className="text-danger" />
+                <h5 className="alert-heading fw-bold mb-0 text-danger" style={{ fontSize: '15px' }}>Application Status: REJECTED</h5>
+              </div>
+              <p className="mb-3 text-dark" style={{ fontSize: '14px' }}>
+                We regret to inform you that your application has been reviewed and could not be approved at this stage.
+              </p>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 12 }}>
+                {getValues('rejection_category') && (
+                  <div>
+                    <span className="text-muted small d-block">Reason Category</span>
+                    <strong className="text-danger" style={{ fontSize: '13px' }}>{getValues('rejection_category')}</strong>
+                  </div>
+                )}
+                {getValues('rejection_datetime') && (
+                  <div>
+                    <span className="text-muted small d-block">Rejected On</span>
+                    <strong className="text-dark" style={{ fontSize: '13px' }}>
+                      {new Date(getValues('rejection_datetime')).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </strong>
+                  </div>
+                )}
+                {getValues('rejected_by_name') && (
+                  <div>
+                    <span className="text-muted small d-block">Rejected By</span>
+                    <strong className="text-dark" style={{ fontSize: '13px' }}>{getValues('rejected_by_name')}</strong>
+                  </div>
+                )}
+              </div>
+
+              {getValues('rejection_reason') && (
+                <div className="p-3 rounded-3" style={{ background: '#fff', border: '1px solid #fca5a5', fontSize: '13px', color: '#7f1d1d' }}>
+                  <span className="text-muted small d-block mb-1 fw-bold">Detailed Reason</span>
+                  {getValues('rejection_reason')}
+                </div>
+              )}
+            </div>
+          )}
           {isSubmitted && (
             <div className="alert alert-info py-2 px-3 mb-3 d-flex align-items-center justify-content-between gap-2 flex-wrap" style={{ fontSize: '14px' }}>
               <div className="d-flex align-items-center gap-2">
