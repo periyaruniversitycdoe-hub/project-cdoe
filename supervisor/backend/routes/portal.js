@@ -26,17 +26,22 @@ router.get('/me', verifyToken, async (req, res) => {
                     s.profile_image, s.status AS supervisor_status, s.area_of_specialization,
                     s.home_address_1, s.home_address_2, s.home_address_3, s.home_pincode, s.home_district_id,
                     s.current_scholars_count, s.current_part_time_scholars_count,
+                    s.eligibility_dept_id, s.program_offered_id,
                     d.max_capacity AS designation_max_capacity,
                     d.name AS designation_name,
                     dept.name AS department_name,
                     dist.name AS district_name,
-                    inst.name AS institute_name
+                    inst.name AS institute_name,
+                    ed.name AS eligibility_dept_name,
+                    po.name AS program_offered_name
              FROM supervisor_users su
              LEFT JOIN supervisors s ON su.supervisor_id = s.id
              LEFT JOIN master_designations d ON s.designation_id = d.id
              LEFT JOIN master_departments dept ON s.department_id = dept.id
              LEFT JOIN master_districts dist ON s.district_id = dist.id
              LEFT JOIN master_institutes inst ON s.serving_institute_id = inst.id
+             LEFT JOIN departments ed ON s.eligibility_dept_id = ed.id
+             LEFT JOIN programs_offered po ON s.program_offered_id = po.id
              WHERE su.id = ?`,
             [req.user.id]
         );
@@ -302,6 +307,23 @@ router.post('/application', verifyToken, upload.fields([
             }
         }
 
+        // Programme Department and Offered Course validation on final submit
+        if (isFinalSubmit) {
+            if (!data.eligibility_dept_id) {
+                return res.status(400).json({ success: false, message: 'Programme Department is required.' });
+            }
+            if (!data.program_offered_id) {
+                return res.status(400).json({ success: false, message: 'Offered Course is required.' });
+            }
+            const [[progCheck]] = await pool.query(
+                'SELECT id FROM programs_offered WHERE id = ? AND department_id = ? AND is_active = 1',
+                [parseId(data.program_offered_id), parseId(data.eligibility_dept_id)]
+            );
+            if (!progCheck) {
+                return res.status(400).json({ success: false, message: 'Selected Offered Course does not belong to the chosen Programme Department.' });
+            }
+        }
+
         // Get linked supervisor record
         const [userRows] = await pool.query(
             'SELECT supervisor_id FROM supervisor_users WHERE id = ?', [req.user.id]
@@ -353,6 +375,8 @@ router.post('/application', verifyToken, upload.fields([
             account_number:   data.account_number || null,
             ifsc_code:        data.ifsc_code ? String(data.ifsc_code).toUpperCase() : null,
             area_of_specialization: data.area_of_specialization || null,
+            eligibility_dept_id:    parseId(data.eligibility_dept_id),
+            program_offered_id:     parseId(data.program_offered_id),
             status:           data.status || 'Draft',
         };
 

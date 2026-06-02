@@ -86,6 +86,8 @@ CREATE TABLE IF NOT EXISTS experience_details (
     from_year INT,
     to_month VARCHAR(20),
     to_year INT,
+    from_date DATE,
+    to_date DATE,
     total_years INT,
     total_months INT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

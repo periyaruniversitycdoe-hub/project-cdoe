@@ -30,12 +30,15 @@ const fileStorage = multer.diskStorage({
     filename: (req, file, cb) => cb(null, `${Date.now()}-${sanitizeFilename(file.originalname)}`)
 });
 
+const ALLOWED_IMAGE_MIMES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+const ALLOWED_FILE_MIMES  = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'application/pdf'];
+
 const uploadImage = multer({
     storage: imageStorage,
     limits: { fileSize: 5 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
-        if (/jpeg|jpg|png|webp/.test(file.mimetype)) return cb(null, true);
-        cb(new Error('Only images allowed'));
+        if (ALLOWED_IMAGE_MIMES.includes(file.mimetype)) return cb(null, true);
+        cb(new Error('Only JPEG, PNG, or WebP images are allowed'));
     }
 });
 
@@ -43,8 +46,8 @@ const uploadFile = multer({
     storage: fileStorage,
     limits: { fileSize: 20 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
-        if (/jpeg|jpg|png|webp|pdf/.test(file.mimetype)) return cb(null, true);
-        cb(new Error('Only images/PDFs allowed'));
+        if (ALLOWED_FILE_MIMES.includes(file.mimetype)) return cb(null, true);
+        cb(new Error('Only JPEG, PNG, WebP images or PDF documents are allowed'));
     }
 });
 
@@ -320,6 +323,73 @@ router.delete('/master-data/:table/:id', verifyToken, isAdmin, async (req, res) 
     }
 });
 
+
+// ─── EXAM CENTRE CONFIGURATION ─────────────────────────────────────────────
+
+// GET exam centre config (public — read by student portal)
+router.get('/exam-centre-config', async (req, res) => {
+    try {
+        const [rows] = await pool.execute(
+            'SELECT id, max_preferences, status, description, updated_at FROM exam_centre_config LIMIT 1'
+        );
+        res.json({ success: true, data: rows[0] || { max_preferences: 2, status: 'active', description: '' } });
+    } catch (err) {
+        // Table may not exist yet — return safe default
+        res.json({ success: true, data: { max_preferences: 2, status: 'active', description: '' } });
+    }
+});
+
+// PUT exam centre config (admin only)
+router.put('/exam-centre-config', verifyToken, isAdmin, async (req, res) => {
+    const { max_preferences, status, description } = req.body;
+
+    const maxPref = parseInt(max_preferences);
+    if (isNaN(maxPref) || maxPref < 1 || maxPref > 10) {
+        return res.status(400).json({ success: false, message: 'max_preferences must be a number between 1 and 10' });
+    }
+
+    const safeStatus = ['active', 'inactive'].includes(status) ? status : 'active';
+    const safeDesc   = description ? String(description).substring(0, 500) : null;
+
+    try {
+        // Ensure table exists
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS exam_centre_config (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                max_preferences INT NOT NULL DEFAULT 2,
+                status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+                description TEXT DEFAULT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                updated_by INT DEFAULT NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+
+        const [rows] = await pool.execute('SELECT id FROM exam_centre_config LIMIT 1');
+        if (rows.length === 0) {
+            await pool.execute(
+                'INSERT INTO exam_centre_config (max_preferences, status, description, updated_by) VALUES (?, ?, ?, ?)',
+                [maxPref, safeStatus, safeDesc, req.user.id || null]
+            );
+        } else {
+            await pool.execute(
+                'UPDATE exam_centre_config SET max_preferences=?, status=?, description=?, updated_by=?, updated_at=NOW() WHERE id=?',
+                [maxPref, safeStatus, safeDesc, req.user.id || null, rows[0].id]
+            );
+        }
+
+        // Audit log (non-critical)
+        try {
+            await pool.execute(
+                'INSERT INTO settings_audit_logs (admin_id, action, ip_address, user_agent) VALUES (?, ?, ?, ?)',
+                [req.user.id || null, `Updated Exam Centre Config: max_preferences=${maxPref}`, req.ip || null, req.headers['user-agent'] || null]
+            );
+        } catch (_) {}
+
+        res.json({ success: true, message: 'Exam centre configuration saved successfully' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
 
 // ─── PORTAL HEADER LINK MANAGEMENT APIs ──────────────────────────────────────
 

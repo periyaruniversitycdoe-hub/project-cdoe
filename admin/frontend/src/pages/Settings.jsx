@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
-import { Trash2, CheckCircle, Globe, Settings as SettingsIcon } from 'lucide-react';
+import { Trash2, CheckCircle, Globe, Settings as SettingsIcon, MapPin } from 'lucide-react';
 import PortalManagement from './PortalManagement';
 const API = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
 const token = () => localStorage.getItem('adminToken');
@@ -11,12 +11,38 @@ const Settings = () => {
   const [settings, setSettings] = useState({});
   const [activeTab, setActiveTab] = useState('admission');
 
+  // Exam Centre Config state
+  const [examConfig, setExamConfig] = useState({ max_preferences: 2, status: 'active', description: '' });
+  const [examConfigSaving, setExamConfigSaving] = useState(false);
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => { 
-    fetchAll(); 
+  useEffect(() => {
+    fetchAll();
+    fetchExamConfig();
   }, []);
+
+  const fetchExamConfig = async () => {
+    try {
+      const res = await axios.get(`${API}/settings/exam-centre-config`);
+      if (res.data.success) setExamConfig(res.data.data || { max_preferences: 2, status: 'active', description: '' });
+    } catch { /* silent — use defaults */ }
+  };
+
+  const handleSaveExamConfig = async () => {
+    const maxPref = parseInt(examConfig.max_preferences);
+    if (isNaN(maxPref) || maxPref < 1 || maxPref > 10) {
+      toast.error('Maximum Preferences must be between 1 and 10');
+      return;
+    }
+    setExamConfigSaving(true);
+    try {
+      await axios.put(`${API}/settings/exam-centre-config`, examConfig, { headers: authHeader() });
+      toast.success('Exam Centre settings saved!', { icon: <CheckCircle size={20} style={{ color: '#10b981' }} /> });
+    } catch { toast.error('Failed to save Exam Centre settings'); }
+    setExamConfigSaving(false);
+  };
 
   const fetchAll = async () => {
     try {
@@ -135,9 +161,14 @@ const Settings = () => {
           <h2 className="fw-bold mb-1" style={{ color: '#32c5d2' }}>Online Application Settings</h2>
           <p className="text-muted mb-0 small">Manage all admission portal configuration and community fees</p>
         </div>
-        {activeTab === 'admission' && (
+        {(activeTab === 'admission') && (
           <button className="btn btn-primary px-4" onClick={handleSave} disabled={saving}>
             {saving ? <><span className="spinner-border spinner-border-sm me-2" />Saving...</> : '💾 Save All Changes'}
+          </button>
+        )}
+        {activeTab === 'exam-centre' && (
+          <button className="btn btn-primary px-4" onClick={handleSaveExamConfig} disabled={examConfigSaving}>
+            {examConfigSaving ? <><span className="spinner-border spinner-border-sm me-2" />Saving...</> : '💾 Save Exam Centre Settings'}
           </button>
         )}
       </div>
@@ -153,8 +184,8 @@ const Settings = () => {
         >
           <SettingsIcon size={16} /> Admission & Fees Settings
         </button>
-        <button 
-          onClick={() => setActiveTab('portals')} 
+        <button
+          onClick={() => setActiveTab('portals')}
           className={`btn btn-sm d-flex align-items-center gap-1.5 px-3 py-2 border-0 rounded-3 ${
             activeTab === 'portals' ? 'btn-primary' : 'btn-outline-secondary bg-white'
           }`}
@@ -162,9 +193,132 @@ const Settings = () => {
         >
           <Globe size={16} /> Portal Landing Management
         </button>
+        <button
+          onClick={() => setActiveTab('exam-centre')}
+          className={`btn btn-sm d-flex align-items-center gap-1.5 px-3 py-2 border-0 rounded-3 ${
+            activeTab === 'exam-centre' ? 'btn-primary' : 'btn-outline-secondary bg-white'
+          }`}
+          style={activeTab === 'exam-centre' ? { backgroundColor: '#32c5d2' } : {}}
+        >
+          <MapPin size={16} /> Exam Centre Settings
+        </button>
       </div>
 
       {activeTab === 'portals' && <PortalManagement />}
+
+      {activeTab === 'exam-centre' && (
+        <div>
+          {/* ── Exam Centre Preference Configuration ─────────────────────── */}
+          <div className="card mb-4">
+            <div className="card-header fw-bold text-uppercase d-flex align-items-center gap-2" style={{ fontSize: 12, letterSpacing: 1 }}>
+              <MapPin size={14} /> Exam Centre Preference Configuration
+            </div>
+            <div className="card-body">
+              <div className="alert alert-info py-2 small mb-4 d-flex align-items-start gap-2">
+                <span style={{ fontSize: 16 }}>ℹ️</span>
+                <div>
+                  <strong>How this works:</strong> Set the maximum number of exam centre preferences a student can submit during registration.
+                  The student form will dynamically show exactly this many preference dropdowns.
+                  Exam centre list is managed under <strong>Dropdown Management → Exam Centers</strong>.
+                </div>
+              </div>
+
+              <div className="row g-4">
+                <div className="col-md-4">
+                  <label className="form-label fw-semibold">
+                    Maximum Exam Centre Preferences
+                    <span className="text-danger ms-1">*</span>
+                  </label>
+                  <div className="input-group">
+                    <input
+                      type="number"
+                      className="form-control"
+                      min={1}
+                      max={10}
+                      value={examConfig.max_preferences}
+                      onChange={e => setExamConfig(p => ({ ...p, max_preferences: parseInt(e.target.value) || 1 }))}
+                    />
+                    <span className="input-group-text text-muted small">1 – 10</span>
+                  </div>
+                  <div className="form-text text-muted">
+                    Students will see exactly this many preference dropdowns (e.g., 2 = Preference 1 &amp; Preference 2).
+                  </div>
+                </div>
+
+                <div className="col-md-3">
+                  <label className="form-label fw-semibold">Status</label>
+                  <select
+                    className="form-select"
+                    value={examConfig.status}
+                    onChange={e => setExamConfig(p => ({ ...p, status: e.target.value }))}
+                  >
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                  <div className="form-text text-muted">
+                    Inactive will fall back to 2 preferences (system default).
+                  </div>
+                </div>
+
+                <div className="col-md-5">
+                  <label className="form-label fw-semibold">Description / Notes</label>
+                  <textarea
+                    className="form-control"
+                    rows={3}
+                    maxLength={500}
+                    value={examConfig.description || ''}
+                    onChange={e => setExamConfig(p => ({ ...p, description: e.target.value }))}
+                    placeholder="Optional: reason for this configuration..."
+                  />
+                </div>
+              </div>
+
+              {/* Live Preview */}
+              <div className="mt-4 p-3 rounded-3" style={{ background: '#f8fafc', border: '1px dashed #cbd5e1' }}>
+                <div className="fw-semibold small text-secondary mb-2">Live Preview — Student Form Will Show:</div>
+                <div className="row g-2">
+                  {Array.from({ length: Math.min(Math.max(parseInt(examConfig.max_preferences) || 1, 1), 10) }, (_, i) => (
+                    <div key={i} className="col-md-4">
+                      <div className="border rounded p-2 bg-white" style={{ fontSize: 13 }}>
+                        <span className="badge bg-primary-subtle text-primary me-2 fw-bold" style={{ fontSize: 11 }}>{i + 1}</span>
+                        Exam Centre Preference {i + 1}
+                        {i === 0 && <span className="text-danger ms-1">*</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {examConfig.updated_at && (
+                <div className="mt-3 small text-muted">
+                  Last updated: {new Date(examConfig.updated_at).toLocaleString()}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Exam Centre Master Hint */}
+          <div className="card mb-4 border-info border-opacity-25">
+            <div className="card-body d-flex align-items-start gap-3 py-3">
+              <MapPin size={20} className="text-info mt-1 flex-shrink-0" />
+              <div>
+                <div className="fw-semibold text-info-emphasis mb-1">Exam Centre Master Management</div>
+                <div className="small text-secondary">
+                  To add, edit, disable, enable or reorder exam centres, go to{' '}
+                  <a href="/dropdowns" className="fw-semibold text-info">Dropdown Management</a>{' '}
+                  and select <strong>Exam Centers</strong>. All changes there are reflected instantly in the student registration form.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="d-flex justify-content-end mb-5">
+            <button className="btn btn-primary btn-lg px-5" onClick={handleSaveExamConfig} disabled={examConfigSaving}>
+              {examConfigSaving ? <><span className="spinner-border spinner-border-sm me-2" />Saving...</> : '💾 Save Exam Centre Settings'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {activeTab === 'admission' && (
         <>

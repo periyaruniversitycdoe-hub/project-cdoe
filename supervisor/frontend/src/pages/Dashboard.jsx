@@ -3,7 +3,7 @@ import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import {
   Users, Award, ShieldCheck, Clock, ChevronRight,
-  PlusCircle, Eye, Mail, XCircle
+  PlusCircle, Eye, Mail, XCircle, GraduationCap
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import NewsAnnouncementsBoard from '../../../../shared/components/NewsAnnouncementsBoard';
@@ -45,7 +45,6 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [profile, setProfile] = useState(null);
-  const [disciplines, setDisciplines] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -53,12 +52,10 @@ export default function Dashboard() {
     Promise.all([
       axios.get(`${API}/portal/dashboard`),
       axios.get(`${API}/portal/me`),
-      axios.get(`${API}/portal/disciplines`),
       axios.get(`${API}/notifications`),
-    ]).then(([d, m, disc, notif]) => {
+    ]).then(([d, m, notif]) => {
       if (d.data && d.data.stats) setStats(d.data.stats);
       if (m.data) setProfile(m.data);
-      if (disc.data) setDisciplines(disc.data);
       if (notif.data.success) setNotifications(notif.data.data);
     }).catch(err => {
       console.error('Dashboard Load Error:', err);
@@ -234,18 +231,24 @@ export default function Dashboard() {
               )}
             </div>
 
-            {/* Disciplines */}
+            {/* Research Programme */}
             <div style={S.section}>
               <div style={S.sectionTitle}>
-                <Award size={20} color="#4338ca" />
-                Assigned Disciplines
+                <GraduationCap size={20} color="#4338ca" />
+                Research Programme
               </div>
-              {disciplines.length > 0 ? (
-                <div style={{ display: 'flex', flexWrap: 'wrap' }}>
-                   {disciplines.map(d => <span key={d.id} style={S.tag}>{d.discipline_name}</span>)}
-                </div>
+              {profile?.program_offered_name ? (
+                <>
+                  <div style={S.infoRow}><span style={S.infoKey}>Programme Department</span><span style={S.infoVal}>{profile.eligibility_dept_name || '—'}</span></div>
+                  <div style={S.infoRow}><span style={S.infoKey}>Offered Course</span><span style={S.infoVal}>{profile.program_offered_name}</span></div>
+                </>
               ) : (
-                <div style={S.noLink}>No disciplines assigned yet.</div>
+                <div style={S.noLink}>
+                  <p style={{ margin: '0 0 16px' }}>No research programme selected yet.</p>
+                  <button style={{ ...S.bannerBtn, background: '#4338ca', color: '#fff', fontSize: 12, padding: '8px 16px', margin: '0 auto' }} onClick={() => navigate('/apply')}>
+                    Update Application
+                  </button>
+                </div>
               )}
             </div>
           </div>

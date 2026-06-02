@@ -1,5 +1,6 @@
 const pool = require('../config/db');
 const ExcelJS = require('exceljs');
+const fs = require('fs');
 const Engine = require('./EntranceWorkflowEngine');
 
 class AttendanceXlsGenerationEngine {
@@ -219,16 +220,20 @@ class AttendanceXlsGenerationEngine {
             );
 
             connection.release();
+            // Remove temp file after successful processing
+            fs.unlink(filePath, () => {});
             return { success: true, message: `Processed ${successRows} rows with ${errors.length} errors`, errors };
         } catch (e) {
             await connection.rollback();
             if (logId) {
                 await pool.execute(
-                    'UPDATE attendance_upload_logs SET status = ?, errors_json = ? WHERE id = ?', 
+                    'UPDATE attendance_upload_logs SET status = ?, errors_json = ? WHERE id = ?',
                     ['Failed', JSON.stringify([e.message]), logId]
                 );
             }
             connection.release();
+            // Remove temp file even on failure to avoid disk accumulation
+            fs.unlink(filePath, () => {});
             throw e;
         }
     }

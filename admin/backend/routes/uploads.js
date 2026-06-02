@@ -42,17 +42,17 @@ router.put('/file-settings/:id', verifyToken, isAdmin, async (req, res) => {
                  total_size_limit = ?
              WHERE id = ?`,
             [
-                parseInt(max_size, 10), 
-                size_unit, 
+                parseInt(max_size, 10) || 5,
+                size_unit,
                 allowed_extensions.trim(),
                 is_active !== undefined ? (is_active ? 1 : 0) : 1,
                 is_integrated_course !== undefined ? (is_integrated_course ? 1 : 0) : 0,
-                consolidated_enabled !== undefined ? (consolidated_enabled ? 1 : 0) : 1, 
-                semester_wise_enabled !== undefined ? (semester_wise_enabled ? 1 : 0) : 1, 
-                parseInt(max_semesters, 10) !== undefined ? parseInt(max_semesters, 10) : 10,
+                consolidated_enabled !== undefined ? (consolidated_enabled ? 1 : 0) : 1,
+                semester_wise_enabled !== undefined ? (semester_wise_enabled ? 1 : 0) : 1,
+                (!isNaN(parseInt(max_semesters, 10)) ? parseInt(max_semesters, 10) : 10),
                 allowed_semester_doc_types ? allowed_semester_doc_types.trim() : 'jpg,jpeg,png,pdf',
-                parseInt(per_file_size_limit, 10) !== undefined ? parseInt(per_file_size_limit, 10) : 500, 
-                parseInt(total_size_limit, 10) !== undefined ? parseInt(total_size_limit, 10) : 5000,
+                (!isNaN(parseInt(per_file_size_limit, 10)) ? parseInt(per_file_size_limit, 10) : 500),
+                (!isNaN(parseInt(total_size_limit, 10)) ? parseInt(total_size_limit, 10) : 5000),
                 req.params.id
             ]
         );

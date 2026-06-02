@@ -261,7 +261,7 @@ router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
     const passMarkUsed = passSettings ? parseFloat(passSettings.passing_mark) : 50;
 
     // Get published status
-    const [[pubSettings]] = await pool.execute('SELECT entrance_result_publish FROM settings LIMIT 1');
+    const [[pubSettings]] = await pool.execute('SELECT entrance_result_publish FROM university_settings LIMIT 1');
     const publishedStatus = pubSettings && pubSettings.entrance_result_publish ? 'Published' : 'Not Published';
 
     // ── 3. Build SQL query ────────────────────────────────────

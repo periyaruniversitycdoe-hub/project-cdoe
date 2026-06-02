@@ -1770,26 +1770,81 @@ const AdminAddApplication = () => {
   const experienceData = watch('experience_details') || [];
 
   const calculateDuration = (idx) => {
-    const fromM = watch(`experience_details.${idx}.from_month`);
-    const fromY = watch(`experience_details.${idx}.from_year`);
-    const toM   = watch(`experience_details.${idx}.to_month`);
-    const toY   = watch(`experience_details.${idx}.to_year`);
-    if (!fromM || !fromY || !toM || !toY) return '—';
-    const monthsMap = { January:0, February:1, March:2, April:3, May:4, June:5, July:6, August:7, September:8, October:9, November:10, December:11 };
-    const start = new Date(parseInt(fromY), monthsMap[fromM]);
-    const end   = new Date(parseInt(toY),   monthsMap[toM]);
+    const fromD = watch(`experience_details.${idx}.from_date`);
+    const toD = watch(`experience_details.${idx}.to_date`);
+
+    if (!fromD || !toD) return '—';
+
+    const start = new Date(fromD);
+    const end = new Date(toD);
+
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) return '—';
     if (end < start) return <span className="text-danger small">Invalid range</span>;
-    const diffMonths = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
-    const years = Math.floor(diffMonths / 12);
-    const months = diffMonths % 12;
-    setValue(`experience_details.${idx}.total_years`, years);
-    setValue(`experience_details.${idx}.total_months`, months);
-    return `${years} Years, ${months} Months`;
+
+    // Calculate difference
+    let years = end.getFullYear() - start.getFullYear();
+    let months = end.getMonth() - start.getMonth();
+    let days = end.getDate() - start.getDate();
+
+    if (days < 0) {
+      months -= 1;
+      // get days in previous month
+      const prevMonth = new Date(end.getFullYear(), end.getMonth(), 0);
+      days += prevMonth.getDate();
+    }
+    if (months < 0) {
+      years -= 1;
+      months += 12;
+    }
+
+    // Populate legacy month/year fields for backward compatibility
+    const monthsNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    
+    const currentFromMonth = getValues(`experience_details.${idx}.from_month`);
+    const currentFromYear = getValues(`experience_details.${idx}.from_year`);
+    const currentToMonth = getValues(`experience_details.${idx}.to_month`);
+    const currentToYear = getValues(`experience_details.${idx}.to_year`);
+    
+    const newFromMonth = monthsNames[start.getMonth()];
+    const newFromYear = String(start.getFullYear());
+    const newToMonth = monthsNames[end.getMonth()];
+    const newToYear = String(end.getFullYear());
+    const newYears = years;
+    const newMonths = months;
+
+    const currentYears = getValues(`experience_details.${idx}.total_years`);
+    const currentMonths = getValues(`experience_details.${idx}.total_months`);
+
+    if (
+      currentFromMonth !== newFromMonth ||
+      String(currentFromYear) !== newFromYear ||
+      currentToMonth !== newToMonth ||
+      String(currentToYear) !== newToYear ||
+      currentYears !== newYears ||
+      currentMonths !== newMonths
+    ) {
+      setTimeout(() => {
+        setValue(`experience_details.${idx}.from_month`, newFromMonth);
+        setValue(`experience_details.${idx}.from_year`, newFromYear);
+        setValue(`experience_details.${idx}.to_month`, newToMonth);
+        setValue(`experience_details.${idx}.to_year`, newToYear);
+        setValue(`experience_details.${idx}.total_years`, newYears);
+        setValue(`experience_details.${idx}.total_months`, newMonths);
+      }, 0);
+    }
+
+    let durationStr = '';
+    if (years > 0) durationStr += `${years} Years`;
+    if (months > 0) durationStr += `${durationStr ? ', ' : ''}${months} Months`;
+    if (days > 0) durationStr += `${durationStr ? ', ' : ''}${days} Days`;
+    if (!durationStr) durationStr = '0 Days';
+
+    return durationStr;
   };
 
   const addExperience = () => {
     const current = getValues('experience_details') || [];
-    setValue('experience_details', [...current, { designation: '', organization_name: '', employment_type_id: '', from_month: '', from_year: '', to_month: '', to_year: '', total_years: 0, total_months: 0 }]);
+    setValue('experience_details', [...current, { designation: '', organization_name: '', employment_type_id: '', from_month: '', from_year: '', to_month: '', to_year: '', from_date: '', to_date: '', total_years: 0, total_months: 0 }]);
   };
 
   const removeExperience = (idx) => {
@@ -1828,25 +1883,9 @@ const AdminAddApplication = () => {
                   </select>
                 </td>
                 <td>
-                  <div className="d-flex gap-1 mb-1">
-                    <select className="form-select form-select-sm" {...register(`experience_details.${idx}.from_month`)}>
-                      <option value="">Month</option>
-                      {["January","February","March","April","May","June","July","August","September","October","November","December"].map(m => <option key={m} value={m}>{m}</option>)}
-                    </select>
-                    <select className="form-select form-select-sm" {...register(`experience_details.${idx}.from_year`)}>
-                      <option value="">Year</option>
-                      {YEAR_OPTIONS.map(y => <option key={y} value={y}>{y}</option>)}
-                    </select>
-                  </div>
-                  <div className="d-flex gap-1">
-                    <select className="form-select form-select-sm" {...register(`experience_details.${idx}.to_month`)}>
-                      <option value="">Month</option>
-                      {["January","February","March","April","May","June","July","August","September","October","November","December"].map(m => <option key={m} value={m}>{m}</option>)}
-                    </select>
-                    <select className="form-select form-select-sm" {...register(`experience_details.${idx}.to_year`)}>
-                      <option value="">Year</option>
-                      {YEAR_OPTIONS.map(y => <option key={y} value={y}>{y}</option>)}
-                    </select>
+                  <div className="d-flex flex-column gap-1">
+                    <input type="date" className="form-control form-control-sm" {...register(`experience_details.${idx}.from_date`)} />
+                    <input type="date" className="form-control form-control-sm" {...register(`experience_details.${idx}.to_date`)} />
                   </div>
                 </td>
                 <td className="fw-bold text-primary small">{calculateDuration(idx)}</td>

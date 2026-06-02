@@ -91,10 +91,10 @@ router.get('/analytics', verifyToken, isAdmin, async (req, res) => {
 
         // Payments Collection Sum
         const [[{ total_payments }]] = await pool.execute(
-            `SELECT COALESCE(SUM(amount), 0) as total_payments 
-             FROM payments p 
+            `SELECT COALESCE(SUM(amount), 0) as total_payments
+             FROM payments p
              JOIN applications a ON p.application_id = a.application_id
-             ${whereClause} AND p.payment_status = 'Success'`,
+             ${whereClause || 'WHERE 1=1'} AND p.payment_status = 'Success'`,
             params
         );
 
@@ -518,14 +518,14 @@ router.post('/export', verifyToken, isAdmin, async (req, res) => {
 
         // Export directly based on format
         if (format === 'csv') {
-            res.setHeader('Content-Type', 'text/csv');
+            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
             res.setHeader('Content-Disposition', `attachment; filename="${report_type}_report_${Date.now()}.csv"`);
-            
-            let csvContent = headers.join(',') + '\n';
+
+            // UTF-8 BOM ensures Excel opens Tamil/Unicode characters correctly
+            let csvContent = '﻿' + headers.map(h => `"${h.replace(/"/g, '""')}"`).join(',') + '\n';
             rows.forEach(r => {
                 const values = Object.values(r).map(val => {
                     if (val === null || val === undefined) return '""';
-                    // Escape double quotes and wrap in quotes
                     return `"${String(val).replace(/"/g, '""')}"`;
                 });
                 csvContent += values.join(',') + '\n';

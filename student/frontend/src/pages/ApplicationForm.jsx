@@ -56,6 +56,13 @@ const FALLBACK_DISTRICTS = [
   "Tirupathur", "Tiruppur", "Tiruvallur", "Tiruvannamalai", "Tiruvarur", "Vellore", "Viluppuram", "Virudhunagar"
 ];
 
+const QUAL_MONTHS = [
+  'January','February','March','April','May','June',
+  'July','August','September','October','November','December'
+];
+const currentYear = new Date().getFullYear();
+const QUAL_YEARS = Array.from({ length: 30 }, (_, i) => currentYear - i);
+
 const FALLBACK_EXAM_CENTERS = [
   { id: 1, name: 'Salem' },
   { id: 2, name: 'Chennai' },
@@ -190,6 +197,8 @@ const ApplicationForm = () => {
   // Dynamic qualifications from API
   const [qualificationTypes, setQualificationTypes] = useState([]);
   const [selectedQualIds,    setSelectedQualIds]    = useState(new Set());
+  // Qualification pass month/year — keyed by qualification_id
+  const [qualDates,          setQualDates]          = useState({});
   // Per-experience-entry districts
   const [expDistricts,       setExpDistricts]       = useState({});
   // Eligibility engine state
@@ -248,7 +257,7 @@ const ApplicationForm = () => {
         score_type: 'Percentage', score_value: ''
       },
       integrated: {
-        level: 'Integrated', degree_id: '', specialization_id: '', institution_name: '',
+        level: 'Integrated', degree_id: '', degree_name: '', degree_name_other: '', specialization_id: '', institution_name: '',
         university_name: '', university_type_id: '', passing_month: '', passing_year: '',
         score_type: 'Percentage', score_value: '', registration_number: '', upload_mode: 'Consolidated'
       },
@@ -270,9 +279,27 @@ const ApplicationForm = () => {
   const selectedProgId      = watch('program_offered_id');
   const category            = watch('category');
   const partTimeCategory    = watch('part_time_category');
-  const center1             = watch('exam_center_1');
-  const center2             = watch('exam_center_2');
+  // Module 1: watch all 5 possible exam centre slots
+  const examCenterSelections = [
+    watch('exam_center_1') || '',
+    watch('exam_center_2') || '',
+    watch('exam_center_3') || '',
+    watch('exam_center_4') || '',
+    watch('exam_center_5') || '',
+  ];
+  // Keep backward-compat aliases used elsewhere in this file
+  const center1 = examCenterSelections[0];
+  const center2 = examCenterSelections[1];
   const isPhysicallyChallenged = watch('is_physically_challenged');
+
+  // Module 2: watch timeline fields for real-time validation
+  const sslcPassingYear      = watch('school_education.0.passing_year');
+  const hscPassingYear       = watch('school_education.1.passing_year');
+  const ugStartYear          = watch('higher_education.0.start_year');
+  const ugPassingYear        = watch('higher_education.0.passing_year');
+  const pgStartYear          = watch('higher_education.1.start_year');
+  const pgPassingYear        = watch('higher_education.1.passing_year');
+  const integratedStartYear  = watch('integrated.start_year');
   const ugMarkType          = watch('ug_mark_statement_type');
   const pgMarkType          = watch('pg_mark_statement_type');
   const diplomaMarkType     = watch('diploma_mark_statement_type');
@@ -328,6 +355,58 @@ const ApplicationForm = () => {
   const [globalDoc, setGlobalDoc] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [previewType, setPreviewType] = useState('pdf');
+
+  // Module 1: Exam Centre Configuration (dynamic preference count)
+  const [examCentreConfig, setExamCentreConfig] = useState({ max_preferences: 2, status: 'active' });
+
+  // Module 2: Academic Timeline Validation errors
+  const [timelineErrors, setTimelineErrors] = useState({});
+
+  // Module 1: Load admin-configured exam centre preference count
+  useEffect(() => {
+    axios.get(`${API}/exam-centre-config`)
+      .then(r => { if (r.data.success && r.data.data) setExamCentreConfig(r.data.data); })
+      .catch(() => {}); // fallback to default 2
+  }, []);
+
+  // Module 2: Real-time Academic Timeline Validation Engine
+  useEffect(() => {
+    const errs = {};
+    const yr = (v) => parseInt(v);
+    const ok = (v) => v && !isNaN(parseInt(v));
+
+    if (ok(sslcPassingYear) && ok(hscPassingYear)) {
+      if (yr(hscPassingYear) <= yr(sslcPassingYear)) {
+        errs.hsc = '+2 completion year must be greater than 10th completion year.';
+      }
+    }
+    if (ok(hscPassingYear) && ok(ugStartYear)) {
+      if (yr(ugStartYear) < yr(hscPassingYear)) {
+        errs.ugStart = 'UG start year cannot be earlier than +2 completion year.';
+      }
+    }
+    if (ok(ugStartYear) && ok(ugPassingYear)) {
+      if (yr(ugPassingYear) <= yr(ugStartYear)) {
+        errs.ugEnd = 'UG completion year must be greater than UG start year.';
+      }
+    }
+    if (ok(ugPassingYear) && ok(pgStartYear)) {
+      if (yr(pgStartYear) < yr(ugPassingYear)) {
+        errs.pgStart = 'PG start year cannot be earlier than UG completion year.';
+      }
+    }
+    if (ok(pgStartYear) && ok(pgPassingYear)) {
+      if (yr(pgPassingYear) <= yr(pgStartYear)) {
+        errs.pgEnd = 'PG completion year must be greater than PG start year.';
+      }
+    }
+    if (ok(hscPassingYear) && ok(integratedStartYear)) {
+      if (yr(integratedStartYear) < yr(hscPassingYear)) {
+        errs.intStart = 'Integrated course start year cannot be earlier than +2 completion year.';
+      }
+    }
+    setTimelineErrors(errs);
+  }, [sslcPassingYear, hscPassingYear, ugStartYear, ugPassingYear, pgStartYear, pgPassingYear, integratedStartYear]);
 
   // Fetch dynamic part-time categories and global guidance on mount
   useEffect(() => {
@@ -640,14 +719,32 @@ const ApplicationForm = () => {
           try { data.qualified_exams = JSON.parse(data.qualified_exams); } catch(e) {}
         }
 
-        // Restore normalized student_qualifications selections
+        // Restore normalized student_qualifications selections + pass dates
         if (data.student_qualifications && data.student_qualifications.length > 0) {
           const ids = new Set(data.student_qualifications.map(q => q.qualification_id));
           setSelectedQualIds(ids);
+          const dates = {};
+          data.student_qualifications.forEach(q => {
+            if (q.qual_month || q.qual_year) {
+              dates[q.qualification_id] = { month: q.qual_month || '', year: q.qual_year ? String(q.qual_year) : '' };
+            }
+          });
+          if (Object.keys(dates).length > 0) setQualDates(dates);
         }
 
         if (data.dob) {
           data.dob = new Date(data.dob).toISOString().split('T')[0];
+        }
+
+        if (data.experience_details && data.experience_details.length > 0) {
+          data.experience_details.forEach(exp => {
+            if (exp.from_date) {
+              exp.from_date = new Date(exp.from_date).toISOString().split('T')[0];
+            }
+            if (exp.to_date) {
+              exp.to_date = new Date(exp.to_date).toISOString().split('T')[0];
+            }
+          });
         }
 
         // Self-heal checkbox toggle states if loading pre-migration application draft
@@ -732,6 +829,15 @@ const ApplicationForm = () => {
   }, [token, reset]);
 
   const isSubmitted = appStatus === 'Submitted';
+
+  // Module 1: resolved max preferences (config or default 2)
+  const maxExamPreferences = Math.min(
+    Math.max(parseInt(examCentreConfig?.max_preferences) || 2, 1),
+    10
+  );
+
+  // Module 2: block save/next when there are timeline errors
+  const hasTimelineErrors = Object.keys(timelineErrors).length > 0;
 
   const handleAlphaInput = (e) => {
     e.target.value = e.target.value.replace(/[^A-Za-z஀-௿\s]/g, '');
@@ -1033,8 +1139,13 @@ const ApplicationForm = () => {
       }
     });
 
-    // Send normalized qualification IDs for server-side storage
+    // Send normalized qualification IDs + pass dates for server-side storage
     formData.append('student_qualifications', JSON.stringify([...selectedQualIds]));
+    selectedQualIds.forEach(id => {
+      const dates = qualDates[id] || {};
+      if (dates.month) formData.append(`qual_month_${id}`, dates.month);
+      if (dates.year)  formData.append(`qual_year_${id}`,  dates.year);
+    });
 
     Object.entries(data).forEach(([k, v]) => {
       if (v != null && k !== 'status' && k !== 'declarationAccepted') {
@@ -1059,6 +1170,23 @@ const ApplicationForm = () => {
       if (!values.declarationAccepted) {
         toast.error('Please accept the declaration before final submission');
         return false;
+      }
+      // Validate that all selected qualifications have month and year
+      for (const id of selectedQualIds) {
+        const dates = qualDates[id] || {};
+        if (!dates.month || !dates.year) {
+          const qt = qualificationTypes.find(q => q.id === id);
+          toast.error(`Please select Month and Year of Passing for ${qt?.qualification_name || 'the selected qualification'}.`);
+          return false;
+        }
+        // Future date check
+        const monthIdx = QUAL_MONTHS.indexOf(dates.month);
+        const year = parseInt(dates.year, 10);
+        const now = new Date();
+        if (year > now.getFullYear() || (year === now.getFullYear() && monthIdx + 1 > now.getMonth() + 1)) {
+          toast.error('Month/Year of Passing for a qualification cannot be in the future.');
+          return false;
+        }
       }
     }
 
@@ -1133,22 +1261,30 @@ const ApplicationForm = () => {
         <div className="row g-4">
           {/* Left Side: Form Fields */}
           <div className="col-lg-9">
-            {/* Row 1: Exam Centers */}
+            {/* Row 1: Exam Centre Preferences — count driven by admin config */}
             <div className="row g-3 mb-3">
-              <div className="col-md-6">
-                <label className="form-label fw-semibold">Exam Centre Preference 1 <span className="text-danger">*</span></label>
-                <select className="form-select form-select-sm" {...register('exam_center_1')} disabled={isSubmitted}>
-                  <option value="">Select</option>
-                  {(dropdowns.exam_centers || FALLBACK_EXAM_CENTERS).filter(i => i.name !== center2).map(i => <option key={i.id} value={i.name}>{i.name}</option>)}
-                </select>
-              </div>
-              <div className="col-md-6">
-                <label className="form-label fw-semibold">Exam Center Preference 2 <span className="text-danger">*</span></label>
-                <select className="form-select form-select-sm" {...register('exam_center_2')} disabled={isSubmitted}>
-                  <option value="">Select</option>
-                  {(dropdowns.exam_centers || FALLBACK_EXAM_CENTERS).filter(i => i.name !== center1).map(i => <option key={i.id} value={i.name}>{i.name}</option>)}
-                </select>
-              </div>
+              {Array.from({ length: maxExamPreferences }, (_, i) => {
+                const fieldName = `exam_center_${i + 1}`;
+                const otherSelected = examCenterSelections.filter((v, j) => j !== i && v);
+                return (
+                  <div className="col-md-6" key={fieldName}>
+                    <label className="form-label fw-semibold">
+                      Exam Centre Preference {i + 1}{' '}
+                      {i === 0 && <span className="text-danger">*</span>}
+                    </label>
+                    <select
+                      className="form-select form-select-sm"
+                      {...register(fieldName)}
+                      disabled={isSubmitted}
+                    >
+                      <option value="">Select</option>
+                      {(dropdowns.exam_centers || FALLBACK_EXAM_CENTERS)
+                        .filter(c => !otherSelected.includes(c.name))
+                        .map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                    </select>
+                  </div>
+                );
+              })}
             </div>
 
             {/* Row 2: Department + Programme Offered */}
@@ -1360,7 +1496,7 @@ const ApplicationForm = () => {
                 <input type="text" className="form-control form-control-sm" placeholder="Initial" {...register('applicant_initial', { required: true })} maxLength={5} disabled={isSubmitted} onInput={handleCapsAlphaInput} style={{ textTransform: 'uppercase' }} />
               </div>
               <div className="col-md-6">
-                <label className="form-label fw-semibold text-danger">Date of Birth <span className="text-danger">*</span><br /><small>(dd/mm/yyyy)</small></label>
+                <label className="form-label fw-semibold">Date of Birth <span className="text-danger">*</span><br /><small className="text-danger">(mm/dd/yyyy)</small></label>
                 <input type="date" className="form-control form-control-sm" {...register('dob')} disabled={isSubmitted} />
               </div>
             </div>
@@ -1744,12 +1880,16 @@ const ApplicationForm = () => {
             </div>
             <div className="col-md-1">
               <label className="form-label small fw-bold">Year {isRequired && <span className="text-danger">*</span>}</label>
-              <select className={`form-select form-select-sm ${getFieldError('passing_year') ? 'is-invalid' : ''}`} 
+              <select
+                className={`form-select form-select-sm ${getFieldError('passing_year') || (level === 'HSC' && timelineErrors.hsc) ? 'is-invalid' : ''}`}
                 {...register(`${prefix}.passing_year`, rules)} disabled={isSubmitted}>
                 <option value="">Year</option>
                 {YEAR_OPTIONS.map(y => <option key={y} value={y}>{y}</option>)}
               </select>
               {renderError('passing_year')}
+              {level === 'HSC' && timelineErrors.hsc && (
+                <div className="text-danger mt-1" style={{ fontSize: '11px' }}>{timelineErrors.hsc}</div>
+              )}
             </div>
             <div className="col-md-2">
               <label className="form-label small fw-bold">Percentage {isRequired && <span className="text-danger">*</span>}</label>
@@ -1827,38 +1967,59 @@ const ApplicationForm = () => {
                 {renderError('degree_name')}
               </div>
             ) : isEligibilityMode ? (
-              /* ── Eligibility-driven course name (PG / M.Phil) ── */
-              <div className="col-md-6">
-                <label className="form-label small fw-bold">
-                  Eligible Course {isRequired && <span className="text-danger">*</span>}
-                </label>
-                {eligibleCourses.length > 0 ? (
-                  <>
-                    <select
-                      className={`form-select form-select-sm ${getFieldError('degree_name') ? 'is-invalid' : ''}`}
-                      {...register(`${prefix}.degree_name`, rules)}
-                      disabled={isSubmitted}
-                    >
-                      <option value="">Select Eligible Course</option>
-                      {eligibleCourses.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                    {renderError('degree_name')}
-                    <div className="text-muted mt-1" style={{ fontSize: '10px' }}>
-                      Only courses mapped by admin for this programme are shown.
+              /* ── Eligibility-driven course name (PG / M.Phil / Integrated) ── */
+              <>
+                <div className="col-md-6">
+                  <label className="form-label small fw-bold">
+                    {degreeLevel === 'Integrated' ? 'Integrated Course Name' : 'Eligible Course'} {isRequired && <span className="text-danger">*</span>}
+                  </label>
+                  {eligibleCourses.length > 0 ? (
+                    <>
+                      <select
+                        className={`form-select form-select-sm ${getFieldError('degree_name') ? 'is-invalid' : ''}`}
+                        {...register(`${prefix}.degree_name`, rules)}
+                        disabled={isSubmitted}
+                      >
+                        <option value="">Select {degreeLevel === 'Integrated' ? 'Course' : 'Eligible Course'}</option>
+                        {eligibleCourses.map(c => <option key={c} value={c}>{c}</option>)}
+                        {degreeLevel === 'Integrated' && <option value="Others">Others (please specify below)</option>}
+                      </select>
+                      {renderError('degree_name')}
+                      <div className="text-muted mt-1" style={{ fontSize: '10px' }}>
+                        {degreeLevel === 'Integrated' ? 'Select your integrated course or choose Others to enter manually.' : 'Only courses mapped by admin for this programme are shown.'}
+                      </div>
+                    </>
+                  ) : selectedProgId ? (
+                    <div className="alert alert-warning py-2 px-3 mb-0" style={{ fontSize: '12px', borderRadius: '6px' }}>
+                      No eligible courses have been mapped for this programme yet. Please contact the university.
                     </div>
-                  </>
-                ) : selectedProgId ? (
-                  <div className="alert alert-warning py-2 px-3 mb-0" style={{ fontSize: '12px', borderRadius: '6px' }}>
-                    No eligible courses have been mapped for this programme yet. Please contact the university.
-                  </div>
-                ) : (
-                  <div className="alert alert-info py-2 px-3 mb-0" style={{ fontSize: '12px', borderRadius: '6px' }}>
-                    Please select a Department and Programme above to see eligible courses.
+                  ) : (
+                    <div className="alert alert-info py-2 px-3 mb-0" style={{ fontSize: '12px', borderRadius: '6px' }}>
+                      Please select a Department and Programme above to see eligible courses.
+                    </div>
+                  )}
+                </div>
+                {/* "Others" text input — shown only for Integrated when "Others" is selected */}
+                {degreeLevel === 'Integrated' && watch(`${prefix}.degree_name`) === 'Others' && (
+                  <div className="col-md-6">
+                    <label className="form-label small fw-bold">
+                      Specify Course Name <span className="text-danger">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      className={`form-control form-control-sm ${getFieldError('degree_name_other') ? 'is-invalid' : ''}`}
+                      {...register(`${prefix}.degree_name_other`, {
+                        validate: v => watch(`${prefix}.degree_name`) !== 'Others' || (v && v.trim()) ? true : 'Please specify the course name'
+                      })}
+                      placeholder="Enter your integrated course name"
+                      disabled={isSubmitted}
+                    />
+                    {renderError('degree_name_other')}
                   </div>
                 )}
-              </div>
+              </>
             ) : (
-              /* ── Standard degree + specialization (UG / Diploma / Integrated) ── */
+              /* ── Standard degree + specialization (UG / Diploma — NOT Integrated) ── */
               <>
                 <div className="col-md-3">
                   <label className="form-label small fw-bold">Degree {isRequired && <span className="text-danger">*</span>}</label>
@@ -1869,15 +2030,18 @@ const ApplicationForm = () => {
                   </select>
                   {renderError('degree_id')}
                 </div>
-                <div className="col-md-3">
-                  <label className="form-label small fw-bold">Specialization {isRequired && <span className="text-danger">*</span>}</label>
-                  <select className={`form-select form-select-sm ${getFieldError('specialization_id') ? 'is-invalid' : ''}`}
-                    {...register(`${prefix}.specialization_id`, rules)} disabled={isSubmitted}>
-                    <option value="">Select Specialization</option>
-                    {(dropdowns.specializations || FALLBACK_SPECIALIZATIONS).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
-                  {renderError('specialization_id')}
-                </div>
+                {/* Module 3: Specialization removed from Integrated Course — keep for UG/Diploma only */}
+                {degreeLevel !== 'Integrated' && (
+                  <div className="col-md-3">
+                    <label className="form-label small fw-bold">Specialization {isRequired && <span className="text-danger">*</span>}</label>
+                    <select className={`form-select form-select-sm ${getFieldError('specialization_id') ? 'is-invalid' : ''}`}
+                      {...register(`${prefix}.specialization_id`, rules)} disabled={isSubmitted}>
+                      <option value="">Select Specialization</option>
+                      {(dropdowns.specializations || FALLBACK_SPECIALIZATIONS).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                    {renderError('specialization_id')}
+                  </div>
+                )}
               </>
             )}
             <div className="col-md-3">
@@ -1919,14 +2083,55 @@ const ApplicationForm = () => {
               {renderError('passing_month')}
             </div>
             <div className="col-md-1">
-              <label className="form-label small fw-bold">Year {isRequired && <span className="text-danger">*</span>}</label>
-              <select className={`form-select form-select-sm ${getFieldError('passing_year') ? 'is-invalid' : ''}`} 
+              <label className="form-label small fw-bold">
+                {(degreeLevel === 'UG' || degreeLevel === 'PG' || degreeLevel === 'Integrated') ? 'Completion Year' : 'Year'}
+                {isRequired && <span className="text-danger">*</span>}
+              </label>
+              <select className={`form-select form-select-sm ${getFieldError('passing_year') || (degreeLevel === 'UG' && timelineErrors.ugEnd) || (degreeLevel === 'PG' && timelineErrors.pgEnd) ? 'is-invalid' : ''}`}
                 {...register(`${prefix}.passing_year`, rules)} disabled={isSubmitted}>
                 <option value="">Year</option>
                 {YEAR_OPTIONS.map(y => <option key={y} value={y}>{y}</option>)}
               </select>
               {renderError('passing_year')}
+              {degreeLevel === 'UG' && timelineErrors.ugEnd && (
+                <div className="text-danger mt-1" style={{ fontSize: '11px' }}>{timelineErrors.ugEnd}</div>
+              )}
+              {degreeLevel === 'PG' && timelineErrors.pgEnd && (
+                <div className="text-danger mt-1" style={{ fontSize: '11px' }}>{timelineErrors.pgEnd}</div>
+              )}
             </div>
+
+            {/* Module 2: Start Year — shown for UG, PG, Integrated only */}
+            {(degreeLevel === 'UG' || degreeLevel === 'PG' || degreeLevel === 'Integrated') && (
+              <div className="col-md-1">
+                <label className="form-label small fw-bold">
+                  Start Year <span className="text-danger">*</span>
+                </label>
+                <select
+                  className={`form-select form-select-sm ${
+                    (degreeLevel === 'UG' && timelineErrors.ugStart) ||
+                    (degreeLevel === 'PG' && timelineErrors.pgStart) ||
+                    (degreeLevel === 'Integrated' && timelineErrors.intStart)
+                      ? 'is-invalid' : ''
+                  }`}
+                  {...register(`${prefix}.start_year`, isRequired ? { required: 'Start year is required' } : {})}
+                  disabled={isSubmitted}
+                >
+                  <option value="">Year</option>
+                  {YEAR_OPTIONS.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+                {degreeLevel === 'UG' && timelineErrors.ugStart && (
+                  <div className="text-danger mt-1" style={{ fontSize: '11px' }}>{timelineErrors.ugStart}</div>
+                )}
+                {degreeLevel === 'PG' && timelineErrors.pgStart && (
+                  <div className="text-danger mt-1" style={{ fontSize: '11px' }}>{timelineErrors.pgStart}</div>
+                )}
+                {degreeLevel === 'Integrated' && timelineErrors.intStart && (
+                  <div className="text-danger mt-1" style={{ fontSize: '11px' }}>{timelineErrors.intStart}</div>
+                )}
+              </div>
+            )}
+
             <div className="col-md-2">
               <label className="form-label small fw-bold">Score {isRequired && <span className="text-danger">*</span>}</label>
               <div className="input-group input-group-sm">
@@ -2029,6 +2234,19 @@ const ApplicationForm = () => {
           <h5 className="mb-0 fw-bold">Academic Details</h5>
         </div>
         <div className="card-body p-4">
+          {/* Module 4: Original Document Verification Notice */}
+          <div className="mb-4 p-3 d-flex align-items-start gap-3" style={{ background: '#fff8e1', border: '1px solid #f59e0b', borderLeft: '5px solid #f59e0b', borderRadius: '8px' }}>
+            <span style={{ fontSize: '22px', flexShrink: 0, marginTop: '1px' }}>⚠️</span>
+            <div>
+              <div className="fw-bold mb-1" style={{ color: '#92400e', fontSize: '13.5px', letterSpacing: '0.3px' }}>IMPORTANT — Original Document Upload Notice</div>
+              <div style={{ color: '#78350f', fontSize: '12.5px', lineHeight: '1.7' }}>
+                Upload only <strong>original academic documents</strong>. Scanned copies must be <strong>clear, readable and unaltered</strong>.
+                Tampered, edited, incomplete or misleading documents may result in <strong>rejection of the application</strong> during verification.
+                The University reserves the right to request original documents at any stage of admission.
+              </div>
+            </div>
+          </div>
+
           <div className="alert alert-info py-2 small mb-4 d-flex align-items-center gap-2">
             <span style={{ fontSize: '16px' }}>📌</span>
             <span><strong>Interactive Panel:</strong> Click on any section box below to expand/collapse and fill out details. Sections turn green when completed.</span>
@@ -2369,6 +2587,26 @@ const ApplicationForm = () => {
               </div>
             )}
           </div>
+          {/* Module 2: Timeline error summary */}
+          {hasTimelineErrors && (
+            <div className="alert alert-danger mt-4 shadow-sm" style={{ borderRadius: '10px', borderLeft: '4px solid #dc3545' }}>
+              <div className="d-flex align-items-start gap-2">
+                <span style={{ fontSize: '18px', flexShrink: 0 }}>⚠️</span>
+                <div>
+                  <strong className="text-danger d-block mb-1">Academic Timeline Errors</strong>
+                  <ul className="mb-0 ps-3" style={{ fontSize: '12.5px' }}>
+                    {Object.values(timelineErrors).map((msg, i) => (
+                      <li key={i}>{msg}</li>
+                    ))}
+                  </ul>
+                  <div className="text-muted mt-2" style={{ fontSize: '11.5px' }}>
+                    Please correct the highlighted fields before saving or proceeding.
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {isValidationApplicable && !isEligible && enteredPercentage !== null && (
             <div className="alert alert-danger d-flex align-items-center gap-2 mt-4 shadow-sm border-danger border-opacity-25 animate-fade-in" style={{ borderRadius: '10px' }}>
               <span style={{ fontSize: '20px' }}>⚠️</span>
@@ -2387,28 +2625,76 @@ const ApplicationForm = () => {
     const experienceData = watch('experience_details') || [];
 
     const calculateDuration = (idx) => {
-      const fromM = watch(`experience_details.${idx}.from_month`);
-      const fromY = watch(`experience_details.${idx}.from_year`);
-      const toM = watch(`experience_details.${idx}.to_month`);
-      const toY = watch(`experience_details.${idx}.to_year`);
+      const fromD = watch(`experience_details.${idx}.from_date`);
+      const toD = watch(`experience_details.${idx}.to_date`);
 
-      if (!fromM || !fromY || !toM || !toY) return '—';
+      if (!fromD || !toD) return '—';
 
-      const monthsMap = { January: 0, February: 1, March: 2, April: 3, May: 4, June: 5, July: 6, August: 7, September: 8, October: 9, November: 10, December: 11 };
-      const start = new Date(parseInt(fromY), monthsMap[fromM]);
-      const end = new Date(parseInt(toY), monthsMap[toM]);
+      const start = new Date(fromD);
+      const end = new Date(toD);
 
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) return '—';
       if (end < start) return <span className="text-danger small">Invalid range</span>;
 
-      const diffMonths = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
-      const years = Math.floor(diffMonths / 12);
-      const months = diffMonths % 12;
+      // Calculate difference
+      let years = end.getFullYear() - start.getFullYear();
+      let months = end.getMonth() - start.getMonth();
+      let days = end.getDate() - start.getDate();
 
-      // Update values in form state silently
-      setValue(`experience_details.${idx}.total_years`, years);
-      setValue(`experience_details.${idx}.total_months`, months);
+      if (days < 0) {
+        months -= 1;
+        // get days in previous month
+        const prevMonth = new Date(end.getFullYear(), end.getMonth(), 0);
+        days += prevMonth.getDate();
+      }
+      if (months < 0) {
+        years -= 1;
+        months += 12;
+      }
 
-      return `${years} Years, ${months} Months`;
+      // Populate legacy month/year fields for backward compatibility
+      const monthsNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+      
+      const currentFromMonth = getValues(`experience_details.${idx}.from_month`);
+      const currentFromYear = getValues(`experience_details.${idx}.from_year`);
+      const currentToMonth = getValues(`experience_details.${idx}.to_month`);
+      const currentToYear = getValues(`experience_details.${idx}.to_year`);
+      
+      const newFromMonth = monthsNames[start.getMonth()];
+      const newFromYear = String(start.getFullYear());
+      const newToMonth = monthsNames[end.getMonth()];
+      const newToYear = String(end.getFullYear());
+      const newYears = years;
+      const newMonths = months;
+
+      const currentYears = getValues(`experience_details.${idx}.total_years`);
+      const currentMonths = getValues(`experience_details.${idx}.total_months`);
+
+      if (
+        currentFromMonth !== newFromMonth ||
+        String(currentFromYear) !== newFromYear ||
+        currentToMonth !== newToMonth ||
+        String(currentToYear) !== newToYear ||
+        currentYears !== newYears ||
+        currentMonths !== newMonths
+      ) {
+        setTimeout(() => {
+          setValue(`experience_details.${idx}.from_month`, newFromMonth);
+          setValue(`experience_details.${idx}.from_year`, newFromYear);
+          setValue(`experience_details.${idx}.to_month`, newToMonth);
+          setValue(`experience_details.${idx}.to_year`, newToYear);
+          setValue(`experience_details.${idx}.total_years`, newYears);
+          setValue(`experience_details.${idx}.total_months`, newMonths);
+        }, 0);
+      }
+
+      let durationStr = '';
+      if (years > 0) durationStr += `${years} Years`;
+      if (months > 0) durationStr += `${durationStr ? ', ' : ''}${months} Months`;
+      if (days > 0) durationStr += `${durationStr ? ', ' : ''}${days} Days`;
+      if (!durationStr) durationStr = '0 Days';
+
+      return durationStr;
     };
 
     const loadExpDistricts = async (idx, stateId) => {
@@ -2430,6 +2716,7 @@ const ApplicationForm = () => {
       setValue('experience_details', [...current, {
         designation: '', organization_name: '', employment_type_id: '',
         from_month: '', from_year: '', to_month: '', to_year: '',
+        from_date: '', to_date: '',
         total_years: 0, total_months: 0,
         state_id: '', district_id: '', experience_certificate_path: '',
         address: ''
@@ -2498,25 +2785,9 @@ const ApplicationForm = () => {
                       </div>
                       <div className="col-md-3">
                         <label className="form-label small fw-bold">Duration (From → To)</label>
-                        <div className="d-flex gap-1 mb-1">
-                          <select className="form-select form-select-sm" {...register(`experience_details.${idx}.from_month`)} disabled={isSubmitted}>
-                            <option value="">Month</option>
-                            {["January","February","March","April","May","June","July","August","September","October","November","December"].map(m => <option key={m} value={m}>{m}</option>)}
-                          </select>
-                          <select className="form-select form-select-sm" {...register(`experience_details.${idx}.from_year`)} disabled={isSubmitted}>
-                            <option value="">Year</option>
-                            {YEAR_OPTIONS.map(y => <option key={y} value={y}>{y}</option>)}
-                          </select>
-                        </div>
-                        <div className="d-flex gap-1">
-                          <select className="form-select form-select-sm" {...register(`experience_details.${idx}.to_month`)} disabled={isSubmitted}>
-                            <option value="">Month</option>
-                            {["January","February","March","April","May","June","July","August","September","October","November","December"].map(m => <option key={m} value={m}>{m}</option>)}
-                          </select>
-                          <select className="form-select form-select-sm" {...register(`experience_details.${idx}.to_year`)} disabled={isSubmitted}>
-                            <option value="">Year</option>
-                            {YEAR_OPTIONS.map(y => <option key={y} value={y}>{y}</option>)}
-                          </select>
+                        <div className="d-flex flex-column gap-1">
+                          <input type="date" className="form-control form-control-sm" {...register(`experience_details.${idx}.from_date`)} disabled={isSubmitted} />
+                          <input type="date" className="form-control form-control-sm" {...register(`experience_details.${idx}.to_date`)} disabled={isSubmitted} />
                         </div>
                       </div>
                       <div className="col-md-1 d-flex flex-column justify-content-center">
@@ -2589,7 +2860,12 @@ const ApplicationForm = () => {
                           onChange={e => {
                             setSelectedQualIds(prev => {
                               const next = new Set(prev);
-                              if (e.target.checked) next.add(qt.id); else { next.delete(qt.id); removeFile(certKey); }
+                              if (e.target.checked) next.add(qt.id);
+                              else {
+                                next.delete(qt.id);
+                                removeFile(certKey);
+                                setQualDates(d => { const n = { ...d }; delete n[qt.id]; return n; });
+                              }
                               return next;
                             });
                           }}
@@ -2601,10 +2877,51 @@ const ApplicationForm = () => {
                       {qt.is_exemption === 1 && (
                         <span className="badge bg-warning text-dark" style={{ fontSize: 10 }}>Direct Interview (Exempted from Entrance)</span>
                       )}
-                      {/* Certificate upload appears only when qualification is selected */}
+                      {/* Month & Year of Passing + Certificate upload — when qualification is selected */}
                       {isChecked && (
-                        <div className="ms-auto flex-wrap">
-                          {renderUploadControls(certKey)}
+                        <div className="mt-2 w-100">
+                          <div className="row g-2 align-items-end mb-2">
+                            <div className="col-auto">
+                              <label className="form-label small fw-bold mb-1">
+                                Month of Passing <span className="text-danger">*</span>
+                              </label>
+                              <select
+                                className={`form-select form-select-sm ${isChecked && !(qualDates[qt.id]?.month) && !isSubmitted ? '' : ''}`}
+                                value={qualDates[qt.id]?.month || ''}
+                                disabled={isSubmitted}
+                                onChange={e => setQualDates(prev => ({ ...prev, [qt.id]: { ...(prev[qt.id] || {}), month: e.target.value } }))}
+                                style={{ minWidth: 140 }}
+                              >
+                                <option value="">Select Month</option>
+                                {QUAL_MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
+                              </select>
+                            </div>
+                            <div className="col-auto">
+                              <label className="form-label small fw-bold mb-1">
+                                Year of Passing <span className="text-danger">*</span>
+                              </label>
+                              <select
+                                className="form-select form-select-sm"
+                                value={qualDates[qt.id]?.year || ''}
+                                disabled={isSubmitted}
+                                onChange={e => {
+                                  const yr = parseInt(e.target.value, 10);
+                                  const mon = qualDates[qt.id]?.month;
+                                  const now = new Date();
+                                  const mIdx = QUAL_MONTHS.indexOf(mon);
+                                  if (yr > now.getFullYear() || (yr === now.getFullYear() && mIdx !== -1 && mIdx + 1 > now.getMonth() + 1)) return;
+                                  setQualDates(prev => ({ ...prev, [qt.id]: { ...(prev[qt.id] || {}), year: e.target.value } }));
+                                }}
+                                style={{ minWidth: 100 }}
+                              >
+                                <option value="">Select Year</option>
+                                {QUAL_YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+                              </select>
+                            </div>
+                            <div className="col-auto ms-auto">
+                              {renderUploadControls(certKey)}
+                            </div>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -2754,7 +3071,7 @@ const ApplicationForm = () => {
                 className="btn px-4 text-white d-flex align-items-center gap-2"
                 style={{ background: '#32b5c0' }}
                 onClick={handleSaveAndNext}
-                disabled={loading || isSubmitted || (step === 2 && !isEligible)}
+                disabled={loading || isSubmitted || (step === 2 && !isEligible) || (step === 2 && hasTimelineErrors)}
               >
                 {loading
                   ? <><span className="spinner-border spinner-border-sm" role="status" /> Saving…</>

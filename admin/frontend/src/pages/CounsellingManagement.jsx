@@ -758,7 +758,7 @@ function AllotmentsTab() {
                         <button className="btn btn-sm btn-outline-primary border-0" style={{ fontSize: 11 }}
                           onClick={() => openAllot(a)}>Allot</button>
                         {a.allotment_status === 'Allotted' && (
-                          <a href={`${API}/counselling/joining-letter/${a.id}?print=1`}
+                          <a href={`${API}/counselling/joining-letter/${a.id}?print=1&token=${localStorage.getItem('adminToken')}`}
                             className="btn btn-sm btn-outline-success border-0" style={{ fontSize: 11 }}
                             target="_blank" rel="noreferrer">Letter</a>
                         )}

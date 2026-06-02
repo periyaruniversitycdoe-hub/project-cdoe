@@ -126,10 +126,25 @@ const db = mysqlPromise.createPool({
     queueLimit: 0,
     charset: 'utf8mb4',
     connectTimeout: 60000,
-    ssl: process.env.DB_HOST && !process.env.DB_HOST.includes('localhost') && !process.env.DB_HOST.includes('127.0.0.1')
-        ? { rejectUnauthorized: false }
-        : undefined,
 });
+
+// Run database schema self-healing migrations for experience_details dates
+(async () => {
+    try {
+        const [columns] = await db.query("SHOW COLUMNS FROM experience_details");
+        const columnNames = columns.map(c => c.Field);
+        if (!columnNames.includes('from_date')) {
+            await db.query("ALTER TABLE experience_details ADD COLUMN from_date DATE");
+            console.log("Migration: Added from_date to experience_details");
+        }
+        if (!columnNames.includes('to_date')) {
+            await db.query("ALTER TABLE experience_details ADD COLUMN to_date DATE");
+            console.log("Migration: Added to_date to experience_details");
+        }
+    } catch (err) {
+        console.error("Migration warning / check failed:", err.message);
+    }
+})();
 
 // JWT Middleware
 const authenticateToken = (req, res, next) => {
@@ -259,11 +274,101 @@ const initDB = async () => {
         // Eligibility-driven course name for PG and M.Phil sections
         try {
             await db.query(`ALTER TABLE higher_education ADD COLUMN degree_name VARCHAR(255) DEFAULT NULL`);
-            console.log("âœ… degree_name column verified in higher_education.");
+            console.log("degree_name column verified in higher_education.");
         } catch (err) {
             if (err.errno !== 1060 && err.code !== 'ER_DUP_FIELDNAME') {
                 console.error('Error adding degree_name column:', err.message);
             }
+        }
+
+        // Academic Timeline Validation — start_year for UG/PG/Integrated/Diploma/M.Phil
+        try {
+            await db.query(`ALTER TABLE higher_education ADD COLUMN start_year INT DEFAULT NULL`);
+            console.log("start_year column verified in higher_education.");
+        } catch (err) {
+            if (err.errno !== 1060 && err.code !== 'ER_DUP_FIELDNAME') {
+                console.error('Error adding start_year column:', err.message);
+            }
+        }
+
+        // Exam Centre Preference Configuration — extra columns for preferences 3-5
+        const examCentreCols = ['exam_center_3', 'exam_center_4', 'exam_center_5'];
+        for (const col of examCentreCols) {
+            try {
+                await db.query(`ALTER TABLE applications ADD COLUMN ${col} VARCHAR(100) DEFAULT NULL`);
+                console.log(`${col} column verified in applications.`);
+            } catch (err) {
+                if (err.errno !== 1060 && err.code !== 'ER_DUP_FIELDNAME') {
+                    console.error(`Error adding ${col} column:`, err.message);
+                }
+            }
+        }
+
+        // Exam Centre Config table
+        try {
+            await db.query(`
+                CREATE TABLE IF NOT EXISTS exam_centre_config (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    max_preferences INT NOT NULL DEFAULT 2,
+                    status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+                    description TEXT DEFAULT NULL,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    updated_by INT DEFAULT NULL
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            `);
+            await db.query(
+                `INSERT IGNORE INTO exam_centre_config (id, max_preferences, status) VALUES (1, 2, 'active')`
+            );
+            console.log("exam_centre_config table verified.");
+        } catch (err) {
+            console.error('Error creating exam_centre_config table:', err.message);
+        }
+
+        // Qualification Exam Pass Month & Year columns
+        const qualDateCols = [
+            { name: 'qual_month', def: 'VARCHAR(20) DEFAULT NULL' },
+            { name: 'qual_year',  def: 'INT DEFAULT NULL' },
+        ];
+        for (const col of qualDateCols) {
+            try {
+                await db.query(`ALTER TABLE student_qualifications ADD COLUMN ${col.name} ${col.def}`);
+            } catch (err) {
+                if (err.errno !== 1060 && err.code !== 'ER_DUP_FIELDNAME')
+                    console.error(`Error adding student_qualifications.${col.name}:`, err.message);
+            }
+        }
+        console.log('Qualification pass month/year columns verified.');
+
+        // degree_name_other column for Integrated Course "Others" option
+        try {
+            await db.query(`ALTER TABLE higher_education ADD COLUMN degree_name_other VARCHAR(255) DEFAULT NULL`);
+        } catch (err) {
+            if (err.errno !== 1060 && err.code !== 'ER_DUP_FIELDNAME')
+                console.error('Error adding higher_education.degree_name_other:', err.message);
+        }
+
+        // Integrated Course master data — seed 6 new courses for all active programs
+        try {
+            const [progs] = await db.query('SELECT id FROM programs_offered WHERE is_active = 1');
+            const newIntegratedCourses = [
+                'Food Science and Nutrition',
+                'Geology',
+                'Journalism and Mass Communication',
+                'Energy Science',
+                'Environmental Science',
+                'Textile and Apparel Design',
+            ];
+            for (const prog of progs) {
+                for (const course of newIntegratedCourses) {
+                    await db.query(
+                        'INSERT IGNORE INTO program_integrated_eligibility (program_id, course_name) VALUES (?, ?)',
+                        [prog.id, course]
+                    );
+                }
+            }
+            console.log('Integrated course master data seeded.');
+        } catch (err) {
+            console.error('Integrated course seeding error:', err.message);
         }
 
         // Seed predefined university hints + reference codes into existing categories (idempotent name & hint corrections)
@@ -1335,7 +1440,7 @@ async function _attachSubDocs(application, userId) {
     application.experience_details = experience;
 
     const [studentQuals] = await db.query(
-        `SELECT sq.id, sq.qualification_id, sq.certificate_path, sq.status,
+        `SELECT sq.id, sq.qualification_id, sq.certificate_path, sq.qual_month, sq.qual_year, sq.status,
                 qt.qualification_name, qt.is_exemption
          FROM student_qualifications sq
          JOIN qualification_types qt ON sq.qualification_id = qt.id
@@ -1381,7 +1486,8 @@ app.get('/api/applications/:application_id', authenticateToken, async (req, res)
 // Columns that may be written by the student save form
 const APP_ALLOWED_COLUMNS = new Set([
     'user_id','applicant_name','applicant_initial','applicant_name_tamil',
-    'exam_center_1','exam_center_2','subject','subject_2','category','working_district',
+    'exam_center_1','exam_center_2','exam_center_3','exam_center_4','exam_center_5',
+    'subject','subject_2','category','working_district',
     // eligibility engine columns
     'department_id','program_offered_id','program_offered_name',
     'dob','nationality','is_nri','religion','gender','community','parent_name',
@@ -1400,8 +1506,8 @@ const APP_ALLOWED_COLUMNS = new Set([
 
 const COLUMNS = {
     school: ['level', 'institution_name', 'board_id', 'other_board_name', 'passing_month', 'passing_year', 'percentage', 'marksheet_path'],
-    higher: ['level', 'degree_id', 'degree_name', 'specialization_id', 'institution_name', 'university_name', 'university_type_id', 'passing_month', 'passing_year', 'score_type', 'score_value', 'marksheet_path', 'consolidated_marksheet_path', 'registration_number', 'upload_mode'],
-    exp:    ['designation', 'organization_name', 'employment_type_id', 'from_month', 'from_year', 'to_month', 'to_year', 'total_years', 'total_months', 'state_id', 'district_id', 'address']
+    higher: ['level', 'degree_id', 'degree_name', 'degree_name_other', 'specialization_id', 'institution_name', 'university_name', 'university_type_id', 'passing_month', 'passing_year', 'start_year', 'score_type', 'score_value', 'marksheet_path', 'consolidated_marksheet_path', 'registration_number', 'upload_mode'],
+    exp:    ['designation', 'organization_name', 'employment_type_id', 'from_month', 'from_year', 'to_month', 'to_year', 'from_date', 'to_date', 'total_years', 'total_months', 'state_id', 'district_id', 'address']
 };
 
 app.post('/api/applications/save', authenticateToken, upload.any(), async (req, res) => {
@@ -1524,6 +1630,53 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
                 if (!item || !item.institution_name?.trim() || !item.university_name?.trim() || !item.registration_number?.trim() || !item.passing_year || !item.score_value) {
                     errs.push('5-Year Integrated Course Section');
                 }
+                if (item && (!item.degree_name?.trim())) {
+                    errs.push('5-Year Integrated Course Section (Course Name required)');
+                }
+                if (item && item.degree_name === 'Others' && !item.degree_name_other?.trim()) {
+                    errs.push('5-Year Integrated Course Section (please specify the Others course name)');
+                }
+            }
+
+            // ── Academic Timeline Validation Engine (Module 2) ──────────────────
+            // Ensures educational history follows logical forward-only progression.
+            const sslcYear       = hasSslc ? parseInt(schoolData?.[0]?.passing_year) : null;
+            const hscYear        = hasHsc  ? parseInt(schoolData?.[1]?.passing_year) : null;
+            const ugStartYear    = hasUg   ? parseInt(higherData?.[0]?.start_year)   : null;
+            const ugEndYear      = hasUg   ? parseInt(higherData?.[0]?.passing_year) : null;
+            const pgStartYear    = hasPg   ? parseInt(higherData?.[1]?.start_year)   : null;
+            const pgEndYear      = hasPg   ? parseInt(higherData?.[1]?.passing_year) : null;
+            const intStartYear   = hasIntegrated ? parseInt(integratedData?.start_year)   : null;
+
+            if (sslcYear && hscYear && !isNaN(sslcYear) && !isNaN(hscYear)) {
+                if (hscYear <= sslcYear) {
+                    errs.push('+2 completion year must be greater than 10th completion year');
+                }
+            }
+            if (hscYear && ugStartYear && !isNaN(hscYear) && !isNaN(ugStartYear)) {
+                if (ugStartYear < hscYear) {
+                    errs.push('UG start year cannot be earlier than +2 completion year');
+                }
+            }
+            if (ugStartYear && ugEndYear && !isNaN(ugStartYear) && !isNaN(ugEndYear)) {
+                if (ugEndYear <= ugStartYear) {
+                    errs.push('UG completion year must be greater than UG start year');
+                }
+            }
+            if (ugEndYear && pgStartYear && !isNaN(ugEndYear) && !isNaN(pgStartYear)) {
+                if (pgStartYear < ugEndYear) {
+                    errs.push('PG start year cannot be earlier than UG completion year');
+                }
+            }
+            if (pgStartYear && pgEndYear && !isNaN(pgStartYear) && !isNaN(pgEndYear)) {
+                if (pgEndYear <= pgStartYear) {
+                    errs.push('PG completion year must be greater than PG start year');
+                }
+            }
+            if (hscYear && intStartYear && !isNaN(hscYear) && !isNaN(intStartYear)) {
+                if (intStartYear < hscYear) {
+                    errs.push('Integrated course start year cannot be earlier than +2 completion year');
+                }
             }
 
             // Work experience is mandatory for Part Time candidates only.
@@ -1594,6 +1747,32 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
                         if (!isNaN(integratedScore) && integratedScore < minMark) {
                             errs.push(`Minimum required PG percentage for your selected community is ${minMark}% (Your score: ${integratedScore}%)`);
                         }
+                    }
+                }
+            }
+
+            // Qualification Month & Year validation
+            if (raw.student_qualifications !== undefined) {
+                let qualIdsToValidate = [];
+                try {
+                    const parsed = typeof raw.student_qualifications === 'string'
+                        ? JSON.parse(raw.student_qualifications) : raw.student_qualifications;
+                    qualIdsToValidate = (Array.isArray(parsed) ? parsed : []).map(q => parseInt(q, 10)).filter(Boolean);
+                } catch {}
+                const QUAL_MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+                const nowDate = new Date();
+                for (const qualId of qualIdsToValidate) {
+                    const qMonth = raw[`qual_month_${qualId}`] || null;
+                    const qYear  = raw[`qual_year_${qualId}`]  ? parseInt(raw[`qual_year_${qualId}`], 10) : null;
+                    if (!qMonth || !qYear) {
+                        errs.push(`Month and Year of Passing required for each selected qualification`);
+                        break;
+                    }
+                    const monthIdx = QUAL_MONTH_NAMES.indexOf(qMonth);
+                    if (monthIdx === -1) { errs.push('Invalid Month of Passing for a qualification'); break; }
+                    if (qYear > nowDate.getFullYear() || (qYear === nowDate.getFullYear() && monthIdx + 1 > nowDate.getMonth() + 1)) {
+                        errs.push('Month/Year of Passing for a qualification cannot be a future date');
+                        break;
                     }
                 }
             }
@@ -1880,11 +2059,16 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
             }
 
             for (const qualId of newSet) {
+                const qMonth = raw[`qual_month_${qualId}`] || null;
+                const qYear  = raw[`qual_year_${qualId}`]  ? parseInt(raw[`qual_year_${qualId}`], 10) : null;
                 await db.query(
-                    `INSERT INTO student_qualifications (user_id, qualification_id, status)
-                     VALUES (?, ?, 'Active')
-                     ON DUPLICATE KEY UPDATE status = 'Active', updated_at = NOW()`,
-                    [userId, qualId]
+                    `INSERT INTO student_qualifications (user_id, qualification_id, qual_month, qual_year, status)
+                     VALUES (?, ?, ?, ?, 'Active')
+                     ON DUPLICATE KEY UPDATE status = 'Active',
+                         qual_month = COALESCE(?, qual_month),
+                         qual_year  = COALESCE(?, qual_year),
+                         updated_at = NOW()`,
+                    [userId, qualId, qMonth, qYear, qMonth, qYear]
                 );
             }
 
@@ -3170,13 +3354,27 @@ app.get('/api/applications/download-pdf/:appId', authenticateToken, async (req, 
             sectionHeader('6.  WORK EXPERIENCE');
             const eColW = [130, 150, 70, 70, 95];
             tableHeader(['Designation', 'Organisation', 'From', 'To', 'Duration'], eColW);
-            validExp.forEach((e, i) => tableRow(
-                [e.designation, e.organization_name,
-                 `${e.from_month || ''} ${e.from_year || ''}`.trim(),
-                 `${e.to_month || ''} ${e.to_year || ''}`.trim(),
-                 `${e.total_years || 0}Y ${e.total_months || 0}M`],
-                eColW, i
-            ));
+            validExp.forEach((e, i) => {
+                const formatDate = (d) => {
+                    if (!d) return '';
+                    try {
+                        const dateObj = new Date(d);
+                        if (isNaN(dateObj.getTime())) return '';
+                        const day = String(dateObj.getDate()).padStart(2, '0');
+                        const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+                        const year = dateObj.getFullYear();
+                        return `${day}/${month}/${year}`;
+                    } catch { return ''; }
+                };
+                const fromDisplay = formatDate(e.from_date) || `${e.from_month || ''} ${e.from_year || ''}`.trim();
+                const toDisplay = formatDate(e.to_date) || `${e.to_month || ''} ${e.to_year || ''}`.trim();
+                tableRow(
+                    [e.designation, e.organization_name,
+                     fromDisplay, toDisplay,
+                     `${e.total_years || 0}Y ${e.total_months || 0}M`],
+                    eColW, i
+                );
+            });
             doc.moveDown(0.4);
         }
 
@@ -3313,6 +3511,17 @@ app.get('/api/file-upload-settings', async (req, res) => {
         const [rows] = await db.query('SELECT * FROM file_upload_settings');
         res.json({ success: true, data: rows });
     } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// --- EXAM CENTRE CONFIG (public — read by student form to know how many preferences to show)
+app.get('/api/exam-centre-config', async (req, res) => {
+    try {
+        const [rows] = await db.query('SELECT id, max_preferences, status, description FROM exam_centre_config LIMIT 1');
+        res.json({ success: true, data: rows[0] || { max_preferences: 2, status: 'active' } });
+    } catch (err) {
+        // Graceful fallback — table may not exist on fresh installs
+        res.json({ success: true, data: { max_preferences: 2, status: 'active' } });
+    }
 });
 
 // â”€â”€â”€ ADMIN MASTER DATA MANAGEMENT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

@@ -103,8 +103,8 @@ const S = {
   errIndicator: { display: 'inline-flex', width: 6, height: 6, borderRadius: '50%', background: '#ef4444', marginLeft: 6 },
 };
 
-const REQUIRED_STEP0 = ['name', 'gender', 'designation_id'];
-const REQUIRED_STEP1 = ['address_1', 'district_id', 'pincode', 'mobile', 'home_address_1', 'home_district_id', 'home_pincode'];
+const REQUIRED_STEP0 = ['name', 'gender', 'designation_id', 'eligibility_dept_id', 'program_offered_id'];
+const REQUIRED_STEP1 = ['mobile', 'home_address_1', 'home_district_id', 'home_pincode'];
 const REQUIRED_STEP2 = ['dob', 'date_of_joining', 'max_candidates', 'max_full_time', 'max_part_time'];
 const REQUIRED_STEP3 = ['bank_holder_name', 'bank_name', 'account_number', 'ifsc_code'];
 
@@ -119,7 +119,6 @@ function validate(step, formData) {
 
   if (step === 1 && formData.mobile && !/^\d{10}$/.test(formData.mobile)) errors.mobile = 'Enter valid 10-digit mobile number';
   if (step === 1 && formData.aadhaar_no && !/^\d{12}$/.test(formData.aadhaar_no)) errors.aadhaar_no = 'Aadhaar must be 12 digits';
-  if (step === 1 && formData.pincode && !/^\d{6}$/.test(formData.pincode)) errors.pincode = 'Pincode must be 6 digits';
   if (step === 1 && formData.home_pincode && !/^\d{6}$/.test(formData.home_pincode)) errors.home_pincode = 'Pincode must be 6 digits';
 
   if (step === 3) {
@@ -153,6 +152,7 @@ export default function ApplicationForm() {
   const [formData, setFormData] = useState({
     name: '', gender: 'Male', designation_id: '',
     department_id: '', area_of_specialization: '', serving_institute_id: '',
+    eligibility_dept_id: '', program_offered_id: '',
     address_1: '', address_2: '', address_3: '', district_id: '', pincode: '',
     home_address_1: '', home_address_2: '', home_address_3: '', home_district_id: '', home_pincode: '',
     aadhaar_no: '', mobile: '', email: '',
@@ -164,6 +164,9 @@ export default function ApplicationForm() {
   const [files, setFiles] = useState({ profile_image: null, dob_evidence: null, recognition_certificate: null });
   const [previews, setPreviews] = useState({ profile_image: null });
   const [fileSettings, setFileSettings] = useState({});
+
+  const [eligibilityDepts, setEligibilityDepts] = useState([]);
+  const [offeredCourses, setOfferedCourses] = useState([]);
 
   const [ifscResolving, setIfscResolving] = useState(false);
   const [isMasked, setIsMasked] = useState(true);
@@ -182,6 +185,21 @@ export default function ApplicationForm() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Load Eligibility Management departments on mount
+  useEffect(() => {
+    axios.get(`${API}/eligibility-departments`)
+      .then(res => { if (res.data.success) setEligibilityDepts(res.data.data || []); })
+      .catch(() => {});
+  }, []);
+
+  // Reload offered courses whenever eligibility_dept_id changes
+  useEffect(() => {
+    if (!formData.eligibility_dept_id) { setOfferedCourses([]); return; }
+    axios.get(`${API}/eligibility-programs?department_id=${formData.eligibility_dept_id}`)
+      .then(res => { if (res.data.success) setOfferedCourses(res.data.data || []); })
+      .catch(() => setOfferedCourses([]));
+  }, [formData.eligibility_dept_id]);
 
   useEffect(() => {
     axios.get(`${API}/file-upload-settings`)
@@ -219,6 +237,8 @@ export default function ApplicationForm() {
           dob: d.dob ? d.dob.split('T')[0] : '',
           date_of_joining: d.date_of_joining ? d.date_of_joining.split('T')[0] : '',
           date_of_superannuation: d.date_of_superannuation ? d.date_of_superannuation.split('T')[0] : '',
+          eligibility_dept_id: d.eligibility_dept_id != null ? String(d.eligibility_dept_id) : '',
+          program_offered_id: d.program_offered_id != null ? String(d.program_offered_id) : '',
         }));
         if (d.profile_image) setPreviews(p => ({ ...p, profile_image: `${import.meta.env.VITE_SUPERVISOR_API_URL || 'http://localhost:5002'}/${d.profile_image}` }));
         if (d.bank_name) setBankSearch(d.bank_name);
@@ -589,6 +609,48 @@ export default function ApplicationForm() {
                     {dropdowns.master_institutes?.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                   </select>
                 </div>
+                {/* Research Programme — Department → Offered Course dynamic mapping */}
+                <div style={{ gridColumn: '1 / -1', borderTop: '2px solid #e0e7ff', paddingTop: 20, marginTop: 4 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: '#4338ca', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    🎓 Research Programme
+                  </div>
+                </div>
+                <div style={S.group}>
+                  <label style={S.label}>Programme Department<span style={S.required}>*</span></label>
+                  <select
+                    style={S.select(errors.eligibility_dept_id)}
+                    name="eligibility_dept_id"
+                    value={formData.eligibility_dept_id}
+                    onChange={e => {
+                      const { name, value } = e.target;
+                      setFormData(prev => ({ ...prev, [name]: value, program_offered_id: '' }));
+                      setOfferedCourses([]);
+                      setErrors(prev => { const n = { ...prev }; delete n.eligibility_dept_id; delete n.program_offered_id; return n; });
+                    }}
+                    disabled={isReadOnly}
+                  >
+                    <option value="">— Select Department —</option>
+                    {eligibilityDepts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
+                  {errors.eligibility_dept_id && <span style={S.errMsg}>{errors.eligibility_dept_id}</span>}
+                </div>
+                <div style={S.group}>
+                  <label style={S.label}>Offered Course<span style={S.required}>*</span></label>
+                  <select
+                    style={S.select(errors.program_offered_id)}
+                    name="program_offered_id"
+                    value={formData.program_offered_id}
+                    onChange={handleInput}
+                    disabled={isReadOnly || !formData.eligibility_dept_id}
+                  >
+                    <option value="">— Select Offered Course —</option>
+                    {offeredCourses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                  {errors.program_offered_id && <span style={S.errMsg}>{errors.program_offered_id}</span>}
+                  {!formData.eligibility_dept_id && !isReadOnly && (
+                    <span style={{ fontSize: 11, color: '#94a3b8', marginTop: 3, display: 'block' }}>Select Programme Department first</span>
+                  )}
+                </div>
                 <div style={{ ...S.group, gridColumn: '1 / -1' }}>
                   <label style={S.label}>Area of Specialization</label>
                   <input
@@ -607,39 +669,6 @@ export default function ApplicationForm() {
           {/* ─── Step 1: Address & Identity ─── */}
           {step === 1 && (
             <div>
-              {/* Office Address Section */}
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#4f46e5', marginBottom: 16, borderBottom: '2.5px solid #e0e7ff', paddingBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-                🏫 Office Address
-              </div>
-              <div style={{ ...S.grid2, marginBottom: 32 }}>
-                <div style={{ ...S.group, gridColumn: '1 / -1' }}>
-                  <label style={S.label}>Address Line 1<span style={S.required}>*</span></label>
-                  <input style={S.input(errors.address_1)} name="address_1" value={formData.address_1} onChange={handleInput} readOnly={isReadOnly} placeholder="Door No., Street Name" />
-                  {errors.address_1 && <span style={S.errMsg}>{errors.address_1}</span>}
-                </div>
-                <div style={S.group}>
-                  <label style={S.label}>Address Line 2</label>
-                  <input style={S.input(false)} name="address_2" value={formData.address_2} onChange={handleInput} readOnly={isReadOnly} placeholder="Colony / Area" />
-                </div>
-                <div style={S.group}>
-                  <label style={S.label}>City / Town</label>
-                  <input style={S.input(false)} name="address_3" value={formData.address_3} onChange={handleInput} readOnly={isReadOnly} placeholder="City or Town" />
-                </div>
-                <div style={S.group}>
-                  <label style={S.label}>District<span style={S.required}>*</span></label>
-                  <select style={S.select(errors.district_id)} name="district_id" value={formData.district_id} onChange={handleInput} disabled={isReadOnly}>
-                    <option value="">— Select District —</option>
-                    {dropdowns.master_districts?.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                  </select>
-                  {errors.district_id && <span style={S.errMsg}>{errors.district_id}</span>}
-                </div>
-                <div style={S.group}>
-                  <label style={S.label}>Pincode<span style={S.required}>*</span></label>
-                  <input style={S.input(errors.pincode)} name="pincode" value={formData.pincode} onChange={handleInput} readOnly={isReadOnly} maxLength={6} placeholder="6-digit pincode" />
-                  {errors.pincode && <span style={S.errMsg}>{errors.pincode}</span>}
-                </div>
-              </div>
-
               {/* Aadhar Section */}
               <div style={{ fontSize: 16, fontWeight: 700, color: '#4f46e5', marginBottom: 16, borderBottom: '2.5px solid #e0e7ff', paddingBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
                 🏠 Aadhar Address

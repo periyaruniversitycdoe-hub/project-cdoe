@@ -7,9 +7,24 @@ const { verifyToken, isAdmin } = require('../middleware/auth');
 
 // Multer in-memory storage for parsing Excel buffers directly
 const storage = multer.memoryStorage();
+const ALLOWED_IMPORT_MIMES = new Set([
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+    'application/vnd.ms-excel',                                          // .xls
+    'text/csv',
+    'application/csv',
+    'text/plain', // some browsers send .csv as text/plain
+]);
+const ALLOWED_IMPORT_EXTS = new Set(['.xlsx', '.xls', '.csv']);
 const upload = multer({
     storage,
-    limits: { fileSize: 15 * 1024 * 1024 } // 15 MB max file size
+    limits: { fileSize: 15 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+        const ext = require('path').extname(file.originalname).toLowerCase();
+        if (ALLOWED_IMPORT_MIMES.has(file.mimetype) || ALLOWED_IMPORT_EXTS.has(ext)) {
+            return cb(null, true);
+        }
+        cb(new Error('Only Excel (.xlsx, .xls) and CSV files are allowed for import'));
+    }
 });
 
 // ── Canonical Mappings Configuration ──────────────────────────────────────────
@@ -77,6 +92,10 @@ const DESTINATIONS = {
 // ── Text Normalization Helpers ────────────────────────────────────────────────
 function cellStr(val) {
     if (val === null || val === undefined) return '';
+    if (val instanceof Date) {
+        // ExcelJS returns date cells as JS Date objects — preserve as ISO date string
+        return isNaN(val.getTime()) ? '' : val.toISOString().substring(0, 10);
+    }
     if (typeof val === 'object') {
         if (val.richText) return val.richText.map(t => t.text).join('');
         if (val.text) return val.text;
@@ -335,8 +354,13 @@ router.post('/preview/:destination', verifyToken, isAdmin, upload.single('file')
             });
         }
 
-        // Retrieve existing records in DB for smart duplicate classification
-        const [existingRows] = await pool.execute(`SELECT * FROM ${config.table}`);
+        // Retrieve only columns needed for duplicate matching (avoids full-table SELECT * on large datasets)
+        const selectCols = config.table === 'supervisors'
+            ? 'id, name, email, mobile, supervisor_no'
+            : config.table === 'master_institutes'
+                ? 'id, name, college_code, abbreviation, college_email'
+                : 'id, name, centre_ref_no, email'; // research_centres
+        const [existingRows] = await pool.execute(`SELECT ${selectCols} FROM ${config.table}`);
         const codeMap = new Map();
         const nameMap = new Map();
         const emailMap = new Map();

@@ -469,15 +469,23 @@ const ApplicationDetail = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {app.experience_details.map((exp, i) => (
-                    <tr key={i}>
-                      <td>{exp.designation}</td>
-                      <td>{exp.organization_name}</td>
-                      <td>{dropdowns.employment_types?.find(t => t.id == exp.employment_type_id)?.name}</td>
-                      <td>{exp.from_month} {exp.from_year} - {exp.to_month} {exp.to_year}</td>
-                      <td className="fw-bold text-primary">{exp.total_years}Y {exp.total_months}M</td>
-                    </tr>
-                  ))}
+                  {app.experience_details.map((exp, i) => {
+                    const fromDisplay = exp.from_date 
+                      ? new Date(exp.from_date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) 
+                      : `${exp.from_month || ''} ${exp.from_year || ''}`.trim() || '—';
+                    const toDisplay = exp.to_date 
+                      ? new Date(exp.to_date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) 
+                      : `${exp.to_month || ''} ${exp.to_year || ''}`.trim() || '—';
+                    return (
+                      <tr key={i}>
+                        <td>{exp.designation}</td>
+                        <td>{exp.organization_name}</td>
+                        <td>{dropdowns.employment_types?.find(t => t.id == exp.employment_type_id)?.name}</td>
+                        <td>{fromDisplay} - {toDisplay}</td>
+                        <td className="fw-bold text-primary">{exp.total_years}Y {exp.total_months}M</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             ) : <p className="text-muted text-center py-2 mb-0">No experience details provided.</p>}

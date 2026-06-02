@@ -117,6 +117,47 @@ app.get('/api/file-upload-settings', async (_req, res) => {
     }
 });
 
+// Auto-migration: eligibility_dept_id and program_offered_id in supervisors
+(async () => {
+    try {
+        const cols = [
+            { name: 'eligibility_dept_id', query: 'ALTER TABLE supervisors ADD COLUMN eligibility_dept_id INT DEFAULT NULL' },
+            { name: 'program_offered_id',  query: 'ALTER TABLE supervisors ADD COLUMN program_offered_id INT DEFAULT NULL' },
+        ];
+        for (const col of cols) {
+            try { await db.query(col.query); } catch (e) { if (e.code !== 'ER_DUP_FIELDNAME') throw e; }
+        }
+        console.log('Eligibility mapping columns verified in supervisors.');
+    } catch (err) {
+        console.error('[Eligibility Migration]', err.message);
+    }
+})();
+
+// GET /api/eligibility-departments — public, reads from Eligibility Management departments table
+app.get('/api/eligibility-departments', async (_req, res) => {
+    try {
+        const [rows] = await db.query('SELECT id, name FROM departments WHERE is_active = 1 ORDER BY name ASC');
+        res.json({ success: true, data: rows });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// GET /api/eligibility-programs?department_id= — public, reads from Eligibility Management programs_offered
+app.get('/api/eligibility-programs', async (req, res) => {
+    try {
+        const { department_id } = req.query;
+        if (!department_id) return res.json({ success: true, data: [] });
+        const [rows] = await db.query(
+            'SELECT id, name FROM programs_offered WHERE is_active = 1 AND department_id = ? ORDER BY name ASC',
+            [department_id]
+        );
+        res.json({ success: true, data: rows });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
 // Health check
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'supervisor-portal', port: PORT }));
 

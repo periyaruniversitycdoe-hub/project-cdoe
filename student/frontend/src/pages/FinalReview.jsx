@@ -222,13 +222,21 @@ const FinalReview = () => {
         <td>${h.score_value ? h.score_value + (h.score_type ? ` (${h.score_type})` : '') : '—'}</td>
       </tr>`).join('');
 
-    const expRows = (data.experience_details || []).map(e => `
+    const expRows = (data.experience_details || []).map(e => {
+      const fromDisplay = e.from_date 
+        ? new Date(e.from_date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) 
+        : `${v(e.from_month)} ${v(e.from_year)}`;
+      const toDisplay = e.to_date 
+        ? new Date(e.to_date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) 
+        : `${v(e.to_month)} ${v(e.to_year)}`;
+      return `
       <tr>
         <td>${v(e.designation)}</td><td>${v(e.organization_name)}</td>
-        <td>${v(e.from_month)} ${v(e.from_year)}</td>
-        <td>${v(e.to_month)} ${v(e.to_year)}</td>
+        <td>${fromDisplay}</td>
+        <td>${toDisplay}</td>
         <td>${e.total_years || 0}Y ${e.total_months || 0}M</td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
 
     let qualStr = '—';
     try { const q = data.qualified_exams; qualStr = q ? (typeof q === 'string' ? JSON.parse(q) : q).join(', ') || 'None' : 'None'; } catch {}
@@ -943,16 +951,24 @@ ${expRows ? `<div class="section">
                   </tr>
                 </thead>
                 <tbody>
-                  {data.experience_details.map((e, i) => (
-                    <tr key={i}>
-                      <td className="fw-semibold">{e.designation || '—'}</td>
-                      <td>{e.organization_name || '—'}</td>
-                      <td>{e.employment_type_id || '—'}</td>
-                      <td>{e.from_month} {e.from_year}</td>
-                      <td>{e.to_month} {e.to_year}</td>
-                      <td>{e.total_years}Y {e.total_months}M</td>
-                    </tr>
-                  ))}
+                  {data.experience_details.map((e, i) => {
+                    const fromDisplay = e.from_date 
+                      ? new Date(e.from_date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) 
+                      : `${e.from_month || ''} ${e.from_year || ''}`.trim() || '—';
+                    const toDisplay = e.to_date 
+                      ? new Date(e.to_date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) 
+                      : `${e.to_month || ''} ${e.to_year || ''}`.trim() || '—';
+                    return (
+                      <tr key={i}>
+                        <td className="fw-semibold">{e.designation || '—'}</td>
+                        <td>{e.organization_name || '—'}</td>
+                        <td>{e.employment_type_id || '—'}</td>
+                        <td>{fromDisplay}</td>
+                        <td>{toDisplay}</td>
+                        <td>{e.total_years}Y {e.total_months}M</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

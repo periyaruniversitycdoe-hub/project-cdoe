@@ -114,12 +114,28 @@ const ResultsManagement = () => {
     } finally { setPublishing(false); }
   };
 
-  const exportResults = () => {
-    const params = new URLSearchParams({
-      session_id: sessionFilter, report_type: 'entrance',
-      ...(search   ? { search }    : {}),
-    });
-    window.open(`${API_URL}/applications/export/excel?${params}`, '_blank');
+  const exportResults = async () => {
+    try {
+      const params = new URLSearchParams({
+        session_id: sessionFilter, report_type: 'entrance',
+        ...(search   ? { search }    : {}),
+      });
+      const res = await axios.get(`${API_URL}/applications/export/excel?${params}`, {
+        headers, responseType: 'blob'
+      });
+      const url  = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href  = url;
+      link.setAttribute('download', `entrance_results_${sessionFilter}_${Date.now()}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('Excel generated successfully!');
+    } catch (err) {
+      console.error(err);
+      toast.error('Export failed');
+    }
   };
 
   const isPublished = publishStatus?.entrance_result_published;
