@@ -18,7 +18,7 @@ const STEPS = [
   { label: 'Address & Identity', icon: MapPin, desc: 'Contact & ID proof' },
   { label: 'Professional Details', icon: Briefcase, desc: 'Experience & dates' },
   { label: 'Bank Details', icon: Landmark, desc: 'Account disbursement details' },
-  { label: 'Disciplines', icon: GraduationCap, desc: 'Research areas & centres' },
+  { label: 'Review & Submit', icon: Send, desc: 'Review all details & submit' },
 ];
 
 const STATUS_COLORS = {
@@ -174,6 +174,8 @@ export default function ApplicationForm() {
   const [showDropdown, setShowDropdown] = useState(false);
   const [isLockedByIFSC, setIsLockedByIFSC] = useState(false);
   const [ifscInfo, setIfscInfo] = useState(null);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [declaration, setDeclaration] = useState(false);
   const dropdownRef = useRef(null);
 
   useEffect(() => {
@@ -494,6 +496,14 @@ export default function ApplicationForm() {
 
   const dobSetting = getFileSetting('dob_evidence');
   const recSetting = getFileSetting('recognition_certificate');
+
+  const lookup = (list, id) => {
+    if (!id) return '—';
+    return list?.find(d => String(d.id) === String(id))?.name || '—';
+  };
+  const REQUIRED_ALL = [...REQUIRED_STEP0, ...REQUIRED_STEP1, ...REQUIRED_STEP2, ...REQUIRED_STEP3];
+  const filledCount = REQUIRED_ALL.filter(f => formData[f] && String(formData[f]).trim() !== '').length;
+  const completePct = Math.round((filledCount / REQUIRED_ALL.length) * 100);
 
   return (
     <div style={S.page}>
@@ -1001,74 +1011,118 @@ export default function ApplicationForm() {
             </div>
           )}
 
-          {/* ─── Step 4: Disciplines ─── */}
+          {/* ─── Step 4: Review & Submit ─── */}
           {step === 4 && (
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 15 }}>Research Disciplines & Centre Affiliations</div>
-                  <div style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>Add all disciplines you are recognized for and associate them with research centres.</div>
+              {/* Completeness Bar */}
+              <div style={{ background: '#f8fafc', borderRadius: 12, padding: '20px 24px', marginBottom: 28, border: '1.5px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 16, color: '#1e293b' }}>Application Completeness</div>
+                    <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>All mandatory sections must be completed before final submission.</div>
+                  </div>
+                  <div style={{ fontSize: 32, fontWeight: 800, color: completePct === 100 ? '#16a34a' : '#4338ca' }}>{completePct}%</div>
                 </div>
-                {!isReadOnly && (
-                  <button onClick={addDiscipline} style={{ ...S.btnPrimary, padding: '9px 18px', fontSize: 13 }}>
-                    <Plus size={15} /> Add Row
-                  </button>
-                )}
+                <div style={{ height: 8, background: '#e2e8f0', borderRadius: 4, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${completePct}%`, background: completePct === 100 ? 'linear-gradient(90deg,#10b981,#059669)' : 'linear-gradient(90deg,#4338ca,#6366f1)', borderRadius: 4, transition: 'width 0.5s' }} />
+                </div>
+                {completePct === 100
+                  ? <div style={{ fontSize: 12, color: '#16a34a', marginTop: 8, fontWeight: 600 }}>✓ All mandatory sections are complete.</div>
+                  : <div style={{ fontSize: 12, color: '#64748b', marginTop: 8 }}>Please complete all required fields before submitting.</div>}
               </div>
-              {formData.disciplines.length > 0 ? (
-                <table style={S.table}>
-                  <thead>
-                    <tr>
-                      <th style={S.th}>#</th>
-                      <th style={S.th}>Discipline<span style={S.required}>*</span></th>
-                      <th style={S.th}>Research Centre</th>
-                      <th style={S.th}>Recognition Date</th>
-                      {!isReadOnly && <th style={S.th}>Action</th>}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {formData.disciplines.map((item, idx) => (
-                      <tr key={idx}>
-                        <td style={{ ...S.td, ...S.tdFirst, width: 40, color: '#94a3b8', fontWeight: 700 }}>{idx + 1}</td>
-                        <td style={S.td}>
-                          <select style={S.select(false)} value={item.discipline_id} disabled={isReadOnly}
-                            onChange={e => { const n = [...formData.disciplines]; n[idx].discipline_id = e.target.value; setFormData(f => ({ ...f, disciplines: n })); }}>
-                            <option value="">— Select —</option>
-                            {dropdowns.master_disciplines?.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                          </select>
-                        </td>
-                        <td style={S.td}>
-                          <select style={S.select(false)} value={item.center_id || ''} disabled={isReadOnly}
-                            onChange={e => { const n = [...formData.disciplines]; n[idx].center_id = e.target.value; setFormData(f => ({ ...f, disciplines: n })); }}>
-                            <option value="">— Select Centre —</option>
-                            {dropdowns.research_centres?.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                          </select>
-                        </td>
-                        <td style={S.td}>
-                          <input style={S.input(false)} type="date" value={item.recognition_date || ''} readOnly={isReadOnly}
-                            onChange={e => { const n = [...formData.disciplines]; n[idx].recognition_date = e.target.value; setFormData(f => ({ ...f, disciplines: n })); }} />
-                        </td>
-                        {!isReadOnly && (
-                          <td style={{ ...S.td, ...S.tdLast }}>
-                            <button onClick={() => removeDiscipline(idx)} style={{ border: 'none', background: 'none', color: '#ef4444', cursor: 'pointer', padding: 4 }}>
-                              <Trash2 size={17} />
-                            </button>
-                          </td>
-                        )}
-                      </tr>
+
+              {/* Review Sections */}
+              {[
+                {
+                  num: 1, title: 'General Information', targetStep: 0,
+                  rows: [
+                    { label: 'Full Name', value: formData.name },
+                    { label: 'Gender', value: formData.gender },
+                    { label: 'Designation', value: lookup(dropdowns.master_designations, formData.designation_id) },
+                    { label: 'Department', value: lookup(dropdowns.master_departments, formData.department_id) },
+                    { label: 'Serving Institute', value: lookup(dropdowns.master_institutes, formData.serving_institute_id) },
+                    { label: 'Programme Department', value: lookup(eligibilityDepts, formData.eligibility_dept_id) || formData.eligibility_dept_name },
+                    { label: 'Offered Course', value: lookup(offeredCourses, formData.program_offered_id) || formData.program_offered_name },
+                    { label: 'Area of Specialization', value: formData.area_of_specialization },
+                  ],
+                },
+                {
+                  num: 2, title: 'Address & Identity', targetStep: 1,
+                  rows: [
+                    { label: 'Address Line 1', value: formData.home_address_1 },
+                    { label: 'Address Line 2', value: formData.home_address_2 },
+                    { label: 'City / Town', value: formData.home_address_3 },
+                    { label: 'District', value: lookup(dropdowns.master_districts, formData.home_district_id) },
+                    { label: 'Pincode', value: formData.home_pincode },
+                    { label: 'Aadhaar Number', value: formData.aadhaar_no ? '••••' + String(formData.aadhaar_no).slice(-4) : null },
+                    { label: 'Mobile Number', value: formData.mobile },
+                    { label: 'Email Address', value: formData.email },
+                  ],
+                },
+                {
+                  num: 3, title: 'Professional Details', targetStep: 2,
+                  rows: [
+                    { label: 'Date of Birth', value: formData.dob },
+                    { label: 'Date of Joining', value: formData.date_of_joining },
+                    { label: 'Date of Superannuation', value: formData.date_of_superannuation },
+                    { label: 'Recognition Ref. No.', value: formData.recognition_ref_no },
+                    { label: 'Max Candidates (Designation)', value: formData.max_candidates },
+                    { label: 'Max Full-Time Scholars', value: formData.max_full_time },
+                    { label: 'Max Part-Time Scholars', value: formData.max_part_time },
+                    { label: 'DOB Evidence', value: files.dob_evidence ? `✓ ${files.dob_evidence.name}` : null },
+                    { label: 'Recognition Certificate', value: files.recognition_certificate ? `✓ ${files.recognition_certificate.name}` : null },
+                  ],
+                },
+                {
+                  num: 4, title: 'Bank Details', targetStep: 3,
+                  rows: [
+                    { label: 'Account Holder Name', value: formData.bank_holder_name },
+                    { label: 'Bank Name', value: formData.bank_name },
+                    { label: 'Account Number', value: formData.account_number ? '••••••' + String(formData.account_number).slice(-4) : null },
+                    { label: 'IFSC Code', value: formData.ifsc_code },
+                  ],
+                },
+              ].map(section => (
+                <div key={section.num} style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #e2e8f0', marginBottom: 20, overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 22px', background: '#f8fafc', borderBottom: '1.5px solid #e2e8f0' }}>
+                    <div style={{ fontWeight: 700, fontSize: 15, color: '#1e293b', display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ background: '#4338ca', color: '#fff', borderRadius: '50%', width: 26, height: 26, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, flexShrink: 0 }}>{section.num}</span>
+                      {section.title}
+                    </div>
+                    {!isReadOnly && (
+                      <button
+                        onClick={() => setStep(section.targetStep)}
+                        style={{ background: 'none', border: '1.5px solid #c7d2fe', color: '#4338ca', borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        Edit Section
+                      </button>
+                    )}
+                  </div>
+                  <div style={{ padding: '14px 22px' }}>
+                    {section.rows.map(row => (
+                      <div key={row.label} style={{ display: 'flex', gap: 16, paddingBottom: 10, marginBottom: 10, borderBottom: '1px solid #f1f5f9' }}>
+                        <span style={{ width: 220, flexShrink: 0, fontSize: 13, color: '#64748b', fontWeight: 600 }}>{row.label}</span>
+                        <span style={{ fontSize: 13, color: '#1e293b', fontWeight: 500 }}>{row.value || '—'}</span>
+                      </div>
                     ))}
-                  </tbody>
-                </table>
-              ) : (
-                <div style={{ textAlign: 'center', padding: 48, border: '2px dashed #e2e8f0', borderRadius: 16, color: '#94a3b8' }}>
-                  <GraduationCap size={36} style={{ margin: '0 auto 12px', display: 'block', opacity: 0.4 }} />
-                  <div style={{ fontWeight: 600 }}>No disciplines added yet</div>
-                  <div style={{ fontSize: 12, marginTop: 4 }}>Click "Add Row" to add your research disciplines</div>
+                  </div>
                 </div>
-              )}
-              <div style={S.notice}>
-                <AlertCircle size={18} style={{ flexShrink: 0, color: '#d97706' }} />
-                <span>Verify all information carefully before final submission. Once submitted (Pending status), the form can only be edited after admin review.</span>
+              ))}
+
+              {/* Declaration */}
+              <div style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: 12, padding: '18px 22px' }}>
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, cursor: isReadOnly ? 'default' : 'pointer', fontSize: 13, color: '#92400e', lineHeight: 1.6 }}>
+                  <input
+                    type="checkbox"
+                    checked={declaration}
+                    onChange={e => setDeclaration(e.target.checked)}
+                    disabled={isReadOnly}
+                    style={{ marginTop: 3, width: 16, height: 16, accentColor: '#4338ca', flexShrink: 0 }}
+                  />
+                  <span>
+                    <strong>Declaration:</strong> I hereby acknowledge that the university has the authority to reject my application at any stage. All information provided is true and correct to the best of my knowledge.
+                  </span>
+                </label>
               </div>
             </div>
           )}
@@ -1090,13 +1144,55 @@ export default function ApplicationForm() {
                 Next Step <ChevronRight size={17} />
               </button>
             ) : !isReadOnly ? (
-              <button style={S.btnSuccess} onClick={() => saveApplication(true)} disabled={saving}>
-                <Send size={16} /> {saving ? 'Submitting...' : 'Submit Application'}
+              <button
+                style={{ ...S.btnSuccess, opacity: declaration ? 1 : 0.55 }}
+                onClick={() => {
+                  if (!declaration) { toast.error('Please check the declaration before submitting.'); return; }
+                  setShowConfirmDialog(true);
+                }}
+                disabled={saving}
+              >
+                <Send size={16} /> Proceed to Final Submission
               </button>
             ) : null}
           </div>
         </div>
       </div>
+
+      {/* ─── Confirmation Dialog ─── */}
+      {showConfirmDialog && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div style={{ background: '#fff', borderRadius: 20, padding: '40px 40px 32px', maxWidth: 460, width: '100%', boxShadow: '0 24px 60px rgba(0,0,0,0.22)' }}>
+            <div style={{ textAlign: 'center', marginBottom: 28 }}>
+              <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#fff7ed', border: '2px solid #fed7aa', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 18px' }}>
+                <Send size={26} color="#ea580c" />
+              </div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: '#1e293b', marginBottom: 10 }}>Confirm Final Submission</div>
+              <div style={{ fontSize: 14, color: '#64748b', lineHeight: 1.7 }}>
+                Are you sure you want to submit your application?
+                <br />
+                <span style={{ color: '#92400e', fontWeight: 600 }}>Once submitted (Pending status), the form can only be edited after admin review.</span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <button
+                style={{ flex: 1, padding: '12px 20px', borderRadius: 12, border: '1.5px solid #e2e8f0', background: '#fff', color: '#374151', fontWeight: 600, cursor: 'pointer', fontSize: 14 }}
+                onClick={() => setShowConfirmDialog(false)}
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button
+                style={{ flex: 1, padding: '12px 20px', borderRadius: 12, border: 'none', background: 'linear-gradient(135deg,#059669,#047857)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 14, boxShadow: '0 4px 12px rgba(5,150,105,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+                onClick={() => { setShowConfirmDialog(false); saveApplication(true); }}
+                disabled={saving}
+              >
+                <CheckCircle size={16} /> {saving ? 'Submitting…' : 'Confirm Submission'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
