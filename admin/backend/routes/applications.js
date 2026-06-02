@@ -1306,60 +1306,158 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
  * PUT /api/applications/:id/status
  */
 router.put('/:id/status', verifyToken, isAdmin, async (req, res) => {
-  const { status } = req.body;
+  const { status, rejection_category, rejection_reason, notify_email = true, notify_dashboard = true } = req.body;
   const valid = ['Draft', 'Submitted', 'Under Review', 'Approved', 'Rejected'];
   if (!valid.includes(status)) return res.status(400).json({ success: false, message: 'Invalid status' });
+
+  // Rejection requires a reason
+  if (status === 'Rejected' && !rejection_reason?.trim()) {
+    return res.status(400).json({ success: false, message: 'Rejection reason is required.' });
+  }
+
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
-    const approvalDate = status === 'Approved' ? new Date() : null;
-    const approvalSql  = status === 'Approved'
-      ? 'UPDATE applications SET status = ?, approval_date = ?, updated_at = NOW() WHERE id = ?'
-      : 'UPDATE applications SET status = ?, updated_at = NOW() WHERE id = ?';
-    const approvalParams = status === 'Approved'
-      ? [status, approvalDate, req.params.id]
-      : [status, req.params.id];
 
-    await connection.execute(approvalSql, approvalParams);
+    // Build UPDATE based on status
+    let updateSql, updateParams;
+    if (status === 'Approved') {
+      updateSql    = 'UPDATE applications SET status = ?, approval_date = ?, updated_at = NOW() WHERE id = ?';
+      updateParams = [status, new Date(), req.params.id];
+    } else if (status === 'Rejected') {
+      updateSql    = `UPDATE applications SET status = ?, rejection_category = ?, rejection_reason = ?,
+                      rejected_by = ?, rejection_datetime = NOW(), updated_at = NOW() WHERE id = ?`;
+      updateParams = [status, rejection_category || null, rejection_reason.trim(), req.user.id, req.params.id];
+    } else {
+      updateSql    = 'UPDATE applications SET status = ?, updated_at = NOW() WHERE id = ?';
+      updateParams = [status, req.params.id];
+    }
+    await connection.execute(updateSql, updateParams);
 
-    // Fetch user_id + application_id for notifications and direct-pass evaluation
+    // Fetch full application row for notifications
     const [[appRow]] = await connection.execute(
-      'SELECT user_id, application_id FROM applications WHERE id = ?', [req.params.id]
+      `SELECT a.user_id, a.application_id, a.id AS db_id, a.status AS prev_status,
+              u.email, u.full_name
+       FROM applications a
+       LEFT JOIN users u ON u.id = a.user_id
+       WHERE a.id = ?`, [req.params.id]
     );
 
-    if (appRow) {
-      // Notify student of status change
-      const { notifyUser } = require('../services/notifyUser');
-      const STATUS_NOTIF = {
-        'Approved':     { title: 'Application Approved ✓',    message: 'Your PhD admission application has been approved. Please proceed with the application fee payment.', type: 'success' },
-        'Rejected':     { title: 'Application Not Approved',  message: 'Your application has not been approved at this stage. Please contact the admissions office for details.', type: 'danger' },
-        'Under Review': { title: 'Application Under Review',  message: 'Your application is currently being reviewed by the admissions committee.', type: 'info' },
-        'Submitted':    { title: 'Application Received',      message: 'Your application has been received and is awaiting review.', type: 'info' },
-      };
-      const notif = STATUS_NOTIF[status];
-      if (notif) await notifyUser(connection, appRow.user_id, notif.title, notif.message, notif.type);
+    let emailSent = 0, notifSent = 0;
 
-      // Re-evaluate direct pass when approved
-      if (status === 'Approved') {
-        const { evaluateDirectPass } = require('./qualification-rules');
-        await evaluateDirectPass(connection, appRow.application_id);
+    if (appRow) {
+      const { notifyUser } = require('../services/notifyUser');
+      const { enqueueEmail } = require('../../../shared/utils/notification');
+
+      if (status === 'Rejected') {
+        // ── Rich rejection notification ───────────────────────────────
+        if (notify_dashboard) {
+          await notifyUser(connection, appRow.user_id,
+            'Application Rejected',
+            `Your application has been rejected. ${rejection_category ? `Category: ${rejection_category}. ` : ''}Reason: ${rejection_reason.trim()}`,
+            'danger'
+          );
+          notifSent = 1;
+        }
+
+        if (notify_email && appRow.email) {
+          const emailHtml = `
+            <div style="font-family:sans-serif;padding:24px;color:#1e293b;max-width:600px">
+              <div style="background:#ef4444;padding:16px 20px;border-radius:10px 10px 0 0">
+                <h2 style="color:#fff;margin:0;font-size:18px">Application Rejection Notification</h2>
+              </div>
+              <div style="border:1px solid #fca5a5;border-top:none;border-radius:0 0 10px 10px;padding:24px">
+                <p>Dear <strong>${appRow.full_name || 'Applicant'}</strong>,</p>
+                <p>We regret to inform you that your application has been reviewed and could not be approved at this stage.</p>
+                <table style="width:100%;border-collapse:collapse;margin:16px 0">
+                  <tr style="background:#fef2f2"><td style="padding:10px 14px;font-weight:600;width:40%;border:1px solid #fca5a5">Application ID</td><td style="padding:10px 14px;border:1px solid #fca5a5">${appRow.application_id}</td></tr>
+                  ${rejection_category ? `<tr><td style="padding:10px 14px;font-weight:600;border:1px solid #fca5a5">Reason Category</td><td style="padding:10px 14px;border:1px solid #fca5a5">${rejection_category}</td></tr>` : ''}
+                  <tr style="background:#fef2f2"><td style="padding:10px 14px;font-weight:600;border:1px solid #fca5a5">Detailed Reason</td><td style="padding:10px 14px;border:1px solid #fca5a5">${rejection_reason.trim()}</td></tr>
+                </table>
+                <p style="color:#64748b;font-size:13px">For further clarification, please contact the university admissions office.</p>
+                <p style="color:#64748b;font-size:13px">Regards,<br><strong>Periyar University – PhD Admissions Cell</strong></p>
+              </div>
+            </div>`;
+          await enqueueEmail(pool, {
+            to_email: appRow.email,
+            subject:  'Application Rejection Notification',
+            title:    'Application Rejection Notification',
+            message:  `Your application (${appRow.application_id}) has been rejected. Reason: ${rejection_reason.trim()}`,
+            bodyHtml: emailHtml,
+            user_id:  appRow.user_id,
+            target_type: 'student',
+            type: 'error',
+          });
+          emailSent = 1;
+        }
+
+        // Update sent flags
+        await connection.execute(
+          'UPDATE applications SET rejection_email_sent = ?, rejection_notification_sent = ? WHERE id = ?',
+          [emailSent, notifSent, req.params.id]
+        );
+
+        // Write audit log
+        try {
+          let adminName = 'Admin';
+          const [[adm]] = await connection.execute('SELECT name FROM admin_users WHERE id = ? LIMIT 1', [req.user.id]).catch(() => [[null]]);
+          if (adm?.name) adminName = adm.name;
+          await connection.execute(
+            `INSERT INTO application_rejection_log
+             (application_db_id, application_id, rejection_category, rejection_reason,
+              rejected_by, rejected_by_name, previous_status, email_sent, notification_sent)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [req.params.id, appRow.application_id, rejection_category || null, rejection_reason.trim(),
+             req.user.id, adminName, appRow.prev_status, emailSent, notifSent]
+          );
+        } catch (_) { /* audit failure must not block */ }
+
+      } else {
+        // Non-rejection status notifications (existing logic preserved)
+        const STATUS_NOTIF = {
+          'Approved':     { title: 'Application Approved ✓',    message: 'Your PhD admission application has been approved. Please proceed with the application fee payment.', type: 'success' },
+          'Under Review': { title: 'Application Under Review',  message: 'Your application is currently being reviewed by the admissions committee.', type: 'info' },
+          'Submitted':    { title: 'Application Received',      message: 'Your application has been received and is awaiting review.', type: 'info' },
+        };
+        const notif = STATUS_NOTIF[status];
+        if (notif) await notifyUser(connection, appRow.user_id, notif.title, notif.message, notif.type);
+
+        if (status === 'Approved') {
+          const { evaluateDirectPass } = require('./qualification-rules');
+          await evaluateDirectPass(connection, appRow.application_id);
+        }
       }
     }
 
     const finalResult = await recomputeFinalResult(connection, req.params.id);
     await connection.commit();
-
-    // ─────────────────────────────────────────────────────────────
-    // Note: AutomaticEligibilityEngine now sets counselling_approval 
-    // automatically to 'Approved' for PASS/Direct-Qualifiers.
-    // ─────────────────────────────────────────────────────────────
-    
     res.json({ success: true, message: `Application status updated to ${status}`, final_result: finalResult });
   } catch (err) {
     await connection.rollback();
     res.status(500).json({ success: false, message: err.message });
   } finally {
     connection.release();
+  }
+});
+
+/**
+ * GET /api/applications/:id/rejection  — fetch stored rejection details (admin)
+ */
+router.get('/:id/rejection', verifyToken, isAdmin, async (req, res) => {
+  try {
+    const [[row]] = await pool.execute(
+      `SELECT a.status, a.rejection_category, a.rejection_reason, a.rejection_datetime,
+              a.rejection_email_sent, a.rejection_notification_sent,
+              au.name AS rejected_by_name
+       FROM applications a
+       LEFT JOIN admin_users au ON au.id = a.rejected_by
+       WHERE a.id = ?`,
+      [req.params.id]
+    );
+    if (!row) return res.status(404).json({ success: false, message: 'Application not found' });
+    res.json({ success: true, data: row });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 

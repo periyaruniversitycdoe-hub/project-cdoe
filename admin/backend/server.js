@@ -470,6 +470,39 @@ app.use('/api/news-announcements', newsAnnouncementsRoutes);
 })();
 
 
+// ── Application Rejection Workflow auto-migration ────────────────────────────
+(async () => {
+    const rejectionCols = [
+        { col: 'rejection_category',         def: "VARCHAR(100) DEFAULT NULL" },
+        { col: 'rejection_reason',           def: "TEXT DEFAULT NULL" },
+        { col: 'rejected_by',               def: "INT DEFAULT NULL" },
+        { col: 'rejection_datetime',         def: "DATETIME DEFAULT NULL" },
+        { col: 'rejection_email_sent',       def: "TINYINT(1) DEFAULT 0" },
+        { col: 'rejection_notification_sent',def: "TINYINT(1) DEFAULT 0" },
+    ];
+    for (const { col, def } of rejectionCols) {
+        try { await db.execute(`ALTER TABLE applications ADD COLUMN ${col} ${def}`); }
+        catch (e) { if (e.errno !== 1060 && e.code !== 'ER_DUP_FIELDNAME') console.error(`Rejection col ${col}:`, e.message); }
+    }
+    // Audit log for rejections
+    try {
+        await db.execute(`CREATE TABLE IF NOT EXISTS application_rejection_log (
+            id                     INT AUTO_INCREMENT PRIMARY KEY,
+            application_db_id      INT NOT NULL,
+            application_id         VARCHAR(50),
+            rejection_category     VARCHAR(100),
+            rejection_reason       TEXT,
+            rejected_by            INT,
+            rejected_by_name       VARCHAR(255),
+            previous_status        VARCHAR(50),
+            email_sent             TINYINT(1) DEFAULT 0,
+            notification_sent      TINYINT(1) DEFAULT 0,
+            created_at             TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+    } catch (e) { console.error('application_rejection_log table:', e.message); }
+    console.log('✅ Application Rejection Workflow schema verified.');
+})();
+
 // ── Supervisor & Centre Tracking Engine auto-migration ───────────────────────
 (async () => {
     // 1. Extend supervisors.status ENUM to include Suspended

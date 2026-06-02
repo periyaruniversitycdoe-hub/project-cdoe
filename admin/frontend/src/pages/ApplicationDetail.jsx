@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
-import { ArrowLeft, CheckCircle, XCircle, Clock, Save, Edit3, Printer, Award, CreditCard, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, CheckCircle, XCircle, Clock, Save, Edit3, Printer, Award, CreditCard, ShieldCheck, AlertTriangle, Eye } from 'lucide-react';
 
 const API_URL = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
 const SEMESTERS = ['First Semester', 'Second Semester', 'Third Semester', 'Fourth Semester', 'Fifth Semester', 'Sixth Semester'];
@@ -43,6 +43,11 @@ const ApplicationDetail = () => {
   const [savingCriteria, setSavingCriteria] = useState(false);
   const [savingAdmission, setSavingAdmission] = useState(false);
   const [savingPayment, setSavingPayment] = useState(false);
+
+  // Rejection dialog state
+  const [showRejectDialog, setShowRejectDialog] = useState(false);
+  const [rejectSubmitting, setRejectSubmitting] = useState(false);
+  const [showRejectionCard, setShowRejectionCard] = useState(false);
 
   const token = localStorage.getItem('adminToken');
   const headers = { Authorization: `Bearer ${token}` };
@@ -115,6 +120,22 @@ const ApplicationDetail = () => {
       setApp(prev => ({ ...prev, status }));
       setFormData(prev => ({ ...prev, status }));
     } catch { toast.error('Status update failed'); }
+  };
+
+  const handleRejectWithReason = async ({ rejection_category, rejection_reason, notify_email, notify_dashboard }) => {
+    setRejectSubmitting(true);
+    try {
+      await axios.put(`${API_URL}/applications/${id}/status`, {
+        status: 'Rejected', rejection_category, rejection_reason, notify_email, notify_dashboard,
+      }, { headers });
+      toast.success('Application rejected');
+      setShowRejectDialog(false);
+      fetchAll();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Rejection failed');
+    } finally {
+      setRejectSubmitting(false);
+    }
   };
 
   const handleSaveEntrance = async () => {
@@ -224,9 +245,14 @@ const ApplicationDetail = () => {
             <button className="btn btn-sm btn-warning d-flex align-items-center gap-1" onClick={() => handleStatus('Under Review')}>
               <Clock size={13} /> Review
             </button>
-            <button className="btn btn-sm btn-danger d-flex align-items-center gap-1" onClick={() => handleStatus('Rejected')}>
+            <button className="btn btn-sm btn-danger d-flex align-items-center gap-1" onClick={() => setShowRejectDialog(true)}>
               <XCircle size={13} /> Reject
             </button>
+            {app?.status === 'Rejected' && (
+              <button className="btn btn-sm btn-outline-danger d-flex align-items-center gap-1" onClick={() => setShowRejectionCard(v => !v)}>
+                <Eye size={13} /> View Reason
+              </button>
+            )}
             <div className="vr mx-1" />
             {editMode ? (
               <>
@@ -704,9 +730,158 @@ const ApplicationDetail = () => {
             </button>
           </div>
         )}
+
+        {/* Rejection Reason Card */}
+        {app?.status === 'Rejected' && showRejectionCard && (
+          <div className="card border-danger border-2 mt-3 shadow-sm">
+            <div className="card-header bg-danger text-white d-flex align-items-center gap-2 py-2">
+              <AlertTriangle size={16} />
+              <span className="fw-bold">Rejection Details</span>
+            </div>
+            <div className="card-body">
+              <div className="row g-3">
+                {[
+                  ['Reason Category', app.rejection_category || '—'],
+                  ['Rejected By',     app.rejected_by_name  || '—'],
+                  ['Rejected On',     app.rejection_datetime ? new Date(app.rejection_datetime).toLocaleString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—'],
+                  ['Email Sent',      app.rejection_email_sent ? 'Yes' : 'No'],
+                  ['Dashboard Notified', app.rejection_notification_sent ? 'Yes' : 'No'],
+                ].map(([k, v]) => (
+                  <div className="col-md-4" key={k}>
+                    <div className="small text-muted fw-semibold">{k}</div>
+                    <div className="fw-semibold">{v}</div>
+                  </div>
+                ))}
+                {app.rejection_reason && (
+                  <div className="col-12">
+                    <div className="small text-muted fw-semibold mb-1">Detailed Rejection Reason</div>
+                    <div className="p-3 rounded" style={{ background: '#fef2f2', border: '1px solid #fca5a5', fontSize: 14 }}>
+                      {app.rejection_reason}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+
+    {/* Rejection Dialog Modal */}
+    {showRejectDialog && (
+      <RejectionDialog
+        app={app}
+        loading={rejectSubmitting}
+        onConfirm={handleRejectWithReason}
+        onCancel={() => setShowRejectDialog(false)}
+      />
+    )}
+  );
+};
+
+// ── Rejection Reason Dialog ────────────────────────────────────────────────────
+const REJECTION_CATEGORIES = [
+  'Document Verification Failed',
+  'Eligibility Criteria Not Met',
+  'Minimum Marks Not Satisfied',
+  'Incorrect Information Submitted',
+  'Invalid Certificates',
+  'Duplicate Application',
+  'Application Incomplete',
+  'Fee Verification Failed',
+  'Community Certificate Issue',
+  'Photo / Signature Issue',
+  'Other',
+];
+
+function RejectionDialog({ app, loading, onConfirm, onCancel }) {
+  const [category,     setCategory]     = useState('');
+  const [reason,       setReason]       = useState('');
+  const [notifyEmail,  setNotifyEmail]  = useState(true);
+  const [notifyDash,   setNotifyDash]   = useState(true);
+  const [error,        setError]        = useState('');
+
+  function handleSubmit() {
+    if (!category) { setError('Please select a reason category.'); return; }
+    if (!reason.trim()) { setError('Detailed rejection reason is required.'); return; }
+    setError('');
+    onConfirm({ rejection_category: category, rejection_reason: reason.trim(), notify_email: notifyEmail, notify_dashboard: notifyDash });
+  }
+
+  return (
+    <div className="modal d-block" style={{ background: 'rgba(0,0,0,0.55)', zIndex: 9999 }}>
+      <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: 560 }}>
+        <div className="modal-content border-0 shadow-lg">
+          <div className="modal-header border-0 pb-1" style={{ background: '#fef2f2' }}>
+            <div className="d-flex align-items-center gap-2">
+              <XCircle size={20} color="#ef4444" />
+              <h5 className="modal-title fw-bold mb-0" style={{ color: '#991b1b' }}>Reject Application</h5>
+            </div>
+            <button className="btn-close" onClick={onCancel} disabled={loading} />
+          </div>
+          <div className="modal-body pt-3">
+            {/* Read-only info */}
+            <div className="p-3 rounded mb-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', fontSize: 13 }}>
+              <div className="row g-2">
+                <div className="col-6">
+                  <span className="text-muted">Application ID</span>
+                  <div className="fw-bold font-monospace">{app?.application_id || '—'}</div>
+                </div>
+                <div className="col-6">
+                  <span className="text-muted">Applicant Name</span>
+                  <div className="fw-bold">{app?.full_name || '—'}</div>
+                </div>
+                <div className="col-12">
+                  <span className="text-muted">Email</span>
+                  <div className="fw-semibold">{app?.email || '—'}</div>
+                </div>
+              </div>
+            </div>
+
+            {error && <div className="alert alert-danger py-2 small mb-3">{error}</div>}
+
+            <div className="mb-3">
+              <label className="form-label fw-semibold small">Reason Category <span className="text-danger">*</span></label>
+              <select className="form-select" value={category} onChange={e => setCategory(e.target.value)}>
+                <option value="">— Select Reason Category —</option>
+                {REJECTION_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+
+            <div className="mb-3">
+              <label className="form-label fw-semibold small">Detailed Rejection Reason <span className="text-danger">*</span></label>
+              <textarea
+                className="form-control"
+                rows={4}
+                placeholder="Provide a clear explanation of why the application is being rejected…"
+                value={reason}
+                onChange={e => setReason(e.target.value)}
+              />
+              <div className="text-muted mt-1" style={{ fontSize: 11 }}>{reason.trim().length} characters — minimum detail required.</div>
+            </div>
+
+            <div className="d-flex gap-4">
+              <div className="form-check">
+                <input className="form-check-input" type="checkbox" id="rNotifEmail" checked={notifyEmail} onChange={e => setNotifyEmail(e.target.checked)} />
+                <label className="form-check-label small fw-semibold" htmlFor="rNotifEmail">Send Email Notification</label>
+              </div>
+              <div className="form-check">
+                <input className="form-check-input" type="checkbox" id="rNotifDash" checked={notifyDash} onChange={e => setNotifyDash(e.target.checked)} />
+                <label className="form-check-label small fw-semibold" htmlFor="rNotifDash">Notify Student Dashboard</label>
+              </div>
+            </div>
+          </div>
+          <div className="modal-footer border-0 pt-1">
+            <button className="btn btn-outline-secondary" onClick={onCancel} disabled={loading}>Cancel</button>
+            <button className="btn btn-danger fw-semibold px-4" onClick={handleSubmit} disabled={loading}>
+              {loading ? <span className="spinner-border spinner-border-sm me-2" /> : <XCircle size={15} className="me-1" />}
+              Reject Application
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
-};
+}
 
 export default ApplicationDetail;

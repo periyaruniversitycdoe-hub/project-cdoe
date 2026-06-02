@@ -1917,8 +1917,10 @@ app.get('/api/student/eligibility', authenticateToken, async (req, res) => {
                     final_result_status, counselling_approval, payment_status, status,
                     direct_pass_status, application_id, result_published_at, pay_choice,
                     session_id,
-                    payment_decision, payment_due_date, payment_expired_at, payment_resume_count
-             FROM applications WHERE user_id = ? LIMIT 1`,
+                    payment_decision, payment_due_date, payment_expired_at, payment_resume_count,
+                    rejection_category, rejection_reason, rejection_datetime,
+                    (SELECT name FROM admin_users WHERE id = a.rejected_by LIMIT 1) AS rejected_by_name
+             FROM applications a WHERE a.user_id = ? LIMIT 1`,
             [req.user.id]
         );
         const app = appRows[0];

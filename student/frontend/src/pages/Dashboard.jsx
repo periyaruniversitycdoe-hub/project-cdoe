@@ -483,6 +483,48 @@ const Dashboard = () => {
         </div>
       </div>
 
+      {/* ── Rejection Reason Card ── shown only when application is rejected */}
+      {appStatus === 'Rejected' && (
+        <div className="animate-fade-in mb-4" style={{ borderRadius: 16, border: '2px solid #fca5a5', background: '#fff', boxShadow: '0 4px 16px rgba(239,68,68,0.08)', overflow: 'hidden' }}>
+          <div style={{ background: '#ef4444', padding: '14px 24px', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <XCircle size={20} color="#fff" />
+            <span style={{ color: '#fff', fontWeight: 700, fontSize: 15 }}>Application Status: REJECTED</span>
+          </div>
+          <div style={{ padding: '20px 24px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 16, marginBottom: eligibility?.rejection_reason ? 16 : 0 }}>
+              {eligibility?.rejection_category && (
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Reason Category</div>
+                  <div style={{ fontWeight: 700, color: '#991b1b' }}>{eligibility.rejection_category}</div>
+                </div>
+              )}
+              {eligibility?.rejection_datetime && (
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Rejected On</div>
+                  <div style={{ fontWeight: 600 }}>{new Date(eligibility.rejection_datetime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+                </div>
+              )}
+              {eligibility?.rejected_by_name && (
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Rejected By</div>
+                  <div style={{ fontWeight: 600 }}>{eligibility.rejected_by_name}</div>
+                </div>
+              )}
+            </div>
+            {eligibility?.rejection_reason && (
+              <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 10, padding: '14px 18px' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#991b1b', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Detailed Reason</div>
+                <div style={{ fontSize: 14, color: '#7f1d1d', lineHeight: 1.6 }}>{eligibility.rejection_reason}</div>
+              </div>
+            )}
+            <div style={{ marginTop: 14, fontSize: 12, color: '#6b7280', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <AlertCircle size={14} />
+              For further clarification, please contact the university admissions office.
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Communications Feed */}
       {notifications.length > 0 && (
           <div className="card shadow-sm rounded-4 mb-4 border-0 overflow-hidden animate-fade-in">
