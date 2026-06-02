@@ -220,7 +220,7 @@ export default function NewsAnnouncementsBoard({ apiBase, accentColor = '#1e3a5f
     };
     animRef.current = requestAnimationFrame(step);
     return () => { if (animRef.current) cancelAnimationFrame(animRef.current); };
-  }, [filtered, paused, SPEED]);
+  }, [filtered, paused, SPEED, isMobile]);
 
   // ── Full-size row ──────────────────────────────────────────────────────────
   const FullRow = ({ item }) => {
@@ -332,14 +332,17 @@ export default function NewsAnnouncementsBoard({ apiBase, accentColor = '#1e3a5f
         </div>
 
         {/* Right scrolling area */}
-        <div style={{
-          flex: 1,
-          position: 'relative',
-          height: boardH,
-          overflow: 'hidden',
-          background: '#ffffff',
-          padding: '2px 16px'
-        }}>
+        <div
+          className="announcements-container"
+          style={{
+            flex: 1,
+            position: 'relative',
+            height: isMobile ? '280px' : boardH,
+            overflow: 'hidden',
+            background: '#ffffff',
+            padding: '2px 16px'
+          }}
+        >
           {loading ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: '100%' }}>
               <div style={{ width: 16, height: 16, border: `2px solid #ddd`, borderTopColor: uniBlue, borderRadius: '50%', animation: 'annSpin 0.8s linear infinite' }} />
@@ -354,18 +357,22 @@ export default function NewsAnnouncementsBoard({ apiBase, accentColor = '#1e3a5f
               ref={scrollRef}
               onMouseEnter={() => setPaused(true)}
               onMouseLeave={() => setPaused(false)}
-              style={{ transform: `translateY(-${scrollY}px)`, willChange: 'transform' }}
+              style={{
+                transform: `translateY(-${scrollY}px)`,
+                willChange: 'transform'
+              }}
             >
-              {[...filtered, ...filtered].map((item, idx) => (
+              {(isMobile ? [...filtered.slice(0, 5), ...filtered.slice(0, 5)] : [...filtered, ...filtered]).map((item, idx) => (
                 <div
                   key={`${item.id}-${idx}`}
+                  className="announcement-item"
                   style={{
-                    height: '45px',
+                    height: isMobile ? 'auto' : '45px',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     borderBottom: '1px solid #f0f0f0',
-                    padding: '4px 0',
+                    padding: isMobile ? '10px' : '4px 0',
                     boxSizing: 'border-box',
                     gap: 12,
                   }}
@@ -383,8 +390,9 @@ export default function NewsAnnouncementsBoard({ apiBase, accentColor = '#1e3a5f
                       {new Date(item.publish_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
                     </span>
                     <span
+                      className="announcement-title"
                       style={{
-                        fontSize: '13.5px',
+                        fontSize: isMobile ? '13px' : '13.5px',
                         fontWeight: '600',
                         color: '#333333',
                         overflow: 'hidden',
@@ -423,6 +431,21 @@ export default function NewsAnnouncementsBoard({ apiBase, accentColor = '#1e3a5f
         <style>{`
           @keyframes annSpin  { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
           @keyframes annFadeIn { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: scale(1); } }
+          @media (max-width: 768px) {
+            .announcements-container {
+              max-height: 280px !important;
+              overflow-y: auto !important;
+            }
+            .announcement-item {
+              padding: 10px !important;
+              font-size: 13px !important;
+            }
+            .announcement-title {
+              white-space: nowrap !important;
+              overflow: hidden !important;
+              text-overflow: ellipsis !important;
+            }
+          }
         `}</style>
       </div>
     );

@@ -59,3 +59,23 @@ body {
   opacity: 0.85;
 }
 
+/* Mobile Responsive Specifications for Announcements Portal */
+@media (max-width: 768px) {
+  .announcements-container {
+    max-height: 280px;
+    overflow-y: auto;
+  }
+
+  .announcement-item {
+    padding: 10px;
+    font-size: 13px;
+  }
+
+  .announcement-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+
