@@ -30,7 +30,7 @@ foreach ($svc in $services) {
     if (Test-Path $logFile) { Remove-Item $logFile -Force }
 
     $p = Start-Process -FilePath $CF `
-         -ArgumentList "tunnel --url http://localhost:$($svc.port) --no-autoupdate 2>&1" `
+         -ArgumentList "tunnel --url http://127.0.0.1:$($svc.port) --no-autoupdate 2>&1" `
          -RedirectStandardError $logFile `
          -WindowStyle Hidden -PassThru
     $procs += $p
@@ -67,12 +67,17 @@ $adminBe      = $urls["admin-be"]
 $supervisorBe = $urls["supervisor-be"]
 $centerBe     = $urls["center-be"]
 
+$studentFe    = $urls["student-fe"]
+$adminFe      = $urls["admin-fe"]
+$supervisorFe = $urls["supervisor-fe"]
+$centerFe     = $urls["center-fe"]
+
 $envConfigs = @{
-    "student\frontend\.env" = "VITE_STUDENT_API_URL=$studentBe`nVITE_ADMIN_API_URL=$adminBe"
+    "student\frontend\.env" = "VITE_STUDENT_API_URL=$studentBe`nVITE_ADMIN_API_URL=$adminBe`nVITE_STUDENT_FE_URL=$studentFe`nVITE_ADMIN_FE_URL=$adminFe`nVITE_SUPERVISOR_FE_URL=$supervisorFe`nVITE_CENTER_FE_URL=$centerFe"
     "admin\frontend\.env"   = "VITE_ADMIN_API_URL=$adminBe`nVITE_STUDENT_API_URL=$studentBe`nVITE_SUPERVISOR_API_URL=$supervisorBe`nVITE_CENTER_API_URL=$centerBe"
     "supervisor\frontend\.env" = "VITE_SUPERVISOR_API_URL=$supervisorBe`nVITE_ADMIN_API_URL=$adminBe"
     "center\frontend\.env"  = "VITE_CENTER_API_URL=$centerBe`nVITE_ADMIN_API_URL=$adminBe"
-    "portal-dashboard\.env" = "VITE_STUDENT_API_URL=$studentBe`nVITE_ADMIN_API_URL=$adminBe`nVITE_SUPERVISOR_API_URL=$supervisorBe`nVITE_CENTER_API_URL=$centerBe"
+    "portal-dashboard\.env" = "VITE_STUDENT_API_URL=$studentBe`nVITE_ADMIN_API_URL=$adminBe`nVITE_SUPERVISOR_API_URL=$supervisorBe`nVITE_CENTER_API_URL=$centerBe`nVITE_STUDENT_FE_URL=$studentFe`nVITE_ADMIN_FE_URL=$adminFe`nVITE_SUPERVISOR_FE_URL=$supervisorFe`nVITE_CENTER_FE_URL=$centerFe"
 }
 
 Write-Host "`n📝  Writing frontend .env files...`n" -ForegroundColor Cyan

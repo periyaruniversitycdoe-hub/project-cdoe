@@ -18,7 +18,7 @@ $frontends = @(
     @{ Name = "center-fe    :5176"; Dir = "$root\center\frontend"     }
 )
 foreach ($fe in $frontends) {
-    Start-Process cmd -ArgumentList "/c cd /d `"$($fe.Dir)`" && npm run dev" -WindowStyle Minimized
+    Start-Process cmd -ArgumentList ('/c cd /d "{0}" && npm run dev' -f $fe.Dir) -WindowStyle Minimized
     Write-Host "✅  $($fe.Name)"
     Start-Sleep -Milliseconds 500
 }
