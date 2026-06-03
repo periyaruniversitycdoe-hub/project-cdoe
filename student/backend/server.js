@@ -58,6 +58,7 @@ app.use(cors({
             origin.startsWith('http://127.0.0.1') ||
             origin.endsWith('netlify.app') ||
             origin.endsWith('.loca.lt') ||
+            origin.endsWith('.trycloudflare.com') ||
             productionOrigins.includes(origin);
 
         if (allowed) callback(null, true);

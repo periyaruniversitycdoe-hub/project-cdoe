@@ -26,7 +26,7 @@ const allowedOrigins = [
 
 app.use(cors({
     origin: (origin, cb) => {
-        if (!origin || allowedOrigins.includes(origin) || origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1') || origin.endsWith('netlify.app') || origin.endsWith('.loca.lt')) cb(null, true);
+        if (!origin || allowedOrigins.includes(origin) || origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1') || origin.endsWith('netlify.app') || origin.endsWith('.loca.lt') || origin.endsWith('.trycloudflare.com')) cb(null, true);
         else cb(new Error('Not allowed by CORS'));
     },
     credentials: true,
