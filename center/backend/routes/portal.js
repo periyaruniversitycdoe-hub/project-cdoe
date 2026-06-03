@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
 const { verifyToken } = require('../middleware/auth');
+const { postUploadCheck } = require('../../../shared/security/fileValidator');
 const multer = require('multer');
 const credSvc = require('../../../shared/credential/credentialNotificationService');
 const path = require('path');
@@ -177,7 +178,7 @@ router.put('/change-password', verifyToken, async (req, res) => {
 });
 
 // POST /api/portal/application — save or update center application
-router.post('/application', verifyToken, centerUpload, async (req, res) => {
+router.post('/application', verifyToken, centerUpload, postUploadCheck(), async (req, res) => {
     const data = req.body;
 
     try {

@@ -1,1374 +1,1003 @@
 'use strict';
 
-const express = require('express');
-const router  = express.Router();
-const pool    = require('../config/db');
+/**
+ * PhD Admission Roster Management — Complete Rebuild
+ *
+ * Merit Score = Entrance Mark (/70) + Qualification Score (/30)
+ * Qualification Score = (percentage / 100) × 30
+ * Total Maximum = 100
+ *
+ * Reservation: OC 31%, BC 26.5%, BCM 3.5%, MBC/DNC 20%, SC 15%, SCA 3%, ST 1%
+ * Conversion:  BC→OC | BCM→BC | MBC/DNC→BC | SC→MBC/DNC | ST→SC
+ */
+
+const express  = require('express');
+const router   = express.Router();
+const pool     = require('../config/db');
 const { verifyToken, isAdmin } = require('../middleware/auth');
-const ExcelJS = require('exceljs');
-const multer  = require('multer');
-const path    = require('path');
-const fs      = require('fs');
+const ExcelJS  = require('exceljs');
+const multer   = require('multer');
+const path     = require('path');
 
-// ── Multer: Excel upload storage ─────────────────────────────────────────────
-const excelStorage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        const dest = path.join(__dirname, '../../uploads/roster_imports');
-        if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
-        cb(null, dest);
-    },
-    filename: (req, file, cb) => {
-        cb(null, `${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`);
-    }
-});
+// ── CONSTANTS ──────────────────────────────────────────────────────────────────
+const DEFAULT_CATEGORY_PERCENTAGES = {
+    'OC':       31.0,
+    'BC':       26.5,
+    'BCM':       3.5,
+    'MBC/DNC':  20.0,
+    'SC':       15.0,
+    'SCA':       3.0,
+    'ST':        1.0,
+};
 
-const uploadExcel = multer({
-    storage: excelStorage,
-    fileFilter: (req, file, cb) => {
-        if (
-            /openxmlformats-officedocument\.spreadsheetml\.sheet|vnd\.ms-excel/.test(file.mimetype) ||
-            file.originalname.endsWith('.xlsx')
-        ) return cb(null, true);
-        cb(new Error('Only Excel (.xlsx) files are allowed'));
-    },
-    limits: { fileSize: 50 * 1024 * 1024 }
-});
+const CONVERSION_CHAIN = {
+    'BC':      'OC',
+    'BCM':     'BC',
+    'MBC/DNC': 'BC',
+    'SC':      'MBC/DNC',
+    'ST':      'SC',
+};
 
-// ── Audit Logger ─────────────────────────────────────────────────────────────
-async function auditLog(adminId, adminEmail, action, oldValue, newValue, ip, module = 'Roster Management') {
+const CATEGORY_ORDER = ['OC', 'BC', 'BCM', 'MBC/DNC', 'SC', 'SCA', 'ST'];
+
+// ── DB SCHEMA (auto-create on startup) ─────────────────────────────────────────
+(async () => {
     try {
-        await pool.execute(
-            `INSERT INTO roster_audit_logs
-             (admin_id, admin_email, action, module, old_value, new_value, ip_address)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS roster_merit_list (
+                id                       INT AUTO_INCREMENT PRIMARY KEY,
+                session_id               INT,
+                application_id           VARCHAR(50) NOT NULL,
+                applicant_name           VARCHAR(255),
+                community                VARCHAR(50),
+                entrance_mark            DECIMAL(5,2) NOT NULL DEFAULT 0,
+                qualification_source     ENUM('PG','INTEGRATED') NOT NULL DEFAULT 'PG',
+                qualification_percentage DECIMAL(5,2) NOT NULL DEFAULT 0,
+                qualification_score      DECIMAL(5,2) NOT NULL DEFAULT 0,
+                final_merit_score        DECIMAL(5,2) NOT NULL DEFAULT 0,
+                merit_rank               INT,
+                application_date         DATETIME,
+                created_at               TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at               TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_session_app (session_id, application_id),
+                INDEX idx_session_id (session_id),
+                INDEX idx_merit_rank  (merit_rank)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS roster_entries (
+                id                       INT AUTO_INCREMENT PRIMARY KEY,
+                session_id               INT,
+                roster_number            INT,
+                application_id           VARCHAR(50) NOT NULL,
+                applicant_name           VARCHAR(255),
+                original_category        VARCHAR(50),
+                allocated_category       VARCHAR(50),
+                entrance_mark            DECIMAL(5,2),
+                qualification_percentage DECIMAL(5,2),
+                qualification_score      DECIMAL(5,2),
+                final_merit_score        DECIMAL(5,2),
+                merit_rank               INT,
+                allocation_status        ENUM('ALLOCATED','WAITING','NOT_ALLOCATED') DEFAULT 'NOT_ALLOCATED',
+                is_converted             TINYINT(1) DEFAULT 0,
+                conversion_from          VARCHAR(50),
+                conversion_to            VARCHAR(50),
+                created_at               TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at               TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                created_by               INT,
+                UNIQUE KEY uq_session_app (session_id, application_id),
+                INDEX idx_session_id (session_id),
+                INDEX idx_merit_rank  (merit_rank),
+                INDEX idx_category    (original_category),
+                INDEX idx_status      (allocation_status)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS roster_category_config (
+                id            INT AUTO_INCREMENT PRIMARY KEY,
+                session_id    INT DEFAULT NULL,
+                category_name VARCHAR(50) NOT NULL,
+                percentage    DECIMAL(5,2) NOT NULL,
+                created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_session_cat (session_id, category_name)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS roster_audit_log (
+                id          INT AUTO_INCREMENT PRIMARY KEY,
+                session_id  INT,
+                user_id     INT,
+                user_email  VARCHAR(255),
+                action      VARCHAR(100) NOT NULL,
+                entity_type VARCHAR(100),
+                entity_id   VARCHAR(100),
+                old_value   JSON,
+                new_value   JSON,
+                ip_address  VARCHAR(45),
+                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_session_id (session_id),
+                INDEX idx_action     (action),
+                INDEX idx_created_at (created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+
+        console.log('✅ Roster Management tables verified/created.');
+    } catch (err) {
+        console.error('❌ Roster Management DB setup error:', err.message);
+    }
+})();
+
+// ── HELPERS ────────────────────────────────────────────────────────────────────
+
+function calcQualScore(pct) {
+    return Math.round((parseFloat(pct) / 100) * 30 * 100) / 100;
+}
+
+function calcMeritScore(entranceMark, qualScore) {
+    return Math.round((parseFloat(entranceMark) + parseFloat(qualScore)) * 100) / 100;
+}
+
+function normalizeCategory(community) {
+    if (!community) return 'OC';
+    const c = community.trim().toUpperCase();
+    if (['BCM','BC(M)','BC(MUSLIM)','BC(MUSLIMS)','BC-MUSLIM'].includes(c)) return 'BCM';
+    if (['MBC/DNC','MBC','DNC','MBC & DNC','MBC AND DNC'].includes(c))      return 'MBC/DNC';
+    if (['SCA','SC(A)','SC(ARUNTHATHIYAR)'].includes(c))                    return 'SCA';
+    if (['OC','GENERAL','GEN','UR','OPEN'].includes(c))                     return 'OC';
+    if (c === 'BC') return 'BC';
+    if (c === 'SC') return 'SC';
+    if (c === 'ST') return 'ST';
+    return c;
+}
+
+function getCategoryVacancies(categoryConfig, totalSeats) {
+    const vacancies = {};
+    let assigned = 0;
+    for (const cat of CATEGORY_ORDER) {
+        if (categoryConfig[cat] === undefined) continue;
+        const seats = Math.round(totalSeats * (categoryConfig[cat] / 100));
+        vacancies[cat] = seats;
+        assigned += seats;
+    }
+    const diff = totalSeats - assigned;
+    if (diff !== 0 && vacancies['OC'] !== undefined) {
+        vacancies['OC'] = Math.max(0, vacancies['OC'] + diff);
+    }
+    return vacancies;
+}
+
+function getAllocatedCategory(originalCategory, vacancies) {
+    const cat = normalizeCategory(originalCategory);
+    if ((vacancies[cat] || 0) > 0) {
+        return { allocatedCat: cat, converted: false, from: null, to: null };
+    }
+    let current = cat;
+    const visited = new Set([current]);
+    while (CONVERSION_CHAIN[current]) {
+        current = CONVERSION_CHAIN[current];
+        if (visited.has(current)) break;
+        visited.add(current);
+        if ((vacancies[current] || 0) > 0) {
+            return { allocatedCat: current, converted: true, from: cat, to: current };
+        }
+    }
+    return { allocatedCat: null, converted: false, from: null, to: null };
+}
+
+async function writeAuditLog(db, { sessionId, userId, userEmail, action, entityType, entityId, oldValue, newValue, ip }) {
+    try {
+        await db.execute(
+            `INSERT INTO roster_audit_log
+             (session_id, user_id, user_email, action, entity_type, entity_id, old_value, new_value, ip_address)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
-                adminId    || null,
-                adminEmail || 'system@periyar.edu',
+                sessionId  || null,
+                userId     || null,
+                userEmail  || null,
                 action,
-                module,
-                oldValue  ? JSON.stringify(oldValue)  : null,
-                newValue  ? JSON.stringify(newValue)  : null,
-                ip        || null
+                entityType || null,
+                entityId   ? String(entityId) : null,
+                oldValue   ? JSON.stringify(oldValue) : null,
+                newValue   ? JSON.stringify(newValue) : null,
+                ip         || null,
             ]
         );
     } catch (e) {
-        console.error('Roster audit log error:', e.message);
+        console.error('[RosterAudit] write error:', e.message);
     }
 }
 
-// ── Sync supervisor vacancy from scholars table ───────────────────────────────
-async function syncSupervisorVacancy(conn, supervisorId) {
-    const [[sup]] = await conn.execute(
-        'SELECT max_candidates, max_part_time FROM supervisors WHERE id = ?',
-        [supervisorId]
-    );
-    if (!sup) return;
+const importUpload = multer({
+    storage: multer.memoryStorage(),
+    limits:  { fileSize: 10 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+        const ext = path.extname(file.originalname).toLowerCase();
+        if (['.xlsx', '.xls'].includes(ext)) return cb(null, true);
+        cb(new Error('Only .xlsx and .xls files are accepted'));
+    },
+});
 
-    const [[{ total_active, pt_active }]] = await conn.execute(
-        `SELECT
-            COUNT(*) AS total_active,
-            SUM(CASE WHEN scholar_type = 'Part-Time' THEN 1 ELSE 0 END) AS pt_active
-         FROM scholars
-         WHERE supervisor_id = ? AND status = 'Admitted'`,
-        [supervisorId]
-    );
+// ══════════════════════════════════════════════════════════════════════════════
+//  ROUTES
+// ══════════════════════════════════════════════════════════════════════════════
 
-    const scholars   = total_active || 0;
-    const ptScholars = pt_active    || 0;
-    const maxCap     = sup.max_candidates || 0;
-    const vacancy    = Math.max(0, maxCap - scholars);
-
-    await conn.execute(
-        `UPDATE supervisors
-         SET current_scholars_count = ?,
-             current_part_time_scholars_count = ?,
-             current_vacancy = ?
-         WHERE id = ?`,
-        [scholars, ptScholars, vacancy, supervisorId]
-    );
-}
-
-// ── Dynamic Vacancy Calculator (pool-aware) ───────────────────────────────────
-async function computeVacancyStats(conn, { department_id }) {
-    const [supervisors] = await conn.execute(
-        `SELECT id, name, max_candidates
-         FROM supervisors
-         WHERE department_id = ? AND status IN ('Active', 'Approved')`,
-        [department_id]
-    );
-
-    let totalCapacity  = 0;
-    let totalOccupied  = 0;
-    let totalVacancy   = 0;
-    const supervisorStats = [];
-
-    for (const s of supervisors) {
-        const [[{ admitted }]] = await conn.execute(
-            `SELECT COUNT(*) AS admitted FROM scholars WHERE supervisor_id = ? AND status = 'Admitted'`,
-            [s.id]
-        );
-        const cap  = s.max_candidates || 0;
-        const occ  = admitted         || 0;
-        const vac  = Math.max(0, cap - occ);
-
-        totalCapacity += cap;
-        totalOccupied += occ;
-        totalVacancy  += vac;
-
-        supervisorStats.push({ supervisor_id: s.id, supervisor_name: s.name, capacity: cap, occupied: occ, vacancy: vac });
-    }
-
-    return { totalCapacity, totalOccupied, totalVacancy, supervisorStats };
-}
-
-// =============================================================================
-// SECTION 1 — ROSTER CONFIGURATIONS
-// =============================================================================
-
-// GET config for a session (auto-seeds defaults)
-router.get('/config/:session_id', verifyToken, isAdmin, async (req, res) => {
-    const { session_id } = req.params;
+// GET /api/roster/sessions
+router.get('/sessions', verifyToken, isAdmin, async (_req, res) => {
     try {
-        const [rows] = await pool.execute(
-            'SELECT * FROM roster_configurations WHERE session_id = ?',
-            [session_id]
+        const [rows] = await pool.query(
+            `SELECT id,
+                    CONCAT(year, ' — ', month) AS session_name,
+                    year, month, is_active
+             FROM sessions ORDER BY id DESC`
         );
-        if (rows.length === 0) {
-            await pool.execute(
-                `INSERT INTO roster_configurations
-                 (session_id, pg_eligibility_pct, integrated_eligibility_pct, merit_percentage)
-                 VALUES (?, 70.00, 70.00, 30.00)`,
-                [session_id]
+        res.json({ success: true, data: rows });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// GET /api/roster/dashboard/:session_id
+router.get('/dashboard/:session_id', verifyToken, isAdmin, async (req, res) => {
+    const sid = req.params.session_id;
+    try {
+        const [[meritRow]] = await pool.query(
+            'SELECT COUNT(*) AS total FROM roster_merit_list WHERE session_id = ?', [sid]
+        );
+        const [[allocRow]] = await pool.query(`
+            SELECT COUNT(*) AS total,
+                   SUM(allocation_status='ALLOCATED')     AS allocated,
+                   SUM(allocation_status='WAITING')       AS waiting,
+                   SUM(allocation_status='NOT_ALLOCATED') AS not_allocated
+            FROM roster_entries WHERE session_id = ?
+        `, [sid]);
+        const [catRows] = await pool.query(`
+            SELECT allocated_category AS category, COUNT(*) AS count
+            FROM roster_entries
+            WHERE session_id = ? AND allocation_status = 'ALLOCATED'
+            GROUP BY allocated_category ORDER BY count DESC
+        `, [sid]);
+        const [[convRow]] = await pool.query(
+            'SELECT COUNT(*) AS total FROM roster_entries WHERE session_id = ? AND is_converted = 1', [sid]
+        );
+        const [[scoreRow]] = await pool.query(
+            'SELECT MAX(final_merit_score) AS highest, MIN(final_merit_score) AS lowest, ROUND(AVG(final_merit_score),2) AS avg FROM roster_merit_list WHERE session_id = ?', [sid]
+        );
+        res.json({
+            success: true,
+            data: {
+                meritTotal:        meritRow.total || 0,
+                allocated:         Number(allocRow.allocated)    || 0,
+                waiting:           Number(allocRow.waiting)      || 0,
+                notAllocated:      Number(allocRow.not_allocated) || 0,
+                totalRoster:       Number(allocRow.total)        || 0,
+                categoryBreakdown: catRows,
+                totalConverted:    Number(convRow.total)         || 0,
+                scoreStats:        scoreRow,
+            },
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// GET /api/roster/category-config
+router.get('/category-config', verifyToken, isAdmin, async (req, res) => {
+    const { session_id } = req.query;
+    try {
+        let rows = [];
+        if (session_id) {
+            [rows] = await pool.query(
+                'SELECT * FROM roster_category_config WHERE session_id = ?', [session_id]
             );
+        }
+        if (!rows.length) {
             return res.json({
                 success: true,
-                data: { session_id: parseInt(session_id), pg_eligibility_pct: 70.00, integrated_eligibility_pct: 70.00, merit_percentage: 30.00 }
+                data: CATEGORY_ORDER.map(cat => ({
+                    category_name: cat,
+                    percentage:    DEFAULT_CATEGORY_PERCENTAGES[cat],
+                    session_id:    session_id || null,
+                })),
             });
         }
-        res.json({ success: true, data: rows[0] });
+        rows.sort((a, b) => CATEGORY_ORDER.indexOf(a.category_name) - CATEGORY_ORDER.indexOf(b.category_name));
+        res.json({ success: true, data: rows });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
 });
 
-// POST/PUT roster configuration
-router.post('/config', verifyToken, isAdmin, async (req, res) => {
-    const { session_id, pg_eligibility_pct, integrated_eligibility_pct, merit_percentage } = req.body;
-    if (!session_id) return res.status(400).json({ success: false, message: 'session_id is required' });
-
+// PUT /api/roster/category-config
+router.put('/category-config', verifyToken, isAdmin, async (req, res) => {
+    const { session_id, categories } = req.body;
+    if (!Array.isArray(categories) || !categories.length) {
+        return res.status(400).json({ success: false, message: 'categories array required' });
+    }
+    const total = categories.reduce((s, c) => s + parseFloat(c.percentage || 0), 0);
+    if (Math.abs(total - 100) > 0.5) {
+        return res.status(400).json({ success: false, message: `Percentages must sum to 100 (got ${total.toFixed(2)})` });
+    }
+    const conn = await pool.getConnection();
     try {
-        const [existing] = await pool.execute(
-            'SELECT * FROM roster_configurations WHERE session_id = ?',
-            [session_id]
-        );
-
-        if (existing.length === 0) {
-            await pool.execute(
-                `INSERT INTO roster_configurations
-                 (session_id, pg_eligibility_pct, integrated_eligibility_pct, merit_percentage)
-                 VALUES (?, ?, ?, ?)`,
-                [session_id, pg_eligibility_pct ?? 70.00, integrated_eligibility_pct ?? 70.00, merit_percentage ?? 30.00]
+        await conn.beginTransaction();
+        for (const cat of categories) {
+            await conn.execute(
+                `INSERT INTO roster_category_config (session_id, category_name, percentage)
+                 VALUES (?, ?, ?)
+                 ON DUPLICATE KEY UPDATE percentage = VALUES(percentage), updated_at = NOW()`,
+                [session_id || null, cat.category_name, parseFloat(cat.percentage)]
             );
+        }
+        await conn.commit();
+        await writeAuditLog(conn, {
+            sessionId: session_id, userId: req.user?.id, userEmail: req.user?.email,
+            action: 'CATEGORY_CONFIG_UPDATED', entityType: 'roster_category_config',
+            entityId: session_id, newValue: categories, ip: req.ip,
+        });
+        res.json({ success: true, message: 'Category configuration saved' });
+    } catch (err) {
+        await conn.rollback();
+        res.status(500).json({ success: false, message: err.message });
+    } finally {
+        conn.release();
+    }
+});
+
+// POST /api/roster/merit-list/generate
+router.post('/merit-list/generate', verifyToken, isAdmin, async (req, res) => {
+    const { session_id } = req.body;
+    const conn = await pool.getConnection();
+    try {
+        await conn.beginTransaction();
+
+        const sessionFilter = session_id ? 'AND a.session_id = ?' : '';
+        const params        = session_id ? [session_id] : [];
+
+        const [apps] = await conn.execute(`
+            SELECT
+                a.application_id,
+                a.applicant_name,
+                a.community,
+                COALESCE(a.entrance_mark, 0)  AS entrance_mark,
+                COALESCE(a.has_integrated, 0) AS has_integrated,
+                a.created_at                  AS application_date,
+                he_pg.score_value             AS pg_percentage,
+                he_pg.score_type              AS pg_score_type,
+                he_int.score_value            AS int_percentage,
+                he_int.score_type             AS int_score_type
+            FROM applications a
+            LEFT JOIN higher_education he_pg
+                   ON he_pg.application_id = a.application_id
+                  AND UPPER(TRIM(he_pg.level)) = 'PG'
+            LEFT JOIN higher_education he_int
+                   ON he_int.application_id = a.application_id
+                  AND UPPER(TRIM(he_int.level)) LIKE '%INTEGRAT%'
+            WHERE a.entrance_mark IS NOT NULL
+              AND a.entrance_mark > 0
+              ${sessionFilter}
+            ORDER BY a.application_id
+        `, params);
+
+        if (!apps.length) {
+            await conn.rollback();
+            return res.status(400).json({
+                success: false,
+                message: session_id
+                    ? 'No applications with entrance marks found for this session'
+                    : 'No applications with entrance marks found',
+            });
+        }
+
+        const meritRows = apps.map(app => {
+            let qualSource = 'PG';
+            let qualPct    = 0;
+
+            if (app.has_integrated && app.int_percentage != null) {
+                qualSource = 'INTEGRATED';
+                qualPct    = parseFloat(app.int_percentage);
+                if (app.int_score_type === 'CGPA') qualPct = Math.min(qualPct * 10, 100);
+            } else if (app.pg_percentage != null) {
+                qualSource = 'PG';
+                qualPct    = parseFloat(app.pg_percentage);
+                if (app.pg_score_type === 'CGPA') qualPct = Math.min(qualPct * 10, 100);
+            }
+
+            qualPct = Math.max(0, Math.min(100, qualPct));
+            const qualScore  = calcQualScore(qualPct);
+            const meritScore = calcMeritScore(app.entrance_mark, qualScore);
+
+            return {
+                session_id:               session_id || null,
+                application_id:           app.application_id,
+                applicant_name:           app.applicant_name || '',
+                community:                normalizeCategory(app.community),
+                entrance_mark:            parseFloat(app.entrance_mark) || 0,
+                qualification_source:     qualSource,
+                qualification_percentage: qualPct,
+                qualification_score:      qualScore,
+                final_merit_score:        meritScore,
+                application_date:         app.application_date,
+            };
+        });
+
+        // Tie-break: merit DESC → entrance DESC → qual% DESC → date ASC → id ASC
+        meritRows.sort((a, b) => {
+            if (b.final_merit_score       !== a.final_merit_score)       return b.final_merit_score - a.final_merit_score;
+            if (b.entrance_mark           !== a.entrance_mark)            return b.entrance_mark - a.entrance_mark;
+            if (b.qualification_percentage !== a.qualification_percentage) return b.qualification_percentage - a.qualification_percentage;
+            if (a.application_date && b.application_date)
+                return new Date(a.application_date) - new Date(b.application_date);
+            return String(a.application_id).localeCompare(String(b.application_id));
+        });
+        meritRows.forEach((r, i) => { r.merit_rank = i + 1; });
+
+        if (session_id) {
+            await conn.execute('DELETE FROM roster_merit_list WHERE session_id = ?', [session_id]);
         } else {
-            await pool.execute(
-                `UPDATE roster_configurations
-                 SET pg_eligibility_pct = ?, integrated_eligibility_pct = ?, merit_percentage = ?
-                 WHERE session_id = ?`,
-                [pg_eligibility_pct ?? 70.00, integrated_eligibility_pct ?? 70.00, merit_percentage ?? 30.00, session_id]
-            );
+            await conn.execute('DELETE FROM roster_merit_list WHERE session_id IS NULL');
         }
 
-        await auditLog(req.user.id, req.user.email, 'UPDATE_ROSTER_CONFIG',
-            existing[0] || null,
-            { session_id, pg_eligibility_pct, integrated_eligibility_pct, merit_percentage },
-            req.ip);
-
-        res.json({ success: true, message: 'Roster configuration saved successfully' });
-    } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
-    }
-});
-
-// =============================================================================
-// SECTION 2 — VACANCY STATS ENGINE
-// =============================================================================
-
-router.get('/vacancy-stats', verifyToken, isAdmin, async (req, res) => {
-    const { department_id } = req.query;
-    if (!department_id) return res.status(400).json({ success: false, message: 'department_id is required' });
-
-    try {
-        const stats = await computeVacancyStats(pool, { department_id });
-
-        // Department-wise breakdown for this programme (all departments sharing the programme)
-        const [deptBreakdown] = await pool.execute(
-            `SELECT d.id AS department_id, d.name AS department_name,
-                    COALESCE(SUM(sp.max_candidates), 0)            AS capacity,
-                    COALESCE(SUM(sp.current_scholars_count), 0)    AS occupied,
-                    COALESCE(SUM(sp.current_vacancy), 0)           AS vacancy
-             FROM departments d
-             LEFT JOIN supervisors sp
-               ON sp.department_id = d.id AND sp.status IN ('Active','Approved')
-             WHERE d.id = ?
-             GROUP BY d.id, d.name`,
-            [department_id]
-        );
-
-        res.json({
-            success: true,
-            data: {
-                totalCapacity:       stats.totalCapacity,
-                totalOccupied:       stats.totalOccupied,
-                totalVacancy:        stats.totalVacancy,
-                supervisorBreakdown: stats.supervisorStats,
-                departmentBreakdown: deptBreakdown
-            }
-        });
-    } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
-    }
-});
-
-// =============================================================================
-// SECTION 3 — CORE RECALCULATION ENGINE
-// =============================================================================
-
-router.post('/recalculate', verifyToken, isAdmin, async (req, res) => {
-    const { session_id, program_id, department_id } = req.body;
-    if (!session_id || !program_id || !department_id) {
-        return res.status(400).json({ success: false, message: 'session_id, program_id, and department_id are required' });
-    }
-
-    const conn = await pool.getConnection();
-    try {
-        await conn.beginTransaction();
-
-        // ── 1. Session Config ──────────────────────────────────────────────────
-        const [[cfg]] = await conn.execute(
-            'SELECT pg_eligibility_pct, integrated_eligibility_pct, merit_percentage FROM roster_configurations WHERE session_id = ?',
-            [session_id]
-        );
-        const pgThreshold  = cfg ? parseFloat(cfg.pg_eligibility_pct)         : 70.00;
-        const intThreshold = cfg ? parseFloat(cfg.integrated_eligibility_pct) : 70.00;
-        const meritPct     = cfg ? parseFloat(cfg.merit_percentage)            : 30.00;
-
-        // ── 2. Dynamic Vacancy ─────────────────────────────────────────────────
-        const vacStats       = await computeVacancyStats(conn, { department_id });
-        const totalVacancies = vacStats.totalVacancy;
-
-        // ── 3. Fetch Approved Applicants ───────────────────────────────────────
-        const [applicants] = await conn.execute(
-            `SELECT
-                a.application_id,
-                COALESCE(a.applicant_name, u.full_name) AS applicant_name,
-                a.community,
-                a.entrance_mark,
-                a.has_integrated,
-                a.has_pg,
-                a.allotted_supervisor_id
-             FROM applications a
-             JOIN users u ON a.user_id = u.id
-             WHERE a.session_id = ?
-               AND a.program_offered_id = ?
-               AND a.status = 'Approved'`,
-            [session_id, program_id]
-        );
-
-        const poolCandidates = [];
-
-        // ── 4. Score Computation ───────────────────────────────────────────────
-        for (const app of applicants) {
-            // Qualifying degree: PG or Integrated, never both
-            const [qualRows] = await conn.execute(
-                `SELECT score_value, level
-                 FROM higher_education
-                 WHERE application_id = ? AND level IN ('PG', 'Integrated')
-                 ORDER BY FIELD(level, 'Integrated', 'PG') ASC
-                 LIMIT 1`,
-                [app.application_id]
-            );
-
-            let degreeType = app.has_integrated ? 'Integrated' : 'PG';
-            let scoreValue = 0;
-
-            if (qualRows.length > 0) {
-                degreeType = qualRows[0].level;
-                scoreValue = parseFloat(qualRows[0].score_value) || 0;
-            } else {
-                // Fallback: applications.score_value
-                const [[fb]] = await conn.execute(
-                    'SELECT score_value FROM applications WHERE application_id = ?',
-                    [app.application_id]
-                );
-                if (fb) scoreValue = parseFloat(fb.score_value) || 0;
-            }
-
-            const threshold = degreeType === 'Integrated' ? intThreshold : pgThreshold;
-            const isExcluded = scoreValue < threshold ? 1 : 0;
-            const exclusionReason = isExcluded
-                ? `${degreeType} score ${scoreValue.toFixed(2)}% is below the required ${threshold}% eligibility threshold.`
-                : null;
-
-            // Academic Weightage: (score / 100) × 20, max 20 marks
-            const academicWeightage = parseFloat(((scoreValue / 100) * 20).toFixed(2));
-            // Entrance Exam max 70 marks (from existing module — not modified)
-            const entranceMark      = parseFloat(app.entrance_mark) || 0;
-            // Final Score max 90 marks
-            const finalScore        = parseFloat((entranceMark + academicWeightage).toFixed(2));
-
-            poolCandidates.push({
-                application_id:         app.application_id,
-                applicant_name:         app.applicant_name,
-                community:              app.community || 'OC',
-                score_value:            scoreValue,
-                entrance_mark:          entranceMark,
-                academic_weightage:     academicWeightage,
-                final_score:            finalScore,
-                degree_type:            degreeType,
-                is_excluded:            isExcluded,
-                exclusion_reason:       exclusionReason,
-                allotted_supervisor_id: app.allotted_supervisor_id || null
-            });
-        }
-
-        // ── 5. Split Eligible / Excluded ───────────────────────────────────────
-        const eligibleList = poolCandidates.filter(c => !c.is_excluded);
-        const excludedList = poolCandidates.filter(c =>  c.is_excluded);
-
-        // Sort: Final Score DESC → Entrance Mark DESC → Degree % DESC
-        eligibleList.sort((a, b) => {
-            if (b.final_score   !== a.final_score)   return b.final_score   - a.final_score;
-            if (b.entrance_mark !== a.entrance_mark) return b.entrance_mark - a.entrance_mark;
-            return b.score_value - a.score_value;
-        });
-
-        // ── 6. Merit Allocation ────────────────────────────────────────────────
-        const meritSeatsLimit = Math.round(totalVacancies * meritPct / 100);
-        const selectedMerit   = [];
-        const meritWaiting    = [];
-
-        eligibleList.forEach((c, i) => {
-            if (i < meritSeatsLimit) {
-                c.allotted_seat_type = 'Merit';
-                c.allotted_category  = 'Merit';
-                c.selection_status   = 'Selected';
-                selectedMerit.push(c);
-            } else {
-                meritWaiting.push(c);
-            }
-        });
-
-        // ── 7. Community Reservation Allocation ───────────────────────────────
-        const remainingSeats = Math.max(0, totalVacancies - selectedMerit.length);
-
-        const [communities] = await conn.execute(
-            `SELECT community_name, roster_percentage
-             FROM community_fees
-             WHERE status = 'active' AND roster_percentage > 0
-             ORDER BY id ASC`
-        );
-
-        const selectedRes       = [];
-        const commWaitPool      = {};
-        const selectedIds       = new Set(selectedMerit.map(c => c.application_id));
-
-        // Group non-merit eligible by community
-        meritWaiting.forEach(c => {
-            if (!commWaitPool[c.community]) commWaitPool[c.community] = [];
-            commWaitPool[c.community].push(c);
-        });
-
-        communities.forEach(comm => {
-            const seats = Math.round(remainingSeats * (parseFloat(comm.roster_percentage) / 100));
-            const pool  = commWaitPool[comm.community_name] || [];
-            pool.forEach((cand, idx) => {
-                if (idx < seats) {
-                    cand.allotted_seat_type = 'Reservation';
-                    cand.allotted_category  = comm.community_name;
-                    cand.selection_status   = 'Selected';
-                    selectedRes.push(cand);
-                    selectedIds.add(cand.application_id);
-                }
-            });
-        });
-
-        // ── 8. Waiting List ───────────────────────────────────────────────────
-        const waitingPool = eligibleList.filter(c => !selectedIds.has(c.application_id));
-        waitingPool.forEach(c => {
-            c.selection_status   = 'Waiting';
-            c.allotted_seat_type = null;
-            c.allotted_category  = null;
-        });
-
-        // ── 9. Assign Ranks ────────────────────────────────────────────────────
-        selectedMerit.forEach((c, i) => {
-            c.merit_rank       = i + 1;
-            c.reservation_rank = null;
-        });
-
-        const resCounters = {};
-        selectedRes.forEach(c => {
-            resCounters[c.community] = (resCounters[c.community] || 0) + 1;
-            c.reservation_rank = resCounters[c.community];
-            c.merit_rank       = null;
-        });
-
-        waitingPool.forEach((c, i) => {
-            c.merit_rank = i + 1;
-            const commWait = waitingPool.filter(w => w.community === c.community);
-            c.reservation_rank = commWait.indexOf(c) + 1;
-        });
-
-        excludedList.forEach(c => {
-            c.selection_status   = 'Not Selected';
-            c.allotted_seat_type = null;
-            c.allotted_category  = null;
-            c.merit_rank         = null;
-            c.reservation_rank   = null;
-        });
-
-        // ── 10. Persist to Database ────────────────────────────────────────────
-        const allCandidates = [...selectedMerit, ...selectedRes, ...waitingPool, ...excludedList];
-
-        if (allCandidates.length > 0) {
-            const placeholders = allCandidates.map(() => '?').join(',');
+        for (const r of meritRows) {
             await conn.execute(
-                `DELETE FROM roster_allocations WHERE application_id IN (${placeholders})`,
-                allCandidates.map(c => c.application_id)
+                `INSERT INTO roster_merit_list
+                 (session_id, application_id, applicant_name, community, entrance_mark,
+                  qualification_source, qualification_percentage, qualification_score,
+                  final_merit_score, merit_rank, application_date)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [r.session_id, r.application_id, r.applicant_name, r.community,
+                 r.entrance_mark, r.qualification_source, r.qualification_percentage,
+                 r.qualification_score, r.final_merit_score, r.merit_rank, r.application_date]
             );
-
-            for (const cand of allCandidates) {
-                const rosterStatus = cand.selection_status === 'Selected' ? 'Selected' : 'Waiting';
-                await conn.execute(
-                    `INSERT INTO roster_allocations
-                     (application_id, academic_weightage, final_score, merit_rank, reservation_rank,
-                      selection_status, roster_status, allotted_seat_type, allotted_category,
-                      allotted_supervisor_id, is_excluded, exclusion_reason)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                    [
-                        cand.application_id,
-                        cand.academic_weightage,
-                        cand.final_score,
-                        cand.merit_rank           || null,
-                        cand.reservation_rank     || null,
-                        cand.selection_status,
-                        rosterStatus,
-                        cand.allotted_seat_type   || null,
-                        cand.allotted_category    || null,
-                        cand.allotted_supervisor_id || null,
-                        cand.is_excluded,
-                        cand.exclusion_reason     || null
-                    ]
-                );
-            }
         }
 
         await conn.commit();
-
-        await auditLog(req.user.id, req.user.email, 'ROSTER_RECALCULATED', null, {
-            session_id, program_id, department_id,
-            total_vacancies: totalVacancies,
-            merit_seats:     meritSeatsLimit,
-            selected:        selectedMerit.length + selectedRes.length,
-            waiting:         waitingPool.length,
-            excluded:        excludedList.length,
-            processed:       allCandidates.length
-        }, req.ip);
+        await writeAuditLog(conn, {
+            sessionId: session_id, userId: req.user?.id, userEmail: req.user?.email,
+            action: 'MERIT_LIST_GENERATED', entityType: 'roster_merit_list',
+            entityId: session_id, newValue: { count: meritRows.length, session_id }, ip: req.ip,
+        });
 
         res.json({
             success: true,
-            message: 'Roster recalculation completed successfully',
-            summary: {
-                totalVacancies,
-                meritSeats:  meritSeatsLimit,
-                selected:    selectedMerit.length + selectedRes.length,
-                waiting:     waitingPool.length,
-                excluded:    excludedList.length,
-                processed:   allCandidates.length
-            }
+            message: `Merit list generated — ${meritRows.length} candidates ranked`,
+            count:   meritRows.length,
         });
     } catch (err) {
         await conn.rollback();
-        console.error('Roster recalculation error:', err);
+        console.error('[Roster] Merit generation error:', err);
         res.status(500).json({ success: false, message: err.message });
     } finally {
         conn.release();
     }
 });
 
-// =============================================================================
-// SECTION 4 — ROSTER SELECTION LIST
-// =============================================================================
-
-router.get('/list', verifyToken, isAdmin, async (req, res) => {
-    const { session_id, program_id, department_id, supervisor_id, community, status } = req.query;
-    if (!session_id || !program_id || !department_id) {
-        return res.status(400).json({ success: false, message: 'session_id, program_id, and department_id are required' });
-    }
-
+// GET /api/roster/merit-list
+router.get('/merit-list', verifyToken, isAdmin, async (req, res) => {
+    const { session_id, page = 1, limit = 50, search = '', community = '' } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
     try {
-        let sql = `
-            SELECT
-                a.application_id,
-                COALESCE(a.applicant_name, u.full_name) AS applicant_name,
-                a.community,
-                a.entrance_mark,
-                a.mobile,
-                a.gender,
-                ra.academic_weightage,
-                ra.final_score,
-                ra.merit_rank,
-                ra.reservation_rank,
-                ra.selection_status,
-                ra.roster_status,
-                ra.allotted_seat_type,
-                ra.allotted_category,
-                ra.allotted_supervisor_id,
-                ra.is_excluded,
-                ra.exclusion_reason,
-                sup.name  AS allotted_supervisor_name,
-                po.name   AS programme_name,
-                d.name    AS department_name,
-                he.score_value AS degree_percentage,
-                he.level       AS degree_type
-            FROM applications a
-            JOIN users u ON a.user_id = u.id
-            LEFT JOIN roster_allocations ra ON a.application_id = ra.application_id
-            LEFT JOIN supervisors sup ON ra.allotted_supervisor_id = sup.id
-            LEFT JOIN programs_offered po ON a.program_offered_id  = po.id
-            LEFT JOIN departments d       ON a.department_id       = d.id
-            LEFT JOIN higher_education he ON (
-                a.application_id = he.application_id
-                AND he.level IN ('PG','Integrated')
-            )
-            WHERE a.session_id = ?
-              AND a.program_offered_id = ?
-              AND a.department_id = ?
-        `;
-        const params = [session_id, program_id, department_id];
-
-        if (supervisor_id && supervisor_id !== 'all') {
-            sql += ' AND ra.allotted_supervisor_id = ?';
-            params.push(supervisor_id);
-        }
-        if (community && community !== 'all') {
-            sql += ' AND a.community = ?';
-            params.push(community);
-        }
-        if (status && status !== 'all') {
-            sql += ' AND ra.selection_status = ?';
-            params.push(status);
-        }
-
-        sql += ' ORDER BY ra.is_excluded ASC, COALESCE(ra.final_score, 0) DESC, ra.merit_rank ASC';
-
-        const [rows] = await pool.execute(sql, params);
-        res.json({ success: true, data: rows });
-    } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
-    }
-});
-
-// =============================================================================
-// SECTION 5 — AUTO REPLACEMENT ENGINE
-// =============================================================================
-
-router.put('/status/:application_id', verifyToken, isAdmin, async (req, res) => {
-    const { application_id } = req.params;
-    const { roster_status }  = req.body;
-
-    const RELEASED_STATES = ['Rejected', 'No Show', 'Verification Failed', 'Withdrawn', 'Cancelled'];
-    const conn = await pool.getConnection();
-
-    try {
-        await conn.beginTransaction();
-
-        const [[alloc]] = await conn.execute(
-            `SELECT ra.*, a.session_id, a.program_offered_id, a.department_id, a.community,
-                    COALESCE(a.applicant_name, u.full_name) AS applicant_name
-             FROM roster_allocations ra
-             JOIN applications a ON ra.application_id = a.application_id
-             JOIN users u ON a.user_id = u.id
-             WHERE ra.application_id = ?`,
-            [application_id]
-        );
-
-        if (!alloc) {
-            await conn.rollback();
-            return res.status(404).json({ success: false, message: 'Roster allocation record not found' });
-        }
-
-        const oldStatus   = alloc.roster_status;
-        const wasSelected = alloc.selection_status === 'Selected';
-
-        // Update status
-        await conn.execute(
-            'UPDATE roster_allocations SET roster_status = ?, updated_at = NOW() WHERE application_id = ?',
-            [roster_status, application_id]
-        );
-
-        let promotionDetails = null;
-
-        // ── Auto-Replacement: released seat → promote next eligible candidate ─
-        if (wasSelected && RELEASED_STATES.includes(roster_status)) {
-            await conn.execute(
-                `UPDATE roster_allocations
-                 SET selection_status = 'Not Selected', merit_rank = NULL, reservation_rank = NULL
-                 WHERE application_id = ?`,
-                [application_id]
-            );
-
-            const seatType = alloc.allotted_seat_type;
-            const category = alloc.allotted_category;
-
-            let nextQuery = `
-                SELECT ra.application_id,
-                       COALESCE(a.applicant_name, u.full_name) AS applicant_name,
-                       a.community
-                FROM roster_allocations ra
-                JOIN applications a ON ra.application_id = a.application_id
-                JOIN users u ON a.user_id = u.id
-                WHERE a.session_id = ?
-                  AND a.program_offered_id = ?
-                  AND a.department_id = ?
-                  AND ra.selection_status = 'Waiting'
-                  AND ra.is_excluded = 0
-            `;
-            const qParams = [alloc.session_id, alloc.program_offered_id, alloc.department_id];
-
-            // Reservation seat → same community only
-            if (seatType === 'Reservation') {
-                nextQuery += ' AND a.community = ?';
-                qParams.push(alloc.community);
-            }
-
-            nextQuery += ' ORDER BY ra.final_score DESC, ra.created_at ASC LIMIT 1';
-            const [[nextCand]] = await conn.execute(nextQuery, qParams);
-
-            if (nextCand) {
-                await conn.execute(
-                    `UPDATE roster_allocations
-                     SET selection_status = 'Selected',
-                         roster_status    = 'Selected',
-                         allotted_seat_type = ?,
-                         allotted_category  = ?,
-                         updated_at         = NOW()
-                     WHERE application_id = ?`,
-                    [seatType, category, nextCand.application_id]
-                );
-
-                promotionDetails = {
-                    released_application_id: application_id,
-                    released_name:           alloc.applicant_name,
-                    promoted_application_id: nextCand.application_id,
-                    promoted_name:           nextCand.applicant_name,
-                    seat_type:               seatType,
-                    category
-                };
-
-                await auditLog(req.user.id, req.user.email, 'AUTO_REPLACEMENT',
-                    { released: application_id, quota: category },
-                    { promoted: nextCand.application_id, name: nextCand.applicant_name },
-                    req.ip);
-            }
-        }
-
-        await conn.commit();
-
-        await auditLog(req.user.id, req.user.email, 'UPDATE_ROSTER_STATUS',
-            { application_id, roster_status: oldStatus },
-            { application_id, roster_status, promotion: promotionDetails },
-            req.ip);
-
-        res.json({ success: true, message: 'Status updated successfully', promoted: promotionDetails });
-    } catch (err) {
-        await conn.rollback();
-        console.error('Status update error:', err);
-        res.status(500).json({ success: false, message: err.message });
-    } finally {
-        conn.release();
-    }
-});
-
-// =============================================================================
-// SECTION 6 — SUPERVISOR ALLOCATION
-// =============================================================================
-
-router.put('/allocate-supervisor/:application_id', verifyToken, isAdmin, async (req, res) => {
-    const { application_id } = req.params;
-    const { supervisor_id }  = req.body;
-
-    const conn = await pool.getConnection();
-    try {
-        await conn.beginTransaction();
-
-        const [[alloc]] = await conn.execute(
-            'SELECT * FROM roster_allocations WHERE application_id = ?',
-            [application_id]
-        );
-        if (!alloc) {
-            await conn.rollback();
-            return res.status(404).json({ success: false, message: 'Roster record not found' });
-        }
-
-        if (supervisor_id) {
-            const [[sup]] = await conn.execute(
-                'SELECT current_vacancy, name FROM supervisors WHERE id = ?',
-                [supervisor_id]
-            );
-            if (!sup) {
-                await conn.rollback();
-                return res.status(404).json({ success: false, message: 'Supervisor not found' });
-            }
-            if (sup.current_vacancy <= 0 && alloc.allotted_supervisor_id !== parseInt(supervisor_id)) {
-                await conn.rollback();
-                return res.status(400).json({ success: false, message: `Supervisor ${sup.name} has no available vacancy` });
-            }
-        }
-
-        await conn.execute(
-            'UPDATE roster_allocations SET allotted_supervisor_id = ?, updated_at = NOW() WHERE application_id = ?',
-            [supervisor_id || null, application_id]
-        );
-        await conn.execute(
-            'UPDATE applications SET allotted_supervisor_id = ?, updated_at = NOW() WHERE application_id = ?',
-            [supervisor_id || null, application_id]
-        );
-
-        await conn.commit();
-
-        await auditLog(req.user.id, req.user.email, 'ALLOCATE_SUPERVISOR',
-            { application_id, old_supervisor: alloc.allotted_supervisor_id },
-            { application_id, new_supervisor: supervisor_id },
-            req.ip);
-
-        res.json({ success: true, message: 'Supervisor allocated successfully' });
-    } catch (err) {
-        await conn.rollback();
-        res.status(500).json({ success: false, message: err.message });
-    } finally {
-        conn.release();
-    }
-});
-
-// =============================================================================
-// SECTION 7 — EXCEL EXPORT ENGINE
-// =============================================================================
-
-router.get('/export', verifyToken, isAdmin, async (req, res) => {
-    const { session_id, program_id, department_id, supervisor_id, community, status } = req.query;
-    if (!session_id || !program_id || !department_id) {
-        return res.status(400).json({ success: false, message: 'session_id, program_id, and department_id are required' });
-    }
-
-    try {
-        let sql = `
-            SELECT
-                a.application_id,
-                COALESCE(a.applicant_name, u.full_name) AS applicant_name,
-                u.email,
-                a.mobile,
-                a.gender,
-                a.community,
-                a.entrance_mark,
-                ra.academic_weightage,
-                ra.final_score,
-                ra.merit_rank,
-                ra.reservation_rank,
-                ra.selection_status,
-                ra.roster_status,
-                ra.allotted_seat_type,
-                ra.allotted_category,
-                ra.is_excluded,
-                ra.exclusion_reason,
-                sup.name  AS allotted_supervisor_name,
-                po.name   AS programme_name,
-                d.name    AS department_name,
-                he.score_value AS degree_percentage,
-                he.level       AS degree_type
-            FROM applications a
-            JOIN users u ON a.user_id = u.id
-            LEFT JOIN roster_allocations ra ON a.application_id = ra.application_id
-            LEFT JOIN supervisors sup ON ra.allotted_supervisor_id = sup.id
-            LEFT JOIN programs_offered po ON a.program_offered_id  = po.id
-            LEFT JOIN departments d       ON a.department_id       = d.id
-            LEFT JOIN higher_education he ON (
-                a.application_id = he.application_id AND he.level IN ('PG','Integrated')
-            )
-            WHERE a.session_id = ? AND a.program_offered_id = ? AND a.department_id = ?
-        `;
-        const params = [session_id, program_id, department_id];
-
-        if (supervisor_id && supervisor_id !== 'all') { sql += ' AND ra.allotted_supervisor_id = ?'; params.push(supervisor_id); }
-        if (community    && community    !== 'all')    { sql += ' AND a.community = ?';               params.push(community); }
-        if (status       && status       !== 'all')    { sql += ' AND ra.selection_status = ?';       params.push(status); }
-
-        sql += ' ORDER BY ra.is_excluded ASC, COALESCE(ra.final_score,0) DESC, ra.merit_rank ASC';
-
-        const [rows] = await pool.execute(sql, params);
-
-        const workbook = new ExcelJS.Workbook();
-        workbook.creator = 'Periyar University ERP';
-        workbook.created = new Date();
-
-        const sheet = workbook.addWorksheet('Roster Allocations', {
-            pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true }
-        });
-
-        // Title rows
-        sheet.addRow([]);
-        const t1 = sheet.addRow(['PERIYAR UNIVERSITY — Ph.D ADMISSION ERP — DYNAMIC ROSTER ALLOCATION LEDGER']);
-        t1.getCell(1).font = { bold: true, size: 13, color: { argb: 'FF1E3A8A' } };
-        t1.getCell(1).alignment = { horizontal: 'center' };
-        sheet.mergeCells('A2:T2');
-
-        if (rows.length > 0) {
-            const meta = sheet.addRow([
-                `Programme: ${rows[0].programme_name || '—'} | Department: ${rows[0].department_name || '—'} | Exported: ${new Date().toLocaleString('en-IN')}`
-            ]);
-            meta.getCell(1).font = { italic: true, size: 9, color: { argb: 'FF555555' } };
-            sheet.mergeCells('A3:T3');
-        }
-        sheet.addRow([]);
-
-        const HEADERS = [
-            'S.No', 'Application ID', 'Applicant Name', 'Email', 'Mobile', 'Gender', 'Community',
-            'Degree Category', 'Qualifying %',
-            'Academic Weightage\n(Qual%÷100×20, Max 20)',
-            'Entrance Marks\n(Max 70)',
-            'Final Score\n(Max 90)',
-            'Merit Rank', 'Reservation Rank',
-            'Seat Type', 'Quota / Category',
-            'Selection Status', 'Roster Admin Status',
-            'Allotted Supervisor',
-            'Exclusion Reason'
-        ];
-
-        const hRow = sheet.addRow(HEADERS);
-        hRow.height = 36;
-        hRow.eachCell(cell => {
-            cell.font      = { bold: true, color: { argb: 'FFFFFFFF' }, size: 9 };
-            cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
-            cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-            cell.border    = { top: { style: 'thin' }, bottom: { style: 'medium' }, left: { style: 'thin' }, right: { style: 'thin' } };
-        });
-
-        rows.forEach((r, idx) => {
-            const fillColor = r.is_excluded
-                ? 'FFFDE8E8'
-                : (idx % 2 === 0 ? 'FFF0F6FF' : 'FFFFFFFF');
-
-            const dRow = sheet.addRow([
-                idx + 1,
-                r.application_id,
-                r.applicant_name         || '—',
-                r.email                  || '—',
-                r.mobile                 || '—',
-                r.gender                 || '—',
-                r.community              || '—',
-                r.degree_type            || 'PG',
-                r.degree_percentage      ? parseFloat(r.degree_percentage)  : 0,
-                r.academic_weightage     ? parseFloat(r.academic_weightage) : 0,
-                r.entrance_mark          ? parseFloat(r.entrance_mark)      : 0,
-                r.final_score            ? parseFloat(r.final_score)        : 0,
-                r.merit_rank             || '—',
-                r.reservation_rank       || '—',
-                r.allotted_seat_type     || 'Unallotted',
-                r.allotted_category      || '—',
-                r.selection_status       || 'Not Selected',
-                r.roster_status          || '—',
-                r.allotted_supervisor_name || '—',
-                r.exclusion_reason       || '—'
-            ]);
-
-            dRow.height = 20;
-            dRow.eachCell(cell => {
-                cell.font      = { size: 9 };
-                cell.alignment = { vertical: 'middle', wrapText: false };
-                cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: fillColor } };
-                cell.border    = {
-                    top:   { style: 'thin', color: { argb: 'FFE0E0E0' } },
-                    bottom:{ style: 'thin', color: { argb: 'FFE0E0E0' } },
-                    left:  { style: 'thin', color: { argb: 'FFE0E0E0' } },
-                    right: { style: 'thin', color: { argb: 'FFE0E0E0' } }
-                };
-            });
-        });
-
-        // Column widths
-        const colWidths = [5,16,26,28,13,8,10,12,10,14,12,12,10,12,12,14,14,14,26,30];
-        sheet.columns.forEach((col, i) => { col.width = colWidths[i] || 14; });
-
-        // Summary row
-        sheet.addRow([]);
-        const sumRow = sheet.addRow([
-            '', `Total: ${rows.length}`,
-            `Selected: ${rows.filter(r => r.selection_status === 'Selected').length}`,
-            `Waiting: ${rows.filter(r => r.selection_status === 'Waiting').length}`,
-            `Excluded: ${rows.filter(r => r.is_excluded).length}`
-        ]);
-        sumRow.eachCell(cell => { cell.font = { bold: true, size: 9 }; });
-
-        await auditLog(req.user.id, req.user.email, 'EXPORT_ROSTER_EXCEL', null,
-            { session_id, program_id, department_id, rows_exported: rows.length }, req.ip);
-
-        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        res.setHeader('Content-Disposition', `attachment; filename="roster_export_${Date.now()}.xlsx"`);
-        res.send(await workbook.xlsx.writeBuffer());
-    } catch (err) {
-        res.status(500).json({ success: false, message: 'Export failed: ' + err.message });
-    }
-});
-
-// =============================================================================
-// SECTION 8 — EXCEL IMPORT ENGINE
-// =============================================================================
-
-router.post('/import', verifyToken, isAdmin, uploadExcel.single('excel'), async (req, res) => {
-    if (!req.file) return res.status(400).json({ success: false, message: 'No Excel file uploaded' });
-    const { session_id, program_id, department_id } = req.body;
-    if (!session_id || !program_id || !department_id) {
-        return res.status(400).json({ success: false, message: 'session_id, program_id, and department_id are required' });
-    }
-
-    const filePath = req.file.path;
-    const conn     = await pool.getConnection();
-    let total = 0, updated = 0, skipped = 0, failed = 0;
-    const errors           = [];
-    const updatesPerformed = [];
-
-    try {
-        const wb = new ExcelJS.Workbook();
-        await wb.xlsx.readFile(filePath);
-        const sheet = wb.getWorksheet(1);
-        if (!sheet) throw new Error('No worksheet found in uploaded file');
-
-        await conn.beginTransaction();
-
-        // Data starts at row 6 (rows 1-4 = title/meta/blank/header, row 5 = header labels)
-        // Column map from export:
-        // 1=SNo, 2=AppID, 3=Name, 4=Email, 5=Mobile, 6=Gender, 7=Community,
-        // 8=DegCat, 9=Deg%, 10=AcadWt, 11=EntranceMark, 12=FinalScore,
-        // 13=MeritRank, 14=ResRank, 15=SeatType, 16=QuotaCat,
-        // 17=SelectStatus, 18=RosterStatus, 19=Supervisor, 20=ExclusionReason
-        for (let i = 6; i <= sheet.rowCount; i++) {
-            const row   = sheet.getRow(i);
-            const appId = row.getCell(2).value ? String(row.getCell(2).value).trim() : null;
-            if (!appId || appId === 'Application ID') continue;
-
-            total++;
-            try {
-                const [[app]] = await conn.execute(
-                    `SELECT application_id, has_integrated FROM applications
-                     WHERE application_id = ? AND session_id = ? AND program_offered_id = ?`,
-                    [appId, session_id, program_id]
-                );
-                if (!app) {
-                    failed++;
-                    errors.push({ row: i, id: appId, error: 'Applicant not found in the selected programme scope.' });
-                    continue;
-                }
-
-                let isDirty = false;
-                const changes = {};
-
-                // ── Col 11: Entrance Mark ──────────────────────────────────────
-                const emRaw = row.getCell(11).value;
-                if (emRaw !== null && emRaw !== undefined && String(emRaw).trim() !== '' && String(emRaw).trim() !== '—') {
-                    const em = parseFloat(emRaw);
-                    if (isNaN(em) || em < 0 || em > 70) {
-                        failed++;
-                        errors.push({ row: i, id: appId, error: `Entrance mark '${emRaw}' is invalid (must be 0–70).` });
-                        continue;
-                    }
-                    const [[ex]] = await conn.execute('SELECT entrance_mark FROM applications WHERE application_id = ?', [appId]);
-                    if (ex && parseFloat(ex.entrance_mark) !== em) {
-                        await conn.execute('UPDATE applications SET entrance_mark = ?, updated_at = NOW() WHERE application_id = ?', [em, appId]);
-                        isDirty = true;
-                        changes.entrance_mark = { old: ex.entrance_mark, new: em };
-                    }
-                }
-
-                // ── Col 9: Degree Percentage ───────────────────────────────────
-                const dpRaw = row.getCell(9).value;
-                if (dpRaw !== null && dpRaw !== undefined && String(dpRaw).trim() !== '' && String(dpRaw).trim() !== '—') {
-                    const dp = parseFloat(dpRaw);
-                    if (isNaN(dp) || dp < 0 || dp > 100) {
-                        failed++;
-                        errors.push({ row: i, id: appId, error: `Degree percentage '${dpRaw}' is invalid (must be 0–100).` });
-                        continue;
-                    }
-                    const degLevel = app.has_integrated ? 'Integrated' : 'PG';
-                    const [[exQ]] = await conn.execute(
-                        'SELECT score_value FROM higher_education WHERE application_id = ? AND level = ?',
-                        [appId, degLevel]
-                    );
-                    if (exQ && parseFloat(exQ.score_value) !== dp) {
-                        await conn.execute(
-                            'UPDATE higher_education SET score_value = ? WHERE application_id = ? AND level = ?',
-                            [dp, appId, degLevel]
-                        );
-                        isDirty = true;
-                        changes.degree_percentage = { old: exQ.score_value, new: dp };
-                    }
-                }
-
-                // ── Col 19: Allotted Supervisor ────────────────────────────────
-                const supRaw = row.getCell(19).value;
-                if (supRaw && String(supRaw).trim() !== '—') {
-                    const supName = String(supRaw).trim();
-                    const [[sup]] = await conn.execute(
-                        'SELECT id, current_vacancy FROM supervisors WHERE name = ? AND department_id = ?',
-                        [supName, department_id]
-                    );
-                    if (!sup) {
-                        failed++;
-                        errors.push({ row: i, id: appId, error: `Supervisor "${supName}" not found in this department.` });
-                        continue;
-                    }
-                    const [[exA]] = await conn.execute('SELECT allotted_supervisor_id FROM roster_allocations WHERE application_id = ?', [appId]);
-                    if (!exA || exA.allotted_supervisor_id !== sup.id) {
-                        if (sup.current_vacancy <= 0 && exA?.allotted_supervisor_id !== sup.id) {
-                            failed++;
-                            errors.push({ row: i, id: appId, error: `Supervisor "${supName}" has no available vacancy.` });
-                            continue;
-                        }
-                        await conn.execute('UPDATE roster_allocations SET allotted_supervisor_id = ? WHERE application_id = ?', [sup.id, appId]);
-                        await conn.execute('UPDATE applications SET allotted_supervisor_id = ? WHERE application_id = ?', [sup.id, appId]);
-                        isDirty = true;
-                        changes.supervisor = { old: exA?.allotted_supervisor_id, new: sup.id };
-                    }
-                }
-
-                // ── Col 18: Roster Admin Status ────────────────────────────────
-                const rsRaw = row.getCell(18).value;
-                if (rsRaw && String(rsRaw).trim() !== '—') {
-                    const rs = String(rsRaw).trim();
-                    const VALID = ['Selected','Waiting','Joined','Rejected','No Show','Verification Failed','Withdrawn','Cancelled'];
-                    if (!VALID.includes(rs)) {
-                        failed++;
-                        errors.push({ row: i, id: appId, error: `Roster status "${rs}" is not a valid value.` });
-                        continue;
-                    }
-                    const [[exR]] = await conn.execute('SELECT roster_status FROM roster_allocations WHERE application_id = ?', [appId]);
-                    if (exR && exR.roster_status !== rs) {
-                        await conn.execute('UPDATE roster_allocations SET roster_status = ? WHERE application_id = ?', [rs, appId]);
-                        isDirty = true;
-                        changes.roster_status = { old: exR.roster_status, new: rs };
-                    }
-                }
-
-                if (isDirty) {
-                    updated++;
-                    updatesPerformed.push({ application_id: appId, changes });
-                } else {
-                    skipped++;
-                }
-            } catch (rowErr) {
-                failed++;
-                errors.push({ row: i, id: appId, error: rowErr.message });
-            }
-        }
-
-        await conn.commit();
-
-        // Trigger recalculation after import
-        if (updated > 0) {
-            try {
-                const recRes = await fetch(
-                    `http://localhost:${process.env.ADMIN_BACKEND_PORT || 5001}/api/roster/recalculate`,
-                    {
-                        method:  'POST',
-                        headers: { 'Content-Type': 'application/json', Authorization: req.headers.authorization },
-                        body:    JSON.stringify({ session_id, program_id, department_id })
-                    }
-                );
-                const recJson = await recRes.json();
-                if (!recJson.success) console.error('Post-import recalculation warning:', recJson.message);
-            } catch (recErr) {
-                console.error('Post-import recalculation error:', recErr.message);
-            }
-        }
-
-        await auditLog(req.user.id, req.user.email, 'IMPORT_ROSTER_EXCEL', null,
-            { total, updated, skipped, failed, error_count: errors.length }, req.ip);
-
-        try { fs.unlinkSync(filePath); } catch (_) {}
-
-        res.json({ success: true, total, updated, skipped, failed, errors });
-    } catch (err) {
-        await conn.rollback();
-        try { fs.unlinkSync(filePath); } catch (_) {}
-        console.error('Roster import error:', err);
-        res.status(500).json({ success: false, message: 'Import failed: ' + err.message });
-    } finally {
-        conn.release();
-    }
-});
-
-// =============================================================================
-// SECTION 9 — DASHBOARD ANALYTICS
-// =============================================================================
-
-router.get('/analytics', verifyToken, isAdmin, async (req, res) => {
-    const { session_id, program_id, department_id } = req.query;
-    if (!session_id || !program_id || !department_id) {
-        return res.status(400).json({ success: false, message: 'session_id, program_id, and department_id are required' });
-    }
-
-    try {
-        const [[{ total_applicants }]] = await pool.execute(
-            `SELECT COUNT(*) AS total_applicants FROM applications
-             WHERE session_id = ? AND program_offered_id = ? AND status = 'Approved'`,
-            [session_id, program_id]
-        );
-
-        const [[{ eligible, ineligible }]] = await pool.execute(
-            `SELECT
-                SUM(CASE WHEN ra.is_excluded = 0 THEN 1 ELSE 0 END) AS eligible,
-                SUM(CASE WHEN ra.is_excluded = 1 THEN 1 ELSE 0 END) AS ineligible
-             FROM applications a
-             JOIN roster_allocations ra ON a.application_id = ra.application_id
-             WHERE a.session_id = ? AND a.program_offered_id = ? AND a.department_id = ?`,
-            [session_id, program_id, department_id]
-        );
-
-        const [[{ selected, waiting }]] = await pool.execute(
-            `SELECT
-                SUM(CASE WHEN ra.selection_status = 'Selected' THEN 1 ELSE 0 END) AS selected,
-                SUM(CASE WHEN ra.selection_status = 'Waiting'  THEN 1 ELSE 0 END) AS waiting
-             FROM applications a
-             JOIN roster_allocations ra ON a.application_id = ra.application_id
-             WHERE a.session_id = ? AND a.program_offered_id = ? AND a.department_id = ?`,
-            [session_id, program_id, department_id]
-        );
-
-        const [[{ merit_seats, reservation_seats }]] = await pool.execute(
-            `SELECT
-                SUM(CASE WHEN ra.allotted_seat_type = 'Merit'       THEN 1 ELSE 0 END) AS merit_seats,
-                SUM(CASE WHEN ra.allotted_seat_type = 'Reservation' THEN 1 ELSE 0 END) AS reservation_seats
-             FROM applications a
-             JOIN roster_allocations ra ON a.application_id = ra.application_id
-             WHERE a.session_id = ? AND a.program_offered_id = ? AND a.department_id = ?
-               AND ra.selection_status = 'Selected'`,
-            [session_id, program_id, department_id]
-        );
-
-        const [[{ joined }]] = await pool.execute(
-            `SELECT COUNT(*) AS joined FROM applications a
-             JOIN roster_allocations ra ON a.application_id = ra.application_id
-             WHERE a.session_id = ? AND a.program_offered_id = ? AND a.department_id = ?
-               AND ra.roster_status = 'Joined'`,
-            [session_id, program_id, department_id]
-        );
-
-        const vacStats = await computeVacancyStats(pool, { department_id });
-
-        const [communityDistribution] = await pool.execute(
-            `SELECT a.community, COUNT(*) AS count
-             FROM applications a
-             JOIN roster_allocations ra ON a.application_id = ra.application_id
-             WHERE a.session_id = ? AND a.program_offered_id = ? AND a.department_id = ?
-               AND ra.selection_status = 'Selected'
-             GROUP BY a.community ORDER BY count DESC`,
-            [session_id, program_id, department_id]
-        );
-
-        const [supervisorDistribution] = await pool.execute(
-            `SELECT sup.name AS supervisor_name, COUNT(*) AS count, sup.current_vacancy AS vacancy
-             FROM applications a
-             JOIN roster_allocations ra ON a.application_id = ra.application_id
-             JOIN supervisors sup ON ra.allotted_supervisor_id = sup.id
-             WHERE a.session_id = ? AND a.program_offered_id = ? AND a.department_id = ?
-               AND ra.selection_status = 'Selected'
-             GROUP BY sup.id, sup.name, sup.current_vacancy
-             ORDER BY count DESC`,
-            [session_id, program_id, department_id]
-        );
-
-        const [departmentDistribution] = await pool.execute(
-            `SELECT d.name AS department_name, COUNT(*) AS count
-             FROM applications a
-             JOIN departments d ON a.department_id = d.id
-             WHERE a.session_id = ? AND a.program_offered_id = ? AND a.status = 'Approved'
-             GROUP BY d.id, d.name`,
-            [session_id, program_id]
-        );
-
-        res.json({
-            success: true,
-            data: {
-                totalApplicants:      total_applicants  || 0,
-                eligibleApplicants:   eligible          || 0,
-                ineligibleApplicants: ineligible        || 0,
-                totalVacancies:       vacStats.totalVacancy,
-                totalCapacity:        vacStats.totalCapacity,
-                totalOccupied:        vacStats.totalOccupied,
-                meritSeats:           merit_seats        || 0,
-                reservationSeats:     reservation_seats  || 0,
-                selectedCandidates:   selected           || 0,
-                waitingCandidates:    waiting            || 0,
-                joinedCandidates:     joined             || 0,
-                communityDistribution,
-                supervisorDistribution,
-                departmentDistribution,
-                supervisorBreakdown: vacStats.supervisorStats
-            }
-        });
-    } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
-    }
-});
-
-// =============================================================================
-// SECTION 10 — AUDIT LOGS
-// =============================================================================
-
-router.get('/audit-logs', verifyToken, isAdmin, async (req, res) => {
-    const { search, start_date, end_date, limit = 200 } = req.query;
-    try {
-        let sql    = 'SELECT * FROM roster_audit_logs WHERE 1=1';
-        const params = [];
-
-        if (start_date) { sql += ' AND created_at >= ?'; params.push(start_date + ' 00:00:00'); }
-        if (end_date)   { sql += ' AND created_at <= ?'; params.push(end_date   + ' 23:59:59'); }
-        if (search && search.trim()) {
-            const like = `%${search.trim()}%`;
-            sql += ' AND (admin_email LIKE ? OR action LIKE ? OR old_value LIKE ? OR new_value LIKE ?)';
-            params.push(like, like, like, like);
-        }
-
-        sql += ` ORDER BY created_at DESC LIMIT ${Math.min(parseInt(limit) || 200, 500)}`;
-        const [rows] = await pool.execute(sql, params);
-        res.json({ success: true, data: rows });
-    } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
-    }
-});
-
-// =============================================================================
-// SECTION 11 — SCHOLAR MANAGEMENT
-// =============================================================================
-
-// GET scholars
-router.get('/scholars', verifyToken, isAdmin, async (req, res) => {
-    const { supervisor_id, programme_id, department_id, search } = req.query;
-    try {
-        let sql = `
-            SELECT sc.*, sup.name AS supervisor_name,
-                   d.name AS department_name, po.name AS programme_name
-            FROM scholars sc
-            JOIN supervisors sup ON sc.supervisor_id = sup.id
-            LEFT JOIN departments d       ON sc.department_id = d.id
-            LEFT JOIN programs_offered po ON sc.programme_id  = po.id
-            WHERE 1=1
-        `;
-        const params = [];
-        if (supervisor_id) { sql += ' AND sc.supervisor_id = ?';  params.push(supervisor_id); }
-        if (programme_id)  { sql += ' AND sc.programme_id = ?';   params.push(programme_id); }
-        if (department_id) { sql += ' AND sc.department_id = ?';  params.push(department_id); }
-        if (search && search.trim()) {
-            sql += ' AND (sc.scholar_name LIKE ? OR sc.enrollment_no LIKE ?)';
+        const where = [], params = [];
+        if (session_id) { where.push('session_id = ?');  params.push(session_id); }
+        if (community)  { where.push('community = ?');   params.push(community); }
+        if (search) {
+            where.push('(applicant_name LIKE ? OR application_id LIKE ?)');
             params.push(`%${search}%`, `%${search}%`);
         }
-        sql += ' ORDER BY sc.created_at DESC';
-        const [rows] = await pool.execute(sql, params);
-        res.json({ success: true, data: rows });
+        const ws = where.length ? 'WHERE ' + where.join(' AND ') : '';
+        const [[{ total }]] = await pool.query(`SELECT COUNT(*) AS total FROM roster_merit_list ${ws}`, params);
+        const [rows] = await pool.query(
+            `SELECT * FROM roster_merit_list ${ws} ORDER BY merit_rank LIMIT ? OFFSET ?`,
+            [...params, parseInt(limit), offset]
+        );
+        res.json({ success: true, data: rows, total, page: parseInt(page), limit: parseInt(limit) });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
 });
 
-// POST Scholar
-router.post('/scholars', verifyToken, isAdmin, async (req, res) => {
-    const { supervisor_id, scholar_name, scholar_type, programme_id, department_id, enrollment_no, admission_date, status } = req.body;
-    if (!supervisor_id || !scholar_name) {
-        return res.status(400).json({ success: false, message: 'Supervisor and Scholar Name are required' });
-    }
-    const conn = await pool.getConnection();
+// PUT /api/roster/merit-list/:id
+router.put('/merit-list/:id', verifyToken, isAdmin, async (req, res) => {
+    const { id } = req.params;
+    const { entrance_mark, qualification_percentage, qualification_source } = req.body;
     try {
-        await conn.beginTransaction();
-        const [[sup]] = await conn.execute('SELECT current_vacancy FROM supervisors WHERE id = ?', [supervisor_id]);
-        if (!sup) { await conn.rollback(); return res.status(404).json({ success: false, message: 'Supervisor not found' }); }
+        const [[ex]] = await pool.query('SELECT * FROM roster_merit_list WHERE id = ?', [id]);
+        if (!ex) return res.status(404).json({ success: false, message: 'Record not found' });
 
-        const targetStatus = status || 'Admitted';
-        if (sup.current_vacancy <= 0 && !['Withdrawn','Cancelled','Completed'].includes(targetStatus)) {
-            await conn.rollback();
-            return res.status(400).json({ success: false, message: 'No available vacancy under this supervisor' });
+        const em  = parseFloat(entrance_mark           ?? ex.entrance_mark);
+        const qp  = parseFloat(qualification_percentage ?? ex.qualification_percentage);
+        if (em < 0 || em > 70)  return res.status(400).json({ success: false, message: 'entrance_mark must be 0–70' });
+        if (qp < 0 || qp > 100) return res.status(400).json({ success: false, message: 'qualification_percentage must be 0–100' });
+
+        const qs  = calcQualScore(qp);
+        const ms  = calcMeritScore(em, qs);
+        const src = qualification_source || ex.qualification_source;
+
+        await pool.execute(
+            `UPDATE roster_merit_list
+             SET entrance_mark = ?, qualification_source = ?, qualification_percentage = ?,
+                 qualification_score = ?, final_merit_score = ?, updated_at = NOW()
+             WHERE id = ?`,
+            [em, src, qp, qs, ms, id]
+        );
+
+        const [all] = await pool.query(
+            `SELECT id FROM roster_merit_list WHERE session_id ${ex.session_id ? '= ?' : 'IS NULL'}
+             ORDER BY final_merit_score DESC, entrance_mark DESC, qualification_percentage DESC,
+                      application_date ASC, application_id ASC`,
+            ex.session_id ? [ex.session_id] : []
+        );
+        for (let i = 0; i < all.length; i++) {
+            await pool.execute('UPDATE roster_merit_list SET merit_rank = ? WHERE id = ?', [i + 1, all[i].id]);
         }
 
-        const [result] = await conn.execute(
-            `INSERT INTO scholars (supervisor_id, scholar_name, scholar_type, programme_id, department_id, enrollment_no, admission_date, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            [supervisor_id, scholar_name, scholar_type || 'Full-Time', programme_id || null, department_id || null, enrollment_no || null, admission_date || null, targetStatus]
-        );
-        await syncSupervisorVacancy(conn, supervisor_id);
-        await conn.commit();
-
-        await auditLog(req.user.id, req.user.email, 'ADD_SCHOLAR', null,
-            { supervisor_id, scholar_name, scholar_type, enrollment_no }, req.ip);
-
-        res.json({ success: true, id: result.insertId, message: 'Scholar added successfully' });
+        await writeAuditLog(pool, {
+            sessionId: ex.session_id, userId: req.user?.id, userEmail: req.user?.email,
+            action: 'MERIT_MANUAL_UPDATED', entityType: 'roster_merit_list', entityId: id,
+            oldValue: { entrance_mark: ex.entrance_mark, qualification_percentage: ex.qualification_percentage },
+            newValue: { entrance_mark: em, qualification_percentage: qp, qualification_source: src },
+            ip: req.ip,
+        });
+        res.json({ success: true, message: 'Merit entry updated and ranks recalculated' });
     } catch (err) {
-        await conn.rollback();
         res.status(500).json({ success: false, message: err.message });
-    } finally { conn.release(); }
+    }
 });
 
-// PUT Scholar
-router.put('/scholars/:id', verifyToken, isAdmin, async (req, res) => {
-    const { id } = req.params;
-    const { scholar_name, scholar_type, enrollment_no, admission_date, status, transfer_details } = req.body;
+// POST /api/roster/allocations/generate
+router.post('/allocations/generate', verifyToken, isAdmin, async (req, res) => {
+    const { session_id, total_seats } = req.body;
+    const seats = parseInt(total_seats);
+    if (!seats || seats < 1) {
+        return res.status(400).json({ success: false, message: 'total_seats must be >= 1' });
+    }
+
     const conn = await pool.getConnection();
     try {
         await conn.beginTransaction();
-        const [[existing]] = await conn.execute('SELECT * FROM scholars WHERE id = ?', [id]);
-        if (!existing) { await conn.rollback(); return res.status(404).json({ success: false, message: 'Scholar not found' }); }
 
-        await conn.execute(
-            `UPDATE scholars SET scholar_name = ?, scholar_type = ?, enrollment_no = ?,
-             admission_date = ?, status = ?, transfer_details = ? WHERE id = ?`,
-            [
-                scholar_name     ?? existing.scholar_name,
-                scholar_type     ?? existing.scholar_type,
-                enrollment_no    !== undefined ? enrollment_no   : existing.enrollment_no,
-                admission_date   !== undefined ? admission_date  : existing.admission_date,
-                status           ?? existing.status,
-                transfer_details !== undefined ? transfer_details : existing.transfer_details,
-                id
-            ]
+        const [cfgRows] = await conn.execute(
+            `SELECT category_name, percentage, session_id AS cfg_sid
+             FROM roster_category_config
+             WHERE session_id = ? OR session_id IS NULL
+             ORDER BY session_id DESC`,
+            [session_id || null]
         );
-        await syncSupervisorVacancy(conn, existing.supervisor_id);
+        const categoryConfig = {};
+        const seen = new Set();
+        for (const r of cfgRows) {
+            if (!seen.has(r.category_name)) {
+                categoryConfig[r.category_name] = parseFloat(r.percentage);
+                seen.add(r.category_name);
+            }
+        }
+        if (!Object.keys(categoryConfig).length) Object.assign(categoryConfig, DEFAULT_CATEGORY_PERCENTAGES);
+
+        const mFilter = session_id ? 'WHERE session_id = ?' : 'WHERE session_id IS NULL';
+        const [meritList] = await conn.execute(
+            `SELECT * FROM roster_merit_list ${mFilter} ORDER BY merit_rank ASC`,
+            session_id ? [session_id] : []
+        );
+
+        if (!meritList.length) {
+            await conn.rollback();
+            return res.status(400).json({ success: false, message: 'Generate the merit list first before allocating roster' });
+        }
+
+        const vacancies         = getCategoryVacancies(categoryConfig, seats);
+        const originalVacancies = { ...vacancies };
+        const conversionLog     = [];
+
+        const entries = meritList.map(candidate => {
+            const { allocatedCat, converted, from, to } = getAllocatedCategory(candidate.community, vacancies);
+            if (allocatedCat) {
+                vacancies[allocatedCat]--;
+                if (converted) conversionLog.push({ application_id: candidate.application_id, from, to });
+                return { ...candidate, allocated_category: allocatedCat, allocation_status: 'ALLOCATED',
+                         is_converted: converted ? 1 : 0, conversion_from: from || null, conversion_to: to || null };
+            }
+            return { ...candidate, allocated_category: null, allocation_status: 'WAITING',
+                     is_converted: 0, conversion_from: null, conversion_to: null };
+        });
+
+        let rNum = 1;
+        for (const e of entries) {
+            e.roster_number = e.allocation_status === 'ALLOCATED' ? rNum++ : null;
+        }
+
+        if (session_id) {
+            await conn.execute('DELETE FROM roster_entries WHERE session_id = ?', [session_id]);
+        } else {
+            await conn.execute('DELETE FROM roster_entries WHERE session_id IS NULL');
+        }
+
+        for (const e of entries) {
+            await conn.execute(
+                `INSERT INTO roster_entries
+                 (session_id, roster_number, application_id, applicant_name, original_category,
+                  allocated_category, entrance_mark, qualification_percentage, qualification_score,
+                  final_merit_score, merit_rank, allocation_status, is_converted,
+                  conversion_from, conversion_to, created_by)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [session_id || null, e.roster_number || null,
+                 e.application_id, e.applicant_name, e.community,
+                 e.allocated_category, e.entrance_mark, e.qualification_percentage,
+                 e.qualification_score, e.final_merit_score, e.merit_rank,
+                 e.allocation_status, e.is_converted,
+                 e.conversion_from, e.conversion_to, req.user?.id || null]
+            );
+        }
+
         await conn.commit();
 
-        await auditLog(req.user.id, req.user.email, 'UPDATE_SCHOLAR', existing,
-            { id, scholar_name, scholar_type, status }, req.ip);
+        const allocated = entries.filter(e => e.allocation_status === 'ALLOCATED').length;
+        const waiting   = entries.filter(e => e.allocation_status === 'WAITING').length;
 
-        res.json({ success: true, message: 'Scholar updated successfully' });
+        await writeAuditLog(conn, {
+            sessionId: session_id, userId: req.user?.id, userEmail: req.user?.email,
+            action: 'ROSTER_GENERATED', entityType: 'roster_entries', entityId: session_id,
+            newValue: { total: entries.length, allocated, waiting, conversions: conversionLog.length, total_seats: seats, vacancies: originalVacancies },
+            ip: req.ip,
+        });
+
+        res.json({
+            success: true,
+            message: `Roster generated — ${allocated} allocated, ${waiting} on waiting list`,
+            data:    { total: entries.length, allocated, waiting, conversions: conversionLog.length, vacancies: originalVacancies },
+        });
     } catch (err) {
         await conn.rollback();
+        console.error('[Roster] Allocation error:', err);
         res.status(500).json({ success: false, message: err.message });
-    } finally { conn.release(); }
+    } finally {
+        conn.release();
+    }
 });
 
-// DELETE Scholar
-router.delete('/scholars/:id', verifyToken, isAdmin, async (req, res) => {
+// GET /api/roster/allocations
+router.get('/allocations', verifyToken, isAdmin, async (req, res) => {
+    const { session_id, page = 1, limit = 50, search = '', category = '', status = '' } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    try {
+        const where = [], params = [];
+        if (session_id) { where.push('session_id = ?');        params.push(session_id); }
+        if (category)   { where.push('original_category = ?'); params.push(category); }
+        if (status)     { where.push('allocation_status = ?'); params.push(status); }
+        if (search) {
+            where.push('(applicant_name LIKE ? OR application_id LIKE ?)');
+            params.push(`%${search}%`, `%${search}%`);
+        }
+        const ws = where.length ? 'WHERE ' + where.join(' AND ') : '';
+        const [[{ total }]] = await pool.query(`SELECT COUNT(*) AS total FROM roster_entries ${ws}`, params);
+        const [rows] = await pool.query(
+            `SELECT * FROM roster_entries ${ws} ORDER BY merit_rank ASC LIMIT ? OFFSET ?`,
+            [...params, parseInt(limit), offset]
+        );
+        res.json({ success: true, data: rows, total, page: parseInt(page), limit: parseInt(limit) });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// PUT /api/roster/allocations/:id
+router.put('/allocations/:id', verifyToken, isAdmin, async (req, res) => {
     const { id } = req.params;
+    const { allocation_status, allocated_category } = req.body;
+    try {
+        const [[ex]] = await pool.query('SELECT * FROM roster_entries WHERE id = ?', [id]);
+        if (!ex) return res.status(404).json({ success: false, message: 'Record not found' });
+
+        const sets = ['updated_at = NOW()'], vals = [];
+        if (allocation_status  !== undefined) { sets.push('allocation_status = ?');  vals.push(allocation_status); }
+        if (allocated_category !== undefined) { sets.push('allocated_category = ?'); vals.push(allocated_category); }
+        vals.push(id);
+
+        await pool.execute(`UPDATE roster_entries SET ${sets.join(', ')} WHERE id = ?`, vals);
+        await writeAuditLog(pool, {
+            sessionId: ex.session_id, userId: req.user?.id, userEmail: req.user?.email,
+            action: 'ROSTER_MANUAL_UPDATED', entityType: 'roster_entries', entityId: id,
+            oldValue: { allocation_status: ex.allocation_status, allocated_category: ex.allocated_category },
+            newValue: { allocation_status, allocated_category }, ip: req.ip,
+        });
+        res.json({ success: true, message: 'Roster entry updated' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// POST /api/roster/import/preview
+router.post('/import/preview', verifyToken, isAdmin, importUpload.single('file'), async (req, res) => {
+    if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
+    try {
+        const wb = new ExcelJS.Workbook();
+        await wb.xlsx.load(req.file.buffer);
+        const ws = wb.worksheets[0];
+        if (!ws) return res.status(400).json({ success: false, message: 'No worksheet found' });
+
+        const headerMap = {};
+        ws.getRow(1).eachCell((cell, col) => {
+            const h = String(cell.value || '').trim().toLowerCase().replace(/[\s\-]+/g, '_');
+            headerMap[h] = col;
+        });
+
+        const missing = ['application_id','entrance_mark','qualification_percentage'].filter(h => !headerMap[h]);
+        if (missing.length) {
+            return res.status(400).json({ success: false, message: `Missing required columns: ${missing.join(', ')}` });
+        }
+
+        const get = (row, key) => {
+            const col = headerMap[key];
+            if (!col) return null;
+            const v = row.getCell(col).value;
+            return v != null ? String(v).trim() : null;
+        };
+
+        const rows = [];
+        const seen = new Set();
+
+        ws.eachRow((row, rowNum) => {
+            if (rowNum === 1) return;
+            const appId = get(row, 'application_id');
+            if (!appId) return;
+
+            const entrance   = parseFloat(get(row, 'entrance_mark'));
+            const qualPct    = parseFloat(get(row, 'qualification_percentage'));
+            const srcRaw     = (get(row, 'qualification_source') || 'PG').toUpperCase();
+            const qualSource = srcRaw.includes('INT') ? 'INTEGRATED' : 'PG';
+            const community  = get(row, 'community') || get(row, 'category');
+            const name       = get(row, 'applicant_name') || get(row, 'name');
+
+            const errs = [];
+            if (isNaN(entrance) || entrance < 0 || entrance > 70) errs.push('entrance_mark must be 0–70');
+            if (isNaN(qualPct)  || qualPct  < 0 || qualPct  > 100) errs.push('qualification_percentage must be 0–100');
+            if (seen.has(appId)) errs.push('Duplicate application_id in file');
+            seen.add(appId);
+
+            const qs = !isNaN(qualPct) ? calcQualScore(qualPct) : null;
+            const ms = (!isNaN(entrance) && qs !== null) ? calcMeritScore(entrance, qs) : null;
+
+            rows.push({
+                rowNum, application_id: appId, applicant_name: name || null,
+                community: community ? normalizeCategory(community) : null,
+                entrance_mark: isNaN(entrance) ? null : entrance,
+                qualification_source: qualSource,
+                qualification_percentage: isNaN(qualPct) ? null : qualPct,
+                qualification_score: qs, final_merit_score: ms,
+                errors: errs, hasError: errs.length > 0,
+            });
+        });
+
+        res.json({
+            success: true,
+            data: {
+                total:      rows.length,
+                valid:      rows.filter(r => !r.hasError).length,
+                errorCount: rows.filter(r =>  r.hasError).length,
+                rows:       rows.slice(0, 500),
+            },
+        });
+    } catch (err) {
+        console.error('[Roster] Import preview error:', err);
+        res.status(500).json({ success: false, message: 'Failed to parse file: ' + err.message });
+    }
+});
+
+// POST /api/roster/import/confirm
+router.post('/import/confirm', verifyToken, isAdmin, async (req, res) => {
+    const { session_id, rows } = req.body;
+    if (!Array.isArray(rows) || !rows.length) {
+        return res.status(400).json({ success: false, message: 'rows array required' });
+    }
+    const valid = rows.filter(r => !r.hasError);
+    if (!valid.length) return res.status(400).json({ success: false, message: 'No valid rows to import' });
+
     const conn = await pool.getConnection();
     try {
         await conn.beginTransaction();
-        const [[existing]] = await conn.execute('SELECT * FROM scholars WHERE id = ?', [id]);
-        if (!existing) { await conn.rollback(); return res.status(404).json({ success: false, message: 'Scholar not found' }); }
+        let imported = 0, updated = 0;
 
-        await conn.execute('DELETE FROM scholars WHERE id = ?', [id]);
-        await syncSupervisorVacancy(conn, existing.supervisor_id);
+        for (const r of valid) {
+            const qs = calcQualScore(r.qualification_percentage);
+            const ms = calcMeritScore(r.entrance_mark, qs);
+            const [result] = await conn.execute(
+                `INSERT INTO roster_merit_list
+                 (session_id, application_id, applicant_name, community, entrance_mark,
+                  qualification_source, qualification_percentage, qualification_score, final_merit_score)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE
+                   applicant_name           = COALESCE(VALUES(applicant_name), applicant_name),
+                   community                = COALESCE(VALUES(community), community),
+                   entrance_mark            = VALUES(entrance_mark),
+                   qualification_source     = VALUES(qualification_source),
+                   qualification_percentage = VALUES(qualification_percentage),
+                   qualification_score      = VALUES(qualification_score),
+                   final_merit_score        = VALUES(final_merit_score),
+                   updated_at               = NOW()`,
+                [session_id || null, r.application_id, r.applicant_name || null,
+                 r.community || null, r.entrance_mark, r.qualification_source,
+                 r.qualification_percentage, qs, ms]
+            );
+            if (result.affectedRows === 1) imported++; else updated++;
+        }
+
+        const rankWhere = session_id ? 'WHERE session_id = ?' : 'WHERE session_id IS NULL';
+        const [all] = await conn.execute(
+            `SELECT id FROM roster_merit_list ${rankWhere}
+             ORDER BY final_merit_score DESC, entrance_mark DESC, qualification_percentage DESC,
+                      application_date ASC, application_id ASC`,
+            session_id ? [session_id] : []
+        );
+        for (let i = 0; i < all.length; i++) {
+            await conn.execute('UPDATE roster_merit_list SET merit_rank = ? WHERE id = ?', [i + 1, all[i].id]);
+        }
+
         await conn.commit();
+        await writeAuditLog(conn, {
+            sessionId: session_id, userId: req.user?.id, userEmail: req.user?.email,
+            action: 'EXCEL_IMPORTED', entityType: 'roster_merit_list', entityId: session_id,
+            newValue: { imported, updated, total: valid.length }, ip: req.ip,
+        });
 
-        await auditLog(req.user.id, req.user.email, 'DELETE_SCHOLAR', existing, null, req.ip);
-        res.json({ success: true, message: 'Scholar deleted successfully' });
+        res.json({ success: true, message: `Import complete — ${imported} new, ${updated} updated`, imported, updated });
     } catch (err) {
         await conn.rollback();
         res.status(500).json({ success: false, message: err.message });
-    } finally { conn.release(); }
+    } finally {
+        conn.release();
+    }
+});
+
+// GET /api/roster/export
+router.get('/export', verifyToken, isAdmin, async (req, res) => {
+    const { session_id, type = 'roster', format = 'excel', category = '' } = req.query;
+    try {
+        let rows, sheetTitle, columns, headerLabels;
+
+        if (type === 'merit') {
+            sheetTitle  = 'Merit List';
+            const w = session_id ? 'WHERE session_id = ?' : '';
+            const p = session_id ? [session_id] : [];
+            [rows] = await pool.query(`SELECT * FROM roster_merit_list ${w} ORDER BY merit_rank`, p);
+            columns = ['merit_rank','application_id','applicant_name','community',
+                       'entrance_mark','qualification_source','qualification_percentage',
+                       'qualification_score','final_merit_score'];
+            headerLabels = {
+                merit_rank:'Merit Rank', application_id:'Application ID', applicant_name:'Candidate Name',
+                community:'Category', entrance_mark:'Entrance Mark (/70)',
+                qualification_source:'Qual. Source', qualification_percentage:'Qual. %',
+                qualification_score:'Qual. Score (/30)', final_merit_score:'Final Merit (/100)',
+            };
+        } else {
+            sheetTitle = category ? `Roster — ${category}` : 'Full Roster';
+            const where = [], params = [];
+            if (session_id) { where.push('session_id = ?');        params.push(session_id); }
+            if (category)   { where.push('original_category = ?'); params.push(category); }
+            const ws = where.length ? 'WHERE ' + where.join(' AND ') : '';
+            [rows] = await pool.query(`SELECT * FROM roster_entries ${ws} ORDER BY merit_rank`, params);
+            columns = ['roster_number','merit_rank','application_id','applicant_name',
+                       'original_category','allocated_category','entrance_mark',
+                       'qualification_percentage','qualification_score','final_merit_score',
+                       'allocation_status','is_converted','conversion_from','conversion_to'];
+            headerLabels = {
+                roster_number:'Roster #', merit_rank:'Merit Rank', application_id:'Application ID',
+                applicant_name:'Candidate Name', original_category:'Original Category',
+                allocated_category:'Allocated Category', entrance_mark:'Entrance (/70)',
+                qualification_percentage:'Qual. %', qualification_score:'Qual. Score (/30)',
+                final_merit_score:'Final Merit (/100)', allocation_status:'Status',
+                is_converted:'Converted?', conversion_from:'Conv. From', conversion_to:'Conv. To',
+            };
+        }
+
+        if (format === 'csv') {
+            const esc = v => { const s = String(v ?? ''); return s.includes(',') ? `"${s}"` : s; };
+            const csv = [
+                columns.map(c => esc(headerLabels[c] || c)).join(','),
+                ...rows.map(r => columns.map(c => esc(c === 'is_converted' ? (r[c] ? 'Yes' : 'No') : (r[c] ?? ''))).join(','))
+            ].join('\n');
+            res.setHeader('Content-Type', 'text/csv');
+            res.setHeader('Content-Disposition', `attachment; filename="${type}_${Date.now()}.csv"`);
+            await writeAuditLog(pool, {
+                sessionId: session_id, userId: req.user?.id, userEmail: req.user?.email,
+                action: 'EXCEL_EXPORTED', entityType: type, entityId: session_id,
+                newValue: { type, format: 'csv', rows: rows.length }, ip: req.ip,
+            });
+            return res.send(csv);
+        }
+
+        const wb = new ExcelJS.Workbook();
+        wb.creator = 'PhD ERP — Periyar University';
+        wb.created = new Date();
+        const wsSheet = wb.addWorksheet(sheetTitle);
+
+        wsSheet.mergeCells(1, 1, 1, columns.length);
+        const tc = wsSheet.getCell('A1');
+        tc.value     = `Periyar University PhD Admissions — ${sheetTitle}`;
+        tc.font      = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } };
+        tc.alignment = { horizontal: 'center', vertical: 'middle' };
+        tc.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F3864' } };
+        wsSheet.getRow(1).height = 32;
+
+        wsSheet.mergeCells(2, 1, 2, columns.length);
+        const mc = wsSheet.getCell('A2');
+        mc.value     = `Generated: ${new Date().toLocaleString('en-IN')}  |  Records: ${rows.length}`;
+        mc.font      = { italic: true, size: 10 };
+        mc.alignment = { horizontal: 'center' };
+        wsSheet.getRow(2).height = 18;
+
+        const hRow = wsSheet.getRow(3);
+        columns.forEach((col, i) => {
+            const cell = hRow.getCell(i + 1);
+            cell.value     = headerLabels[col] || col;
+            cell.font      = { bold: true, color: { argb: 'FFFFFFFF' } };
+            cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E4057' } };
+            cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+            cell.border    = { bottom: { style: 'thin' } };
+        });
+        hRow.height = 36;
+
+        const WIDTHS = { roster_number:10, merit_rank:10, application_id:18, applicant_name:28,
+            community:12, original_category:16, allocated_category:16, entrance_mark:16,
+            qualification_source:12, qualification_percentage:12, qualification_score:16,
+            final_merit_score:16, allocation_status:14, is_converted:12, conversion_from:14, conversion_to:14 };
+
+        rows.forEach((row, ri) => {
+            const dRow = wsSheet.addRow(columns.map(c => c === 'is_converted' ? (row[c] ? 'Yes' : 'No') : (row[c] ?? '')));
+            dRow.height = 20;
+            const bg = ri % 2 === 0 ? 'FFF5F5F5' : 'FFFFFFFF';
+            dRow.eachCell(cell => {
+                cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+                cell.border    = { bottom: { style: 'hair', color: { argb: 'FFD0D0D0' } } };
+                cell.alignment = { vertical: 'middle' };
+            });
+            if (row.is_converted)                   dRow.eachCell(c => { c.fill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFFFF3CD' } }; });
+            if (row.allocation_status === 'WAITING') dRow.eachCell(c => { c.fill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFE2E3E5' } }; });
+        });
+
+        columns.forEach((col, i) => { wsSheet.getColumn(i + 1).width = WIDTHS[col] || 14; });
+        wsSheet.views     = [{ state: 'frozen', xSplit: 0, ySplit: 3, activeCell: 'A4' }];
+        wsSheet.autoFilter = { from: { row: 3, column: 1 }, to: { row: 3, column: columns.length } };
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${type}_${Date.now()}.xlsx"`);
+
+        await writeAuditLog(pool, {
+            sessionId: session_id, userId: req.user?.id, userEmail: req.user?.email,
+            action: 'EXCEL_EXPORTED', entityType: type, entityId: session_id,
+            newValue: { type, format: 'excel', rows: rows.length }, ip: req.ip,
+        });
+
+        await wb.xlsx.write(res);
+        res.end();
+    } catch (err) {
+        console.error('[Roster] Export error:', err);
+        if (!res.headersSent) res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// GET /api/roster/audit-logs
+router.get('/audit-logs', verifyToken, isAdmin, async (req, res) => {
+    const { session_id, page = 1, limit = 50, search = '', action = '', start_date = '', end_date = '' } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    try {
+        const where = [], params = [];
+        if (session_id) { where.push('session_id = ?');                        params.push(session_id); }
+        if (action)     { where.push('action = ?');                             params.push(action); }
+        if (search)     { where.push('(user_email LIKE ? OR action LIKE ?)');   params.push(`%${search}%`, `%${search}%`); }
+        if (start_date) { where.push('created_at >= ?');                        params.push(start_date + ' 00:00:00'); }
+        if (end_date)   { where.push('created_at <= ?');                        params.push(end_date + ' 23:59:59'); }
+        const ws = where.length ? 'WHERE ' + where.join(' AND ') : '';
+        const [[{ total }]] = await pool.query(`SELECT COUNT(*) AS total FROM roster_audit_log ${ws}`, params);
+        const [rows] = await pool.query(
+            `SELECT * FROM roster_audit_log ${ws} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+            [...params, parseInt(limit), offset]
+        );
+        res.json({ success: true, data: rows, total, page: parseInt(page), limit: parseInt(limit) });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
 });
 
 module.exports = router;

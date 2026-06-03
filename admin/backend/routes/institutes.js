@@ -9,6 +9,7 @@ const multer   = require('multer');
 const ExcelJS  = require('exceljs');
 const pool     = require('../config/db');
 const { verifyToken, isAdmin } = require('../middleware/auth');
+const { postUploadCheckMemory } = require('../../../shared/security/fileValidator');
 
 // ── File Upload (memory storage — Excel parse only) ──────────────────────────
 const upload = multer({
@@ -459,7 +460,7 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
 // POST /api/institutes/import/preview
 // Smart table detection + dynamic column mapping + row classification
 // ============================================================================
-router.post('/import/preview', verifyToken, isAdmin, upload.single('file'), async (req, res) => {
+router.post('/import/preview', verifyToken, isAdmin, upload.single('file'), postUploadCheckMemory(['.csv']), async (req, res) => {
     if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
 
     try {

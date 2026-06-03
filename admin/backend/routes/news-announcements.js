@@ -4,6 +4,7 @@ const express = require('express');
 const router  = express.Router();
 const pool    = require('../config/db');
 const { verifyToken, isAdmin } = require('../middleware/auth');
+const { postUploadCheck } = require('../../../shared/security/fileValidator');
 const multer  = require('multer');
 const path    = require('path');
 const fs      = require('fs');
@@ -176,7 +177,7 @@ router.get('/:id', verifyToken, isAdmin, async (req, res) => {
 });
 
 // POST create
-router.post('/', verifyToken, isAdmin, upload.single('attachment'), async (req, res) => {
+router.post('/', verifyToken, isAdmin, upload.single('attachment'), postUploadCheck(), async (req, res) => {
     const actor = req.user;
     const {
         title, description, category = 'announcement', priority = 'medium',
@@ -213,7 +214,7 @@ router.post('/', verifyToken, isAdmin, upload.single('attachment'), async (req, 
 });
 
 // PUT update
-router.put('/:id', verifyToken, isAdmin, upload.single('attachment'), async (req, res) => {
+router.put('/:id', verifyToken, isAdmin, upload.single('attachment'), postUploadCheck(), async (req, res) => {
     const actor = req.user;
     const {
         title, description, category, priority, audience,

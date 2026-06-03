@@ -6,19 +6,31 @@ const useAuthStore = create(
     (set, get) => ({
       user: null,
       token: null,
+      accessToken: null,
+      refreshToken: null,
       isAuthenticated: false,
 
-      login: (userData, token) => set({
+      login: (userData, accessToken, refreshToken) => set({
         user: userData,
-        token,
+        token: accessToken,
+        accessToken,
+        refreshToken: refreshToken || null,
         isAuthenticated: true,
       }),
+
+      setTokens: (accessToken, refreshToken) => set((state) => ({
+        token: accessToken,
+        accessToken,
+        refreshToken: refreshToken !== undefined ? refreshToken : state.refreshToken,
+      })),
 
       logout: () => {
         localStorage.removeItem('rsm-auth')
         set({
           user: null,
           token: null,
+          accessToken: null,
+          refreshToken: null,
           isAuthenticated: false,
         })
       },
@@ -45,6 +57,8 @@ const useAuthStore = create(
       partialize: (state) => ({
         user: state.user,
         token: state.token,
+        accessToken: state.accessToken,
+        refreshToken: state.refreshToken,
         isAuthenticated: state.isAuthenticated,
       }),
     }

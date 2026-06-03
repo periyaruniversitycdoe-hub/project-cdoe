@@ -8,6 +8,7 @@ const multer   = require('multer');
 const path     = require('path');
 const fs       = require('fs');
 const Engine   = require('../services/EntranceWorkflowEngine');
+const { postUploadCheck } = require('../../../shared/security/fileValidator');
 
 const uploadDir = path.join(__dirname, '../../../uploads/attendance');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -48,7 +49,7 @@ router.get('/template', verifyToken, isAdmin, async (req, res) => {
 });
 
 // ─── POST /api/attendance/upload ──────────────────────────────────────────────
-router.post('/upload', verifyToken, isAdmin, xlsUpload.single('file'), async (req, res) => {
+router.post('/upload', verifyToken, isAdmin, xlsUpload.single('file'), postUploadCheck(['.csv']), async (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
 
   const adminEmail = req.user?.email || 'admin';

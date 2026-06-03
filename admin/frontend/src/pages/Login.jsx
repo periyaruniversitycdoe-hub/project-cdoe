@@ -36,7 +36,8 @@ const Login = () => {
     setLoading(true);
     try {
       const res = await axios.post(`${API_URL}/auth/login`, { email, password });
-      localStorage.setItem('adminToken', res.data.token);
+      localStorage.setItem('adminToken', res.data.accessToken || res.data.token);
+      localStorage.setItem('adminRefreshToken', res.data.refreshToken || '');
       localStorage.setItem('adminUser', JSON.stringify(res.data.user));
       if (refreshSessions) {
         await refreshSessions();

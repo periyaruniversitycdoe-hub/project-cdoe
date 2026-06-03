@@ -55,8 +55,8 @@ export default function LoginPage() {
     setLoading(true)
     try {
       const res = await authAPI.login(data)
-      const { token, user } = res.data.data
-      login(user, token)
+      const { token, accessToken, refreshToken, user } = res.data.data
+      login(user, accessToken || token, refreshToken)
       toast.success(`Welcome back!`)
       
       // Determine redirection target

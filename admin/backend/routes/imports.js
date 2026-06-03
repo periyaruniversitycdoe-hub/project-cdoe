@@ -4,6 +4,7 @@ const multer = require('multer');
 const ExcelJS = require('exceljs');
 const pool = require('../config/db');
 const { verifyToken, isAdmin } = require('../middleware/auth');
+const { postUploadCheckMemory } = require('../../../shared/security/fileValidator');
 
 // Multer in-memory storage for parsing Excel buffers directly
 const storage = multer.memoryStorage();
@@ -277,7 +278,7 @@ router.get('/template/:destination', verifyToken, isAdmin, async (req, res) => {
 });
 
 // ── Endpoint: POST /api/imports/preview/:destination ────────────────────────
-router.post('/preview/:destination', verifyToken, isAdmin, upload.single('file'), async (req, res) => {
+router.post('/preview/:destination', verifyToken, isAdmin, upload.single('file'), postUploadCheckMemory(['.csv']), async (req, res) => {
     const config = DESTINATIONS[req.params.destination];
     if (!config) return res.status(404).json({ success: false, message: 'Invalid destination' });
     if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });

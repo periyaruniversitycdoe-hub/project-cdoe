@@ -19,10 +19,27 @@ app.set('trust proxy', 1); // Trust reverse proxy (Render/Netlify) for accurate 
 const PORT = process.env.ADMIN_BACKEND_PORT || 5001;
 
 // Security headers
+// CSP is configured rather than disabled — allows cross-origin iframes for document preview
+// while still protecting against XSS and injection attacks.
 app.use(helmet({
-    crossOriginResourcePolicy: { policy: 'cross-origin' }, // allow static file serving
-    contentSecurityPolicy: false, // Disable Helmet CSP so iframe/media files from backend load in cross-origin frontend
-    frameguard: false,            // Disable X-Frame-Options: SAMEORIGIN to allow secure iframe document previewing
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc:  ["'self'"],
+            scriptSrc:   ["'self'", "'unsafe-inline'"],   // needed for React bundled scripts
+            styleSrc:    ["'self'", "'unsafe-inline'"],
+            imgSrc:      ["'self'", 'data:', 'blob:'],
+            fontSrc:     ["'self'", 'data:'],
+            connectSrc:  ["'self'"],
+            frameSrc:    ["'self'"],                      // allow same-origin iframes only
+            objectSrc:   ["'none'"],
+            baseUri:     ["'self'"],
+            formAction:  ["'self'"],
+        },
+    },
+    // Keep frameguard enabled (SAMEORIGIN) — cross-origin iframe embed is handled by CSP frameSrc
+    frameguard: { action: 'sameorigin' },
+    hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
 }));
 
 // CORS — restrict to known origins only
@@ -40,11 +57,13 @@ app.use(cors({
         }
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'bypass-tunnel-reminder'],
     credentials: true,
 }));
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.json({ limit: '5mb' }));        // 50mb was dangerously large
+app.use(express.urlencoded({ limit: '5mb', extended: true }));
+const { sanitize } = require('../../shared/security/inputSanitizer');
+app.use(sanitize);
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 const isProd = process.env.NODE_ENV === 'production';
@@ -102,10 +121,27 @@ const supervisorTrackingRoutes = require('../../supervisor/backend/routes/superv
 const centreTrackingRoutes     = require('../../center/backend/routes/centreTracking');
 
 const db = require('./config/db');
+
+// ── Security middleware ─────────────────────────────────────────────────────
+const requestId  = require('../../shared/security/requestId');
+const auditMw    = require('../../shared/security/auditLogger');
+app.use(requestId('admin'));
+app.use(auditMw.middleware(db, 'admin'));
+
 const sharedAuthRoutes = require('../../shared/auth/routes/authRoutes');
 const bcrypt = require('bcrypt');
 app.use('/api/auth', sharedAuthRoutes(express, db, 'admin', bcrypt));
 app.use('/api/auth', authRoutes);
+
+// ── Admin MFA routes ────────────────────────────────────────────────────────
+const { makeRoutes: makeMfaRoutes } = require('../../shared/security/totp');
+const { verifyToken } = require('./middleware/auth');
+const { issueTokenPair } = require('../../shared/security/tokenManager');
+async function issueAdminJWT(db, user) {
+    const { accessToken } = await issueTokenPair(db, { id: user.id, email: user.email, role: user.role }, 'admin', process.env.ADMIN_JWT_SECRET);
+    return accessToken;
+}
+app.use('/api/auth/mfa', verifyToken, makeMfaRoutes(db, process.env.ADMIN_JWT_SECRET, issueAdminJWT));
 app.use('/api/settings', settingsRoutes);
 app.use('/api/applications', applicationRoutes);
 app.use('/api/dropdowns', dropdownRoutes);
@@ -392,73 +428,7 @@ app.use('/api/chatbot', chatbotRoutes);
     console.log('✅ Part-Time engine schema verified.');
 })();
 
-// ── Roster Management Engine auto-migration ──────────────────────────────────
-(async () => {
-    const tables = [
-        `CREATE TABLE IF NOT EXISTS roster_configurations (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            session_id INT UNIQUE NOT NULL,
-            pg_eligibility_pct DECIMAL(5,2) DEFAULT 70.00,
-            integrated_eligibility_pct DECIMAL(5,2) DEFAULT 70.00,
-            merit_percentage DECIMAL(5,2) DEFAULT 30.00,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
-        `CREATE TABLE IF NOT EXISTS roster_allocations (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            application_id VARCHAR(50) NOT NULL UNIQUE,
-            academic_weightage DECIMAL(5,2) DEFAULT 0.00,
-            final_score DECIMAL(5,2) DEFAULT 0.00,
-            merit_rank INT DEFAULT NULL,
-            reservation_rank INT DEFAULT NULL,
-            selection_status ENUM('Selected', 'Waiting', 'Not Selected') DEFAULT 'Not Selected',
-            roster_status ENUM('Selected', 'Waiting', 'Joined', 'Rejected', 'No Show', 'Verification Failed', 'Withdrawn', 'Cancelled') DEFAULT 'Selected',
-            allotted_seat_type ENUM('Merit', 'Reservation') DEFAULT NULL,
-            allotted_category VARCHAR(50) DEFAULT NULL,
-            allotted_supervisor_id INT DEFAULT NULL,
-            is_excluded TINYINT(1) DEFAULT 0,
-            exclusion_reason VARCHAR(255) DEFAULT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            FOREIGN KEY (application_id) REFERENCES applications(application_id) ON DELETE CASCADE,
-            FOREIGN KEY (allotted_supervisor_id) REFERENCES supervisors(id) ON DELETE SET NULL
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
-        `CREATE TABLE IF NOT EXISTS scholars (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            supervisor_id INT NOT NULL,
-            application_id VARCHAR(50) NULL UNIQUE,
-            scholar_name VARCHAR(255) NOT NULL,
-            scholar_type ENUM('Full-Time', 'Part-Time') NOT NULL DEFAULT 'Full-Time',
-            programme_id INT NULL,
-            department_id INT NULL,
-            enrollment_no VARCHAR(100) UNIQUE NULL,
-            admission_date DATE NULL,
-            status ENUM('Admitted', 'Withdrawn', 'Cancelled', 'Completed', 'Transferred') DEFAULT 'Admitted',
-            transfer_details TEXT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            FOREIGN KEY (supervisor_id) REFERENCES supervisors(id) ON DELETE CASCADE,
-            FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE SET NULL,
-            FOREIGN KEY (programme_id) REFERENCES programs_offered(id) ON DELETE SET NULL
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
-        `CREATE TABLE IF NOT EXISTS roster_audit_logs (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            admin_id INT NULL,
-            admin_email VARCHAR(255) NOT NULL,
-            action VARCHAR(255) NOT NULL,
-            module VARCHAR(100) DEFAULT 'Roster Management',
-            old_value LONGTEXT NULL,
-            new_value LONGTEXT NULL,
-            ip_address VARCHAR(45) NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
-    ];
-    for (const sql of tables) {
-        try { await db.execute(sql); } catch (e) { console.error('Roster migration table error:', e.message); }
-    }
-    console.log('✅ Roster Management Engine schema verified.');
-})();
+// Roster Management tables are created in routes/roster.js on startup
 
 // ── Enterprise Excel Import Audit History Migration ──────────────────────────
 (async () => {

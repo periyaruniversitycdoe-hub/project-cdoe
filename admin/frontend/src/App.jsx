@@ -54,18 +54,68 @@ import CentreTracking from './pages/CentreTracking';
 import ChatbotManagement from './pages/ChatbotManagement';
 import EmailDeliveryLog from './pages/EmailDeliveryLog';
 
-// Global 401 interceptor — clears stale token and forces re-login
+// Global 401 interceptor — attempts token refresh before forcing re-login
+const ADMIN_API = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
+let _adminRefreshing = false;
+let _adminQueue = [];
+
+function _processAdminQueue(err, token) {
+  _adminQueue.forEach(({ resolve, reject }) => err ? reject(err) : resolve(token));
+  _adminQueue = [];
+}
+
 axios.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      const isLoginCall = error.config?.url?.includes('/auth/login');
-      if (!isLoginCall) {
+  async (error) => {
+    const original = error.config;
+    const is401 = error.response?.status === 401;
+    const isAuthEndpoint = original?.url?.includes('/auth/');
+
+    if (is401 && !original?._retry && !isAuthEndpoint) {
+      if (_adminRefreshing) {
+        return new Promise((resolve, reject) => {
+          _adminQueue.push({ resolve, reject });
+        }).then((token) => {
+          original.headers = original.headers || {};
+          original.headers['Authorization'] = `Bearer ${token}`;
+          return axios(original);
+        }).catch((e) => Promise.reject(e));
+      }
+
+      original._retry = true;
+      _adminRefreshing = true;
+
+      const refreshToken = localStorage.getItem('adminRefreshToken');
+      if (!refreshToken) {
         localStorage.removeItem('adminToken');
+        localStorage.removeItem('adminRefreshToken');
         localStorage.removeItem('adminUser');
         window.location.href = '/login';
+        _adminRefreshing = false;
+        return Promise.reject(error);
+      }
+
+      try {
+        const { data } = await axios.post(`${ADMIN_API}/auth/refresh`, { refreshToken });
+        const newAccess = data.accessToken;
+        localStorage.setItem('adminToken', newAccess);
+        if (data.refreshToken) localStorage.setItem('adminRefreshToken', data.refreshToken);
+        _processAdminQueue(null, newAccess);
+        original.headers = original.headers || {};
+        original.headers['Authorization'] = `Bearer ${newAccess}`;
+        return axios(original);
+      } catch (refreshErr) {
+        _processAdminQueue(refreshErr, null);
+        localStorage.removeItem('adminToken');
+        localStorage.removeItem('adminRefreshToken');
+        localStorage.removeItem('adminUser');
+        window.location.href = '/login';
+        return Promise.reject(refreshErr);
+      } finally {
+        _adminRefreshing = false;
       }
     }
+
     return Promise.reject(error);
   }
 );

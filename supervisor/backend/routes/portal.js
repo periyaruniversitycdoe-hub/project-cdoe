@@ -195,6 +195,7 @@ router.put('/change-password', verifyToken, async (req, res) => {
 const multer = require('multer');
 const path   = require('path');
 const fs     = require('fs');
+const { postUploadCheck } = require('../../../shared/security/fileValidator');
 
 // Upload to the shared admin uploads directory so admin can serve them at /uploads/supervisors/
 const UPLOAD_DIR = path.join(__dirname, '../../../admin/backend/uploads/supervisors');
@@ -223,7 +224,7 @@ router.post('/application', verifyToken, upload.fields([
     { name: 'profile_image',           maxCount: 1 },
     { name: 'dob_evidence',            maxCount: 1 },
     { name: 'recognition_certificate', maxCount: 1 },
-]), async (req, res) => {
+]), postUploadCheck(), async (req, res) => {
     const data  = req.body;
     const files = req.files || {};
 

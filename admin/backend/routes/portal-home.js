@@ -4,6 +4,7 @@ const express = require('express');
 const router  = express.Router();
 const pool    = require('../config/db');
 const { verifyToken, isAdmin } = require('../middleware/auth');
+const { postUploadCheck } = require('../../../shared/security/fileValidator');
 const multer  = require('multer');
 const path    = require('path');
 const fs      = require('fs');
@@ -100,7 +101,7 @@ router.put('/settings', verifyToken, isAdmin, async (req, res) => {
 });
 
 // ── POST /api/portal-home/prospectus — upload/replace PDF ────────────────────
-router.post('/prospectus', verifyToken, isAdmin, upload.single('prospectus'), async (req, res) => {
+router.post('/prospectus', verifyToken, isAdmin, upload.single('prospectus'), postUploadCheck(), async (req, res) => {
     if (!req.file) return res.status(400).json({ success: false, message: 'No PDF file provided' });
     try {
         // Delete previous file if any

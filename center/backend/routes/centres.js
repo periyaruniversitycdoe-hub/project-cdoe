@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const ctrl = require('../controllers/centreController');
 const { verifyToken, isAdmin } = require('../../../admin/backend/middleware/auth');
+const { postUploadCheck } = require('../../../shared/security/fileValidator');
 
 const uploadDir = path.join(__dirname, '../../../admin/backend/uploads/centres');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -36,8 +37,8 @@ const centreUpload = upload.fields([
 
 router.get('/',          verifyToken, isAdmin, ctrl.list);
 router.get('/:id',       verifyToken, isAdmin, ctrl.get);
-router.post('/',         verifyToken, isAdmin, centreUpload, ctrl.create);
-router.put('/:id',       verifyToken, isAdmin, centreUpload, ctrl.update);
+router.post('/',         verifyToken, isAdmin, centreUpload, postUploadCheck(), ctrl.create);
+router.put('/:id',       verifyToken, isAdmin, centreUpload, postUploadCheck(), ctrl.update);
 router.patch('/:id/status', verifyToken, isAdmin, ctrl.updateStatus);
 router.delete('/:id',    verifyToken, isAdmin, ctrl.remove);
 

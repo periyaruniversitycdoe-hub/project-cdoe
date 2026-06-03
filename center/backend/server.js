@@ -17,7 +17,25 @@ const app = express();
 app.set('trust proxy', 1); // Trust reverse proxy (Render/Netlify) for accurate rate limiting
 const PORT = process.env.CENTER_BACKEND_PORT || 5003;
 
-app.use(helmet());
+app.use(helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc:  ["'self'"],
+            scriptSrc:   ["'self'", "'unsafe-inline'"],
+            styleSrc:    ["'self'", "'unsafe-inline'"],
+            imgSrc:      ["'self'", 'data:', 'blob:'],
+            fontSrc:     ["'self'", 'data:'],
+            connectSrc:  ["'self'"],
+            frameSrc:    ["'self'"],
+            objectSrc:   ["'none'"],
+            baseUri:     ["'self'"],
+            formAction:  ["'self'"],
+        },
+    },
+    frameguard: { action: 'sameorigin' },
+    hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+}));
 
 const allowedOrigins = [
     process.env.CENTER_FRONTEND_URL || 'http://localhost:5176',
@@ -33,6 +51,8 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+const { sanitize } = require('../../shared/security/inputSanitizer');
+app.use(sanitize);
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 const isProd = process.env.NODE_ENV === 'production';
@@ -62,6 +82,13 @@ app.use('/api/auth', authLimiter);
 app.use('/api/', apiLimiter);
 
 const db = require('./config/db');
+
+// ── Security middleware ──────────────────────────────────────────────────────
+const requestId = require('../../shared/security/requestId');
+const auditMw   = require('../../shared/security/auditLogger');
+app.use(requestId('center'));
+app.use(auditMw.middleware(db, 'center'));
+
 const sharedAuthRoutes = require('../../shared/auth/routes/authRoutes');
 const bcrypt = require('bcryptjs');
 app.use('/api/auth', sharedAuthRoutes(express, db, 'center', bcrypt));

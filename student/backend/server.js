@@ -33,15 +33,31 @@ app.use('/api/payment/webhook', (req, _res, next) => {
 });
 
 app.use(helmet({
-    crossOriginResourcePolicy: { policy: 'cross-origin' },
-    crossOriginEmbedderPolicy: false,
-    contentSecurityPolicy: false, // Disable Helmet CSP so iframe/media previews from backend load in cross-origin frontend
-    frameguard: false,            // Disable X-Frame-Options: SAMEORIGIN to allow secure iframe document previewing
+    crossOriginResourcePolicy:  { policy: 'cross-origin' },
+    crossOriginEmbedderPolicy:  false,
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc:  ["'self'"],
+            scriptSrc:   ["'self'", "'unsafe-inline'"],
+            styleSrc:    ["'self'", "'unsafe-inline'"],
+            imgSrc:      ["'self'", 'data:', 'blob:'],
+            fontSrc:     ["'self'", 'data:'],
+            connectSrc:  ["'self'"],
+            frameSrc:    ["'self'"],
+            objectSrc:   ["'none'"],
+            baseUri:     ["'self'"],
+            formAction:  ["'self'"],
+        },
+    },
+    frameguard: { action: 'sameorigin' },
+    hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
 }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false })); // Paytm callback is a form POST
+const { sanitize } = require('../../shared/security/inputSanitizer');
+app.use(sanitize);
 
 // â”€â”€ CORS must be registered BEFORE rate limiters so that 429 responses
 //    still carry Access-Control-Allow-Origin and the browser can read them.
@@ -851,6 +867,13 @@ initDB().then(() => {
 
 verifyMailConnection();
 
+// ── Security middleware ──────────────────────────────────────────────────────
+const requestId  = require('../../shared/security/requestId');
+const auditMw    = require('../../shared/security/auditLogger');
+const accountLock = require('../../shared/security/accountLock');
+app.use(requestId('student'));
+app.use(auditMw.middleware(db, 'student'));
+
 // --- AUTH ROUTES ---
 const authRouter = express.Router();
 
@@ -871,7 +894,8 @@ authRouter.post('/register', async (req, res) => {
         }
         const activeSessionId = sessionRows[0].id;
 
-        const hashedPassword = await bcrypt.hash(password, 10);
+        const { hashPassword } = require('../../shared/security/passwordHash');
+        const hashedPassword = await hashPassword(password);
 
         // application_id is NOT generated here â€” it is assigned only after the
         // registration form is fully submitted (CETPHD/J26/XXXX format).
@@ -912,29 +936,89 @@ authRouter.post('/register', async (req, res) => {
 
 authRouter.post('/login', async (req, res) => {
     const { username, password } = req.body;
-    try {
-        const [results] = await db.query('SELECT * FROM users WHERE email = ?', [username]);
-        if (results.length === 0) return res.status(401).json({ message: 'Invalid credentials' });
-        
-        const user = results[0];
-        const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) return res.status(401).json({ message: 'Invalid credentials' });
-        
-        // Track login activity (first_login_at set only on first insert)
-        try {
-            await db.query(
-                `INSERT INTO student_logins (user_id, first_login_at, last_login_at, login_count, last_ip)
-                 VALUES (?, NOW(), NOW(), 1, ?)
-                 ON DUPLICATE KEY UPDATE
-                   last_login_at = NOW(),
-                   login_count   = login_count + 1,
-                   last_ip       = VALUES(last_ip)`,
-                [user.id, req.ip || null]
-            );
-        } catch (_) { /* non-critical â€” never block login */ }
+    const email = username;
 
-        const token = jwt.sign({ id: user.id, application_id: user.application_id, role: user.role }, process.env.STUDENT_JWT_SECRET, { expiresIn: '7d' });
-        res.json({ message: 'Login successful', data: { token, user: { id: user.id, full_name: user.full_name, application_id: user.application_id, email: user.email, role: user.role } } });
+    if (!email || !password) {
+        return res.status(400).json({ message: 'Email and password are required' });
+    }
+
+    try {
+        // 1. Check account lockout before any user lookup
+        const lock = await accountLock.checkLock(db, email, 'student');
+        if (lock.locked) {
+            const mins = Math.ceil(lock.secondsRemaining / 60);
+            return res.status(423).json({
+                message: `Account locked due to too many failed attempts. Try again in ${mins} minute(s).`,
+                lockedUntil: lock.lockUntil,
+            });
+        }
+
+        const [results] = await db.query('SELECT * FROM users WHERE email = ?', [email]);
+        if (results.length === 0) {
+            await accountLock.recordFailure(db, email, 'student');
+            return res.status(401).json({ message: 'Invalid credentials' });
+        }
+
+        const user    = results[0];
+        const { verifyAndMigrate } = require('../../shared/security/passwordHash');
+        const isMatch = await verifyAndMigrate(db, password, user.password, user.id, 'users');
+
+        if (!isMatch) {
+            const lockResult = await accountLock.recordFailure(db, email, 'student');
+            if (lockResult.locked) {
+                const mins = Math.ceil((lockResult.lockUntil - Date.now()) / 60000);
+                return res.status(423).json({
+                    message: `Too many failed attempts. Account locked for ${mins} minute(s).`,
+                    lockedUntil: lockResult.lockUntil,
+                });
+            }
+            return res.status(401).json({
+                message: `Invalid credentials. ${lockResult.attemptsRemaining} attempt(s) remaining before lockout.`,
+            });
+        }
+
+        // 2. Clear lockout counters on successful login
+        await accountLock.clearFailures(db, email, 'student');
+
+        // 3. Track login activity (non-blocking)
+        db.query(
+            `INSERT INTO student_logins (user_id, first_login_at, last_login_at, login_count, last_ip)
+             VALUES (?, NOW(), NOW(), 1, ?)
+             ON DUPLICATE KEY UPDATE
+               last_login_at = NOW(),
+               login_count   = login_count + 1,
+               last_ip       = VALUES(last_ip)`,
+            [user.id, req.ip || null]
+        ).catch(() => {});
+
+        // 4. Issue short-lived access token + refresh token
+        const { issueTokenPair } = require('../../shared/security/tokenManager');
+        const reqMeta = {
+            ip: req.headers['x-real-ip'] || req.ip || 'unknown',
+            deviceHash: require('crypto').createHash('sha256')
+                .update(`${req.headers['user-agent'] || ''}:${req.headers['accept-language'] || ''}`)
+                .digest('hex').substring(0, 16),
+        };
+        const payload = { id: user.id, application_id: user.application_id, role: user.role };
+        const { accessToken, refreshToken } = await issueTokenPair(
+            db, payload, 'student', process.env.STUDENT_JWT_SECRET, reqMeta
+        );
+
+        return res.json({
+            message: 'Login successful',
+            data: {
+                token:        accessToken,   // legacy field — keep for backward compat
+                accessToken,
+                refreshToken,
+                user: {
+                    id:             user.id,
+                    full_name:      user.full_name,
+                    application_id: user.application_id,
+                    email:          user.email,
+                    role:           user.role,
+                },
+            },
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server error during login' });
     }
@@ -1066,7 +1150,8 @@ authRouter.post('/reset-password', async (req, res) => {
         if (!user.reset_token_expires || new Date() > new Date(user.reset_token_expires))
             return res.status(400).json({ message: 'Reset link has expired. Please request a new one.' });
 
-        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        const { hashPassword } = require('../../shared/security/passwordHash');
+        const hashedPassword = await hashPassword(newPassword);
         await db.query(
             'UPDATE users SET password = ?, reset_token = NULL, reset_token_expires = NULL WHERE id = ?',
             [hashedPassword, user.id]
@@ -1082,6 +1167,10 @@ authRouter.post('/reset-password', async (req, res) => {
 const sharedAuthRoutes = require('../../shared/auth/routes/authRoutes');
 app.use('/api/auth', sharedAuthRoutes(express, db, 'student', bcrypt));
 app.use('/api/auth', authRouter);
+
+// Refresh token endpoint
+const { refreshHandler } = require('../../shared/security/tokenManager');
+app.post('/api/auth/refresh', refreshHandler(db, 'student', process.env.STUDENT_JWT_SECRET));
 
 // â”€â”€ PUT /api/auth/change-password â€” logged-in student password change â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.put('/api/auth/change-password', authenticateToken, async (req, res) => {

@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const ctrl = require('../controllers/supervisorController');
 const { verifyToken, isAdmin } = require('../../../admin/backend/middleware/auth');
+const { postUploadCheck } = require('../../../shared/security/fileValidator');
 
 const uploadDir = path.join(__dirname, '../../../admin/backend/uploads/supervisors');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -50,8 +51,8 @@ router.get('/capacity/:designationId', verifyToken, ctrl.getCapacityByDesignatio
 // CRUD
 router.get('/',           verifyToken, isAdmin, ctrl.list);
 router.get('/:id',        verifyToken, isAdmin, ctrl.get);
-router.post('/',          verifyToken, isAdmin, supervisorUpload, ctrl.create);
-router.put('/:id',        verifyToken, isAdmin, supervisorUpload, ctrl.update);
+router.post('/',          verifyToken, isAdmin, supervisorUpload, postUploadCheck(), ctrl.create);
+router.put('/:id',        verifyToken, isAdmin, supervisorUpload, postUploadCheck(), ctrl.update);
 router.patch('/:id/status', verifyToken, isAdmin, ctrl.updateStatus);
 router.delete('/all',      verifyToken, isAdmin, ctrl.removeAll);
 router.delete('/:id',      verifyToken, isAdmin, ctrl.remove);

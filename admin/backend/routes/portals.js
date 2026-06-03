@@ -4,6 +4,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
 const { verifyToken, isAdmin } = require('../middleware/auth');
+const { postUploadCheck } = require('../../../shared/security/fileValidator');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -334,7 +335,7 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
 });
 
 // POST /api/portals/upload - Dynamic Banner / Icon Upload
-router.post('/upload', verifyToken, isAdmin, upload.single('image'), async (req, res) => {
+router.post('/upload', verifyToken, isAdmin, upload.single('image'), postUploadCheck(), async (req, res) => {
     if (!req.file) {
         return res.status(400).json({ success: false, message: 'No file was uploaded.' });
     }

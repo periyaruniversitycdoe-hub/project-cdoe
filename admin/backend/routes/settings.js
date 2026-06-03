@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
 const { verifyToken, isAdmin } = require('../middleware/auth');
+const { postUploadCheck } = require('../../../shared/security/fileValidator');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -198,7 +199,7 @@ router.put('/update', verifyToken, isAdmin, async (req, res) => {
 });
 
 // ─── UPLOAD LOGO / FOUNDER / FILE ──────────────────────────────────────
-router.post('/upload-image', verifyToken, isAdmin, uploadImage.single('image'), async (req, res) => {
+router.post('/upload-image', verifyToken, isAdmin, uploadImage.single('image'), postUploadCheck(), async (req, res) => {
     if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
     const { field } = req.body;
     const allowedFields = ['logo', 'logo2', 'founder_image'];
@@ -222,7 +223,7 @@ router.post('/upload-image', verifyToken, isAdmin, uploadImage.single('image'), 
     }
 });
 
-router.post('/upload-file', verifyToken, isAdmin, uploadFile.single('file'), async (req, res) => {
+router.post('/upload-file', verifyToken, isAdmin, uploadFile.single('file'), postUploadCheck(), async (req, res) => {
     if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
     const { field } = req.body;
     const allowedFields = ['prospectus', 'instruction_file', 'syllabus_file', 'home_page_pdf'];

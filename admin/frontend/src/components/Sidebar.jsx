@@ -34,7 +34,7 @@ const menuStructure = [
       { icon: BarChart3,       label: 'Reports & Analytics',   path: '/reports' },
       { icon: Users,           label: 'Student Tracking',      path: '/students' },
       { icon: GraduationCap,   label: 'Counselling Mgmt',      path: '/counselling' },
-      { icon: ListTree,        label: 'Dynamic Roster Management', path: '/roster-management' },
+      { icon: ListTree,        label: 'Roster Management',         path: '/roster-management' },
       { icon: ShieldCheck,     label: 'Direct Pass Rules',     path: '/qualification-rules' },
       { icon: Award,           label: 'Qualifications',         path: '/qualifications' },
       { icon: CalendarRange,   label: 'Session Management',    path: '/sessions' },
