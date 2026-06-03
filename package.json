@@ -36,6 +36,7 @@
     "express": "^5.2.1",
     "http-proxy-middleware": "^4.0.0",
     "jsonwebtoken": "^9.0.3",
+    "localtunnel": "^2.0.2",
     "mysql2": "^3.22.3"
   }
 }

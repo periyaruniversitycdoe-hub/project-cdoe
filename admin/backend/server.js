@@ -33,7 +33,7 @@ const allowedAdminOrigins = [
 
 app.use(cors({
     origin: (origin, callback) => {
-        if (!origin || allowedAdminOrigins.includes(origin) || origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1') || origin.endsWith('netlify.app')) {
+        if (!origin || allowedAdminOrigins.includes(origin) || origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1') || origin.endsWith('netlify.app') || origin.endsWith('.loca.lt')) {
             callback(null, true);
         } else {
             callback(new Error('Not allowed by CORS'));

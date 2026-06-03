@@ -57,6 +57,7 @@ app.use(cors({
             origin.startsWith('http://localhost') ||
             origin.startsWith('http://127.0.0.1') ||
             origin.endsWith('netlify.app') ||
+            origin.endsWith('.loca.lt') ||
             productionOrigins.includes(origin);
 
         if (allowed) callback(null, true);
@@ -1339,18 +1340,22 @@ app.get('/api/eligibility/programs/:id/hints', async (req, res) => {
         );
         if (!prog) return res.status(404).json({ success: false, message: 'Programme not found' });
 
-        const [pg]    = await db.query(
-            `SELECT course_name FROM program_pg_eligibility    WHERE program_id = ? ORDER BY course_name ASC`, [programId]
+        const [pg]         = await db.query(
+            `SELECT course_name FROM program_pg_eligibility         WHERE program_id = ? ORDER BY course_name ASC`, [programId]
         );
-        const [mphil] = await db.query(
-            `SELECT course_name FROM program_mphil_eligibility WHERE program_id = ? ORDER BY course_name ASC`, [programId]
+        const [mphil]      = await db.query(
+            `SELECT course_name FROM program_mphil_eligibility      WHERE program_id = ? ORDER BY course_name ASC`, [programId]
+        );
+        const [integrated] = await db.query(
+            `SELECT course_name FROM program_integrated_eligibility  WHERE program_id = ? ORDER BY course_name ASC`, [programId]
         );
         res.json({
             success: true,
             data: {
-                program: prog,
-                pg:    pg.map(r => r.course_name),
-                mphil: mphil.map(r => r.course_name),
+                program:    prog,
+                pg:         pg.map(r => r.course_name),
+                mphil:      mphil.map(r => r.course_name),
+                integrated: integrated.map(r => r.course_name),
             }
         });
     } catch (err) { res.status(500).json({ success: false, message: err.message }); }

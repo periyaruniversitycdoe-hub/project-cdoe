@@ -5,7 +5,7 @@ import path from 'path'
 export default defineConfig({
   base: process.env.VITE_BASE_PATH || '/',
   plugins: [react()],
-  server: { port: 5175 },
+  server: { port: 5175, host: true, allowedHosts: true },
   resolve: {
     alias: {
       'react': path.resolve(__dirname, './node_modules/react'),
