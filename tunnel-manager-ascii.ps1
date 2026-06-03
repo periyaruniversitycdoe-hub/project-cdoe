@@ -77,7 +77,7 @@ $envMap = @{
     "$root\portal-dashboard\.env"    = "VITE_STUDENT_API_URL=$studentBe`nVITE_ADMIN_API_URL=$adminBe`nVITE_SUPERVISOR_API_URL=$supervisorBe`nVITE_CENTER_API_URL=$centerBe`nVITE_STUDENT_FE_URL=$studentFe`nVITE_ADMIN_FE_URL=$adminFe`nVITE_SUPERVISOR_FE_URL=$supervisorFe`nVITE_CENTER_FE_URL=$centerFe"
 }
 foreach ($pair in $envMap.GetEnumerator()) {
-    $pair.Value | Out-File $pair.Key -Encoding utf8 -NoNewline
+    [System.IO.File]::WriteAllText($pair.Key, $pair.Value)
 }
 Write-Host "Frontend .env files written with tunnel URLs." -ForegroundColor Cyan
 

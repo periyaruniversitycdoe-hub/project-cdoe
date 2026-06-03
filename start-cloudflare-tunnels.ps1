@@ -83,7 +83,7 @@ $envConfigs = @{
 Write-Host "`n📝  Writing frontend .env files...`n" -ForegroundColor Cyan
 foreach ($pair in $envConfigs.GetEnumerator()) {
     $full = "$root\$($pair.Key)"
-    $pair.Value | Out-File -FilePath $full -Encoding utf8 -NoNewline
+    [System.IO.File]::WriteAllText($full, $pair.Value)
     Write-Host "  ✅  $($pair.Key)"
 }
 
