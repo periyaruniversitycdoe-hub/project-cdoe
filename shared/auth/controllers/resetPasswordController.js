@@ -2,6 +2,8 @@
 
 const otpService = require('../services/otpService');
 const emailService = require('../services/emailService');
+const { validatePasswordComplexity } = require('../../security/passwordValidator');
+const { hashPassword } = require('../../security/passwordHash');
 
 /**
  * Controller to reset the password.
@@ -9,7 +11,7 @@ const emailService = require('../services/emailService');
  * @param {string} portal - 'student' | 'admin' | 'supervisor' | 'center'
  * @param {object} bcrypt - Hashing library from host
  */
-module.exports = function resetPasswordController(db, portal, bcrypt) {
+module.exports = function resetPasswordController(db, portal) {
   return async (req, res) => {
     const { email, password, confirmPassword } = req.body;
 
@@ -27,13 +29,9 @@ module.exports = function resetPasswordController(db, portal, bcrypt) {
       });
     }
 
-    // Password strength validation: 8+ chars, upper, lower, number, special
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,}$/;
-    if (!passwordRegex.test(password)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character.'
-      });
+    const pwCheck = validatePasswordComplexity(password);
+    if (!pwCheck.valid) {
+      return res.status(400).json({ success: false, message: pwCheck.message });
     }
 
     try {
@@ -46,9 +44,8 @@ module.exports = function resetPasswordController(db, portal, bcrypt) {
         });
       }
 
-      // 2. Hash the password with bcryptjs
-      const saltRounds = 10;
-      const hashedPassword = await bcrypt.hash(password, saltRounds);
+      // 2. Hash the password with argon2id
+      const hashedPassword = await hashPassword(password);
 
       // 3. Update the password in the correct portal user table
       let updateQuery = '';

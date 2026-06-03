@@ -176,13 +176,16 @@ router.put('/profile', verifyToken, async (req, res) => {
 
 // PUT /api/portal/change-password
 router.put('/change-password', verifyToken, async (req, res) => {
-    const bcrypt = require('bcryptjs');
+    const { validatePasswordComplexity } = require('../../../shared/security/passwordValidator');
+    const { verifyAndMigrate, hashPassword } = require('../../../shared/security/passwordHash');
     const { currentPassword, newPassword } = req.body;
+    const pwCheck = validatePasswordComplexity(newPassword);
+    if (!pwCheck.valid) return res.status(400).json({ message: pwCheck.message });
     try {
         const [rows] = await pool.query('SELECT password FROM supervisor_users WHERE id = ?', [req.user.id]);
-        const valid = await bcrypt.compare(currentPassword, rows[0].password);
+        const valid = await verifyAndMigrate(pool, currentPassword, rows[0].password, req.user.id, 'supervisor_users');
         if (!valid) return res.status(400).json({ message: 'Current password is incorrect' });
-        const hashed = await bcrypt.hash(newPassword, 10);
+        const hashed = await hashPassword(newPassword);
         await pool.query('UPDATE supervisor_users SET password = ? WHERE id = ?', [hashed, req.user.id]);
         res.json({ message: 'Password changed successfully' });
         credSvc.notifyPasswordChange({ db: pool, email: req.user.email, newPassword, portalType: 'Supervisor', ipAddress: req.ip }).catch(() => {});

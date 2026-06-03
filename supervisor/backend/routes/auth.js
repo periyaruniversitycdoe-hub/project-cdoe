@@ -6,12 +6,16 @@ const accountLock = require('../../../shared/security/accountLock');
 const { logEvent, EVENT_TYPES, SEVERITY } = require('../../../shared/security/auditLogger');
 const { issueTokenPair, refreshHandler } = require('../../../shared/security/tokenManager');
 const { hashPassword, verifyAndMigrate } = require('../../../shared/security/passwordHash');
+const { validatePasswordComplexity } = require('../../../shared/security/passwordValidator');
 
 // POST /api/auth/signup
 router.post('/signup', async (req, res) => {
     const { name, email, password, mobile } = req.body;
     if (!name || !email || !password)
         return res.status(400).json({ message: 'Name, email and password are required' });
+
+    const pwCheck = validatePasswordComplexity(password);
+    if (!pwCheck.valid) return res.status(400).json({ message: pwCheck.message });
 
     try {
         const [existing] = await pool.query('SELECT id FROM supervisor_users WHERE email = ?', [email]);

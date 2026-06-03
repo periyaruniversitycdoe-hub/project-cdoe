@@ -880,6 +880,10 @@ const authRouter = express.Router();
 authRouter.post('/register', async (req, res) => {
     const { email, password, full_name } = req.body;
     try {
+        const { validatePasswordComplexity } = require('../../shared/security/passwordValidator');
+        const pwCheck = validatePasswordComplexity(password);
+        if (!pwCheck.valid) return res.status(400).json({ message: pwCheck.message });
+
         const [existing] = await db.query('SELECT email FROM users WHERE email = ?', [email]);
         if (existing.length > 0) return res.status(400).json({ message: 'User already exists' });
 
@@ -1177,14 +1181,16 @@ app.put('/api/auth/change-password', authenticateToken, async (req, res) => {
     const { currentPassword, newPassword } = req.body;
     if (!currentPassword || !newPassword)
         return res.status(400).json({ message: 'Current and new password are required' });
-    if (newPassword.length < 8)
-        return res.status(400).json({ message: 'Password must be at least 8 characters' });
+    const { validatePasswordComplexity } = require('../../shared/security/passwordValidator');
+    const pwCheck = validatePasswordComplexity(newPassword);
+    if (!pwCheck.valid) return res.status(400).json({ message: pwCheck.message });
     try {
         const [rows] = await db.query('SELECT password, email FROM users WHERE id = ?', [req.user.id]);
         if (!rows.length) return res.status(404).json({ message: 'User not found' });
-        const valid = await bcrypt.compare(currentPassword, rows[0].password);
+        const { verifyAndMigrate, hashPassword: hashPw } = require('../../shared/security/passwordHash');
+        const valid = await verifyAndMigrate(db, currentPassword, rows[0].password, req.user.id, 'users');
         if (!valid) return res.status(400).json({ message: 'Current password is incorrect' });
-        const hashed = await bcrypt.hash(newPassword, 10);
+        const hashed = await hashPw(newPassword);
         await db.query('UPDATE users SET password = ? WHERE id = ?', [hashed, req.user.id]);
         res.json({ message: 'Password changed successfully' });
         const credSvc = require('../../shared/credential/credentialNotificationService');
