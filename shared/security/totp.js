@@ -11,11 +11,14 @@
  */
 const crypto = require('crypto');
 
-// Encryption key for storing secrets at rest
-const SECRET_KEY = Buffer.from(
-    process.env.MFA_ENCRYPTION_KEY || '00000000000000000000000000000000',
-    'hex'
-);
+// Encryption key for storing secrets at rest — must be set in .env
+if (!process.env.MFA_ENCRYPTION_KEY) {
+    throw new Error('[SECURITY] MFA_ENCRYPTION_KEY env var is not set. Generate one with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
+}
+const SECRET_KEY = Buffer.from(process.env.MFA_ENCRYPTION_KEY, 'hex');
+if (SECRET_KEY.length !== 32) {
+    throw new Error('[SECURITY] MFA_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes / 256 bits)');
+}
 
 function encryptSecret(plaintext) {
     const iv = crypto.randomBytes(16);
@@ -106,78 +109,102 @@ function verifyMfaToken(mfaToken, jwtSecret) {
 }
 
 /**
- * Express route handlers — mount these in admin backend
+ * Generic MFA route factory — works for admin, supervisor, and center portals.
  *
- * POST /api/auth/mfa/setup
- *   Requires: authenticateToken
- *   Response: { keyUri, secret (plaintext, show once) }
+ * options.portal       — 'admin' | 'supervisor' | 'center'
+ * options.usersTable   — DB table for the portal users (default: 'users')
+ * options.nameField    — column holding display name (default: 'full_name')
+ * options.mfaTable     — 'admin_mfa' for admin; 'portal_mfa' for supervisor/center
+ * options.usePortalFilter — true when using portal_mfa (adds WHERE portal=? clause)
  *
- * POST /api/auth/mfa/verify-setup
- *   Requires: authenticateToken, body: { totpCode }
- *   Enables MFA if code is correct
- *
- * POST /api/auth/mfa/validate
- *   Public (uses mfaToken from login step 1)
- *   Body: { mfaToken, totpCode }
- *   Response: { token (JWT), user }
- *
- * POST /api/auth/mfa/disable
- *   Requires: authenticateToken + TOTP verification
+ * Routes mounted at /api/auth/mfa/:
+ *   POST /setup          — generate TOTP secret + QR URI
+ *   POST /verify-setup   — confirm first TOTP code, enable MFA
+ *   POST /validate       — validate TOTP after password step
+ *   POST /disable        — disable MFA (requires current TOTP)
  */
-function makeRoutes(db, jwtSecret, issueJWT) {
+function makeRoutes(db, jwtSecret, issueJWT, options = {}) {
+    const {
+        portal          = 'admin',
+        usersTable      = 'users',
+        nameField       = 'full_name',
+        mfaTable        = 'admin_mfa',
+        usePortalFilter = false,
+    } = options;
+
     const router = require('express').Router();
     const { EVENT_TYPES, SEVERITY, logEvent } = require('./auditLogger');
 
-    // Setup: generate secret + QR URI
+    // Helper: build WHERE clause for mfa table queries
+    function mfaWhere(extra = '') {
+        const base = usePortalFilter ? 'portal = ? AND user_id = ?' : 'user_id = ?';
+        return extra ? `${base} AND ${extra}` : base;
+    }
+    function mfaParams(userId, ...rest) {
+        return usePortalFilter ? [portal, userId, ...rest] : [userId, ...rest];
+    }
+
+    // POST /setup — generate secret + QR URI
     router.post('/setup', async (req, res) => {
         const userId = req.user?.id;
         if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
         try {
-            const [[user]] = await db.query('SELECT email FROM users WHERE id = ?', [userId]);
+            const [[user]] = await db.query(`SELECT email FROM \`${usersTable}\` WHERE id = ?`, [userId]);
+            if (!user) return res.status(404).json({ success: false, message: 'User not found' });
             const { secret, keyUri, encryptedSecret } = generateSecret(user.email);
 
-            // Store (unconfirmed) — is_enabled stays 0 until verify-setup
-            await db.query(
-                `INSERT INTO admin_mfa (user_id, secret, is_enabled)
-                 VALUES (?, ?, 0)
-                 ON DUPLICATE KEY UPDATE secret = VALUES(secret), is_enabled = 0`,
-                [userId, encryptedSecret]
-            );
-
+            if (usePortalFilter) {
+                await db.query(
+                    `INSERT INTO portal_mfa (portal, user_id, secret, is_enabled)
+                     VALUES (?, ?, ?, 0)
+                     ON DUPLICATE KEY UPDATE secret = VALUES(secret), is_enabled = 0`,
+                    [portal, userId, encryptedSecret]
+                );
+            } else {
+                await db.query(
+                    `INSERT INTO admin_mfa (user_id, secret, is_enabled)
+                     VALUES (?, ?, 0)
+                     ON DUPLICATE KEY UPDATE secret = VALUES(secret), is_enabled = 0`,
+                    [userId, encryptedSecret]
+                );
+            }
             res.json({ success: true, keyUri, secret });
         } catch (err) {
-            res.status(500).json({ success: false, message: err.message });
+            res.status(500).json({ success: false, message: 'Server error' });
         }
     });
 
-    // Confirm setup: verify first TOTP code
+    // POST /verify-setup — confirm first TOTP code, enable MFA
     router.post('/verify-setup', async (req, res) => {
-        const userId   = req.user?.id;
+        const userId = req.user?.id;
         const { totpCode } = req.body;
         if (!userId || !totpCode) return res.status(400).json({ success: false, message: 'Missing required fields' });
         try {
-            const [[row]] = await db.query('SELECT secret FROM admin_mfa WHERE user_id = ?', [userId]);
+            const [[row]] = await db.query(
+                `SELECT secret FROM \`${mfaTable}\` WHERE ${mfaWhere()}`,
+                mfaParams(userId)
+            );
             if (!row) return res.status(400).json({ success: false, message: 'MFA not initialized. Run /setup first.' });
 
             if (!verifyCode(totpCode, row.secret)) {
-                await logEvent(db, { eventType: EVENT_TYPES.MFA_FAILURE, portal: 'admin', severity: SEVERITY.MEDIUM,
-                    userId, message: 'MFA setup verification failed — wrong TOTP code' });
+                await logEvent(db, { eventType: EVENT_TYPES.MFA_FAILURE, portal, severity: SEVERITY.MEDIUM,
+                    userId, message: `${portal} MFA setup verification failed — wrong TOTP code` });
                 return res.status(400).json({ success: false, message: 'Invalid TOTP code' });
             }
 
             await db.query(
-                `UPDATE admin_mfa SET is_enabled = 1, setup_at = NOW() WHERE user_id = ?`,
-                [userId]
+                `UPDATE \`${mfaTable}\` SET is_enabled = 1, setup_at = NOW() WHERE ${mfaWhere()}`,
+                mfaParams(userId)
             );
-            await logEvent(db, { eventType: EVENT_TYPES.MFA_SETUP, portal: 'admin', severity: SEVERITY.LOW,
-                userId, message: 'Admin MFA enabled' });
+            await logEvent(db, { eventType: EVENT_TYPES.MFA_SETUP, portal, severity: SEVERITY.LOW,
+                userId, message: `${portal} MFA enabled` });
             res.json({ success: true, message: 'MFA enabled successfully' });
         } catch (err) {
-            res.status(500).json({ success: false, message: err.message });
+            res.status(500).json({ success: false, message: 'Server error' });
         }
     });
 
-    // Validate TOTP after password step (login step 2)
+    // POST /validate — validate TOTP after password step (login step 2)
     router.post('/validate', async (req, res) => {
         const { mfaToken, totpCode } = req.body;
         if (!mfaToken || !totpCode) {
@@ -189,48 +216,60 @@ function makeRoutes(db, jwtSecret, issueJWT) {
         }
         try {
             const [[mfa]] = await db.query(
-                `SELECT secret FROM admin_mfa WHERE user_id = ? AND is_enabled = 1`,
-                [userId]
+                `SELECT secret FROM \`${mfaTable}\` WHERE ${mfaWhere('is_enabled = 1')}`,
+                mfaParams(userId)
             );
             if (!mfa) return res.status(400).json({ success: false, message: 'MFA not configured' });
 
             if (!verifyCode(totpCode, mfa.secret)) {
-                await logEvent(db, { eventType: EVENT_TYPES.MFA_FAILURE, portal: 'admin', severity: SEVERITY.HIGH,
-                    userId, email, message: 'MFA validation failed — wrong TOTP code' });
+                await logEvent(db, { eventType: EVENT_TYPES.MFA_FAILURE, portal, severity: SEVERITY.HIGH,
+                    userId, email, message: `${portal} MFA validation failed — wrong TOTP code` });
                 return res.status(401).json({ success: false, message: 'Invalid TOTP code' });
             }
 
-            await db.query(`UPDATE admin_mfa SET last_used_at = NOW() WHERE user_id = ?`, [userId]);
+            await db.query(
+                `UPDATE \`${mfaTable}\` SET last_used_at = NOW() WHERE ${mfaWhere()}`,
+                mfaParams(userId)
+            );
 
-            const [[user]] = await db.query('SELECT id, full_name, email, role FROM users WHERE id = ?', [userId]);
+            const [[user]] = await db.query(
+                `SELECT id, \`${nameField}\` AS display_name, email, role FROM \`${usersTable}\` WHERE id = ?`,
+                [userId]
+            );
             const token = await issueJWT(db, user);
 
-            await logEvent(db, { eventType: EVENT_TYPES.MFA_SUCCESS, portal: 'admin', severity: SEVERITY.LOW,
-                userId, email, message: 'Admin MFA login successful' });
+            await logEvent(db, { eventType: EVENT_TYPES.MFA_SUCCESS, portal, severity: SEVERITY.LOW,
+                userId, email, message: `${portal} MFA login successful` });
 
-            res.json({ success: true, token, user: { id: user.id, full_name: user.full_name, email: user.email, role: user.role } });
+            res.json({ success: true, token, user: { id: user.id, name: user.display_name, email: user.email, role: user.role } });
         } catch (err) {
-            res.status(500).json({ success: false, message: err.message });
+            res.status(500).json({ success: false, message: 'Server error' });
         }
     });
 
-    // Disable MFA (requires current TOTP)
+    // POST /disable — disable MFA (requires current TOTP)
     router.post('/disable', async (req, res) => {
         const userId = req.user?.id;
         const { totpCode } = req.body;
         if (!userId || !totpCode) return res.status(400).json({ success: false, message: 'Missing fields' });
         try {
-            const [[row]] = await db.query('SELECT secret FROM admin_mfa WHERE user_id = ? AND is_enabled = 1', [userId]);
+            const [[row]] = await db.query(
+                `SELECT secret FROM \`${mfaTable}\` WHERE ${mfaWhere('is_enabled = 1')}`,
+                mfaParams(userId)
+            );
             if (!row) return res.status(400).json({ success: false, message: 'MFA is not enabled' });
             if (!verifyCode(totpCode, row.secret)) {
                 return res.status(401).json({ success: false, message: 'Invalid TOTP code' });
             }
-            await db.query(`UPDATE admin_mfa SET is_enabled = 0 WHERE user_id = ?`, [userId]);
-            await logEvent(db, { eventType: EVENT_TYPES.ADMIN_ACTION, portal: 'admin', severity: SEVERITY.MEDIUM,
-                userId, message: 'Admin MFA disabled' });
+            await db.query(
+                `UPDATE \`${mfaTable}\` SET is_enabled = 0 WHERE ${mfaWhere()}`,
+                mfaParams(userId)
+            );
+            await logEvent(db, { eventType: EVENT_TYPES.ADMIN_ACTION, portal, severity: SEVERITY.MEDIUM,
+                userId, message: `${portal} MFA disabled` });
             res.json({ success: true, message: 'MFA disabled' });
         } catch (err) {
-            res.status(500).json({ success: false, message: err.message });
+            res.status(500).json({ success: false, message: 'Server error' });
         }
     });
 

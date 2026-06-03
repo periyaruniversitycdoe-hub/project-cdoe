@@ -13,23 +13,16 @@ const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-
   const [settings, setSettings] = useState(null);
+  const { refreshSessions } = useSession();
 
-  // Already logged in → redirect to dashboard
   useEffect(() => {
     const token = localStorage.getItem('adminToken');
     if (token) navigate('/', { replace: true });
-
     axios.get(`${API_URL}/settings`)
-      .then(res => {
-        const data = res.data.success ? res.data.data : res.data;
-        setSettings(data);
-      })
+      .then(res => setSettings(res.data?.data || res.data))
       .catch(() => {});
   }, []);
-
-  const { refreshSessions } = useSession();
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -39,9 +32,7 @@ const Login = () => {
       localStorage.setItem('adminToken', res.data.accessToken || res.data.token);
       localStorage.setItem('adminRefreshToken', res.data.refreshToken || '');
       localStorage.setItem('adminUser', JSON.stringify(res.data.user));
-      if (refreshSessions) {
-        await refreshSessions();
-      }
+      if (refreshSessions) await refreshSessions();
       toast.success('Login successful');
       navigate('/', { replace: true });
     } catch (err) {
@@ -51,19 +42,16 @@ const Login = () => {
     }
   };
 
+  const logoSrc = settings?.logo?.startsWith('/uploads')
+    ? (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + settings.logo
+    : settings?.logo || '/images/pu_logo.png';
+
   return (
     <div style={{ backgroundColor: '#364150', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ width: '100%', maxWidth: '420px', padding: '20px' }}>
-        
-        {/* Logo / Title */}
+
         <div className="text-center mb-4">
-          <div style={{ display: 'inline-flex', gap: '8px', marginBottom: 16 }}>
-            <img 
-              src={settings?.logo?.startsWith('/uploads') ? (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + settings.logo : settings?.logo || '/images/pu_logo.png'} 
-              alt="Logo" 
-              style={{ height: '70px', width: 'auto', objectFit: 'contain' }} 
-            />
-          </div>
+          <img src={logoSrc} alt="Logo" style={{ height: '70px', width: 'auto', objectFit: 'contain', marginBottom: 12 }} />
           <h2 className="text-white fw-bold mb-1" style={{ fontSize: '20px' }}>
             {settings?.university_name_english || 'PERIYAR UNIVERSITY'}
           </h2>
@@ -75,13 +63,11 @@ const Login = () => {
           </span>
         </div>
 
-        {/* Login Card */}
         <div className="card shadow-lg border-0" style={{ borderRadius: 4 }}>
           <div className="card-body p-5">
             <h5 className="text-center fw-bold mb-4" style={{ color: '#32c5d2', letterSpacing: 1 }}>SIGN IN</h5>
 
             <form onSubmit={handleLogin} noValidate>
-              {/* Email */}
               <div className="mb-3">
                 <label className="form-label fw-semibold" style={{ fontSize: 13 }}>Email Address</label>
                 <div className="input-group">
@@ -93,7 +79,7 @@ const Login = () => {
                     className="form-control"
                     placeholder="admin@periyar.edu"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={e => setEmail(e.target.value)}
                     required
                     autoComplete="email"
                     style={{ backgroundColor: '#dde3ec', border: '1px solid #c5cdd9', borderLeft: 'none' }}
@@ -101,7 +87,6 @@ const Login = () => {
                 </div>
               </div>
 
-              {/* Password */}
               <div className="mb-4">
                 <div className="d-flex justify-content-between align-items-center mb-1">
                   <label className="form-label fw-semibold mb-0" style={{ fontSize: 13 }}>Password</label>
@@ -116,7 +101,7 @@ const Login = () => {
                     className="form-control"
                     placeholder="••••••••"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={e => setPassword(e.target.value)}
                     required
                     autoComplete="current-password"
                     style={{ backgroundColor: '#dde3ec', border: '1px solid #c5cdd9', borderLeft: 'none' }}

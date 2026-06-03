@@ -5,18 +5,21 @@ if (dns.setDefaultResultOrder) {
 }
 
 const express = require('express');
+const compression = require('compression');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const dotenv = require('dotenv');
 const path = require('path');
-const { rateLimit } = require('express-rate-limit');
+
 
 dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 const app = express();
 app.set('trust proxy', 1); // Trust reverse proxy (Render/Netlify) for accurate rate limiting
 const PORT = process.env.ADMIN_BACKEND_PORT || 5001;
+
+app.use(compression({ level: 6, threshold: 1024 }));
 
 // Security headers
 // CSP is configured rather than disabled — allows cross-origin iframes for document preview
@@ -50,11 +53,12 @@ const allowedAdminOrigins = [
 
 app.use(cors({
     origin: (origin, callback) => {
-        if (!origin || allowedAdminOrigins.includes(origin) || origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1') || origin.endsWith('netlify.app') || origin.endsWith('.loca.lt') || origin.endsWith('.trycloudflare.com')) {
-            callback(null, true);
-        } else {
-            callback(new Error('Not allowed by CORS'));
-        }
+        const isDev = process.env.NODE_ENV !== 'production';
+        const allowed = !origin ||
+            allowedAdminOrigins.includes(origin) ||
+            (isDev && (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1')));
+        if (allowed) callback(null, true);
+        else callback(new Error('Not allowed by CORS'));
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'bypass-tunnel-reminder'],
@@ -62,37 +66,15 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '5mb' }));        // 50mb was dangerously large
 app.use(express.urlencoded({ limit: '5mb', extended: true }));
+const hpp = require('hpp');
+app.use(hpp());
 const { sanitize } = require('../../shared/security/inputSanitizer');
 app.use(sanitize);
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
-const isProd = process.env.NODE_ENV === 'production';
-const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    limit: isProd ? 20 : 1000000,
-    message: { success: false, message: 'Too many requests. Please try again later.' },
-    standardHeaders: true,
-    legacyHeaders: false,
-    skip: (req) => {
-        if (process.env.NODE_ENV !== 'production') return true;
-        const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
-        return ip.includes('127.0.0.1') || ip === '::1' || ip.includes('localhost');
-    }
-});
-const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    limit: isProd ? 300 : 1000000,
-    message: { success: false, message: 'Too many requests. Please try again later.' },
-    standardHeaders: true,
-    legacyHeaders: false,
-    skip: (req) => {
-        if (process.env.NODE_ENV !== 'production') return true;
-        const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
-        return ip.includes('127.0.0.1') || ip === '::1' || ip.includes('localhost');
-    }
-});
-app.use('/api/auth', authLimiter);
-app.use('/api/', limiter);
+const { makeAuthLimiter, makeApiLimiter } = require('../../shared/security/redisRateLimiter');
+app.use('/api/auth', makeAuthLimiter());
+app.use('/api/', makeApiLimiter());
 
 // Serve Static Files
 app.use('/uploads', express.static(path.join(__dirname, '../../uploads')));
@@ -135,13 +117,13 @@ app.use('/api/auth', authRoutes);
 
 // ── Admin MFA routes ────────────────────────────────────────────────────────
 const { makeRoutes: makeMfaRoutes } = require('../../shared/security/totp');
-const { verifyToken } = require('./middleware/auth');
+const { verifyToken, verifyTokenOrSetupToken } = require('./middleware/auth');
 const { issueTokenPair } = require('../../shared/security/tokenManager');
 async function issueAdminJWT(db, user) {
     const { accessToken } = await issueTokenPair(db, { id: user.id, email: user.email, role: user.role }, 'admin', process.env.ADMIN_JWT_SECRET);
     return accessToken;
 }
-app.use('/api/auth/mfa', verifyToken, makeMfaRoutes(db, process.env.ADMIN_JWT_SECRET, issueAdminJWT));
+app.use('/api/auth/mfa', verifyTokenOrSetupToken, makeMfaRoutes(db, process.env.ADMIN_JWT_SECRET, issueAdminJWT));
 app.use('/api/settings', settingsRoutes);
 app.use('/api/applications', applicationRoutes);
 app.use('/api/dropdowns', dropdownRoutes);

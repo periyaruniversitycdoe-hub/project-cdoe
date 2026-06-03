@@ -1,3 +1,5 @@
+﻿const { safeError } = require('../../../shared/security/safeError');
+const cache = require('../../../shared/security/appCache');
 
 const express = require('express');
 const router = express.Router();
@@ -21,7 +23,7 @@ const tables = {
     mphil_courses: { table: 'mphil_courses_master', nameCol: 'course_name' }
 };
 
-// ── Audit helper ──────────────────────────────────────────────────────────────
+// â”€â”€ Audit helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function audit(conn, { adminId, action, entityType, entityId, oldValue, newValue, ip }) {
     try {
         await conn.execute(
@@ -58,7 +60,7 @@ router.get('/:type', async (req, res) => {
             `);
             return res.json(rows);
         } catch (err) {
-            return res.status(500).json({ message: err.message });
+            return res.status(500).json({ message: safeError(err) });
         }
     }
 
@@ -72,7 +74,7 @@ router.get('/:type', async (req, res) => {
             `);
             return res.json(rows);
         } catch (err) {
-            return res.status(500).json({ message: err.message });
+            return res.status(500).json({ message: safeError(err) });
         }
     }
 
@@ -86,7 +88,7 @@ router.get('/:type', async (req, res) => {
             `);
             return res.json({ success: true, data: rows });
         } catch (err) {
-            return res.status(500).json({ success: false, message: err.message });
+            return res.status(500).json({ success: false, message: safeError(err) });
         }
     }
 
@@ -94,10 +96,13 @@ router.get('/:type', async (req, res) => {
     if (!config) return res.status(400).json({ success: false, message: 'Invalid dropdown type' });
 
     try {
-        const [rows] = await pool.execute(`SELECT id, ${config.nameCol} as name FROM ${config.table} ORDER BY ${config.nameCol} ASC`);
-        res.json({ success: true, data: rows });
+        const data = await cache.getOrFetch(`dropdown:${type}`, 600, async () => {
+            const [rows] = await pool.execute(`SELECT id, ${config.nameCol} as name FROM ${config.table} ORDER BY ${config.nameCol} ASC`);
+            return rows;
+        });
+        res.json({ success: true, data });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -117,9 +122,10 @@ router.post('/:type', verifyToken, isAdmin, async (req, res) => {
                 entityId: result.insertId, newValue: { course_name: name.trim() }, ip: req.ip
             });
         }
+        cache.del(`dropdown:${type}`);
         res.json({ success: true, message: 'Item added successfully' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -146,9 +152,10 @@ router.put('/:type/:id', verifyToken, isAdmin, async (req, res) => {
                 entityId: Number(id), oldValue, newValue: { course_name: name.trim() }, ip: req.ip
             });
         }
+        cache.del(`dropdown:${type}`);
         res.json({ success: true, message: 'Item updated successfully' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -173,9 +180,10 @@ router.delete('/:type/:id', verifyToken, isAdmin, async (req, res) => {
                 entityId: Number(id), oldValue, ip: req.ip
             });
         }
+        cache.del(`dropdown:${type}`);
         res.json({ success: true, message: 'Item deleted successfully' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 

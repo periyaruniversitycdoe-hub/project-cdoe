@@ -1,0 +1,5 @@
+Contact: mailto:periyaruniversitycdoe@gmail.com
+Expires: 2027-01-01T00:00:00.000Z
+Preferred-Languages: en
+Scope: https://cdoe.periyaruniversity.ac.in/
+Policy: Responsible disclosure. Please email security findings to the contact address above.

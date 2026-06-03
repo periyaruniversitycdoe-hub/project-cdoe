@@ -8,9 +8,11 @@ const path    = require('path');
 
 const accountLock   = require('../../../shared/security/accountLock');
 const { logEvent, EVENT_TYPES, SEVERITY } = require('../../../shared/security/auditLogger');
-const { issueMfaToken } = require('../../../shared/security/totp');
+
 const { issueTokenPair, revokeAllTokens, refreshHandler } = require('../../../shared/security/tokenManager');
 const { verifyAndMigrate } = require('../../../shared/security/passwordHash');
+const { validateLoginInput } = require('../../../shared/security/passwordValidator');
+const { loginSchema, validateBody } = require('../../../shared/security/inputSchemas');
 
 // ── Helper: build access JWT + refresh token pair ────────────────────────────
 async function issueAdminJWT(db, user) {
@@ -22,11 +24,12 @@ async function issueAdminJWT(db, user) {
 }
 
 // ── POST /api/auth/login ─────────────────────────────────────────────────────
-router.post('/login', async (req, res) => {
+router.post('/login', validateBody(loginSchema), async (req, res) => {
     const { email, password } = req.body;
 
-    if (!email || !password) {
-        return res.status(400).json({ success: false, message: 'Email and password are required' });
+    const inputCheck = validateLoginInput(email, password);
+    if (!inputCheck.valid) {
+        return res.status(400).json({ success: false, message: inputCheck.message });
     }
 
     try {
@@ -94,27 +97,7 @@ router.post('/login', async (req, res) => {
         // 4. Clear failed attempts on successful password
         await accountLock.clearFailures(pool, email, 'admin');
 
-        // 5. Check if MFA is enabled for this admin
-        const [[mfaRow]] = await pool.query(
-            'SELECT is_enabled FROM admin_mfa WHERE user_id = ? AND is_enabled = 1', [user.id]
-        ).catch(() => [[null]]);
-
-        if (mfaRow) {
-            // MFA required — issue a short-lived challenge token (5 min)
-            const mfaToken = issueMfaToken(user.id, user.email, process.env.ADMIN_JWT_SECRET);
-            await logEvent(pool, {
-                eventType: EVENT_TYPES.LOGIN_SUCCESS, portal: 'admin', severity: SEVERITY.LOW,
-                userId: user.id, email, req, message: 'Password verified — MFA challenge issued',
-            });
-            return res.json({
-                success:     true,
-                mfaRequired: true,
-                mfaToken,
-                message:     'Password verified. Please enter your TOTP code.',
-            });
-        }
-
-        // 6. No MFA — issue full JWT
+        // 5. Issue full JWT
         const { accessToken, refreshToken } = await issueAdminJWT(pool, user);
         await logEvent(pool, {
             eventType: EVENT_TYPES.LOGIN_SUCCESS, portal: 'admin', severity: SEVERITY.LOW,

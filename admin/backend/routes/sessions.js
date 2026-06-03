@@ -1,3 +1,5 @@
+﻿const { safeError } = require('../../../shared/security/safeError');
+const { auditWrite } = require('../../../shared/security/writeAudit');
 
 const express = require('express');
 const router = express.Router();
@@ -6,7 +8,7 @@ const { verifyToken, isAdmin } = require('../middleware/auth');
 const { invalidate: invalidateSessionCache } = require('../services/sessionCache');
 
 /**
- * GET /api/sessions/active  (public — student frontend calls this)
+ * GET /api/sessions/active  (public â€” student frontend calls this)
  * Returns the single active session; 404 if none
  */
 router.get('/active', async (req, res) => {
@@ -19,13 +21,13 @@ router.get('/active', async (req, res) => {
         }
         res.json({ success: true, data: rows[0] });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
 /**
  * GET /api/sessions/filters
- * Distinct years & months present in the sessions table — used by application list filters
+ * Distinct years & months present in the sessions table â€” used by application list filters
  */
 router.get('/filters', verifyToken, isAdmin, async (req, res) => {
     try {
@@ -46,7 +48,7 @@ router.get('/filters', verifyToken, isAdmin, async (req, res) => {
             },
         });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -68,7 +70,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
         `);
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -101,10 +103,12 @@ router.post('/', verifyToken, isAdmin, async (req, res) => {
 
         await connection.commit();
         invalidateSessionCache();
+        await auditWrite(pool, { req, action: 'CREATE', table: 'sessions', recordId: result.insertId,
+            after: { year, month, is_active, registration_open, application_open, session_type_id } });
         res.status(201).json({ success: true, message: 'Session created successfully.', id: result.insertId });
     } catch (err) {
         await connection.rollback();
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     } finally {
         connection.release();
     }
@@ -125,6 +129,8 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
     try {
         await connection.beginTransaction();
 
+        const [[before]] = await connection.execute('SELECT * FROM sessions WHERE id = ?', [req.params.id]);
+
         if (is_active) {
             await connection.execute('UPDATE sessions SET is_active = 0');
         }
@@ -142,10 +148,12 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
 
         await connection.commit();
         invalidateSessionCache();
+        await auditWrite(pool, { req, action: 'UPDATE', table: 'sessions', recordId: req.params.id,
+            before, after: { year, month, is_active, registration_open, application_open, session_type_id } });
         res.json({ success: true, message: 'Session updated successfully.' });
     } catch (err) {
         await connection.rollback();
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     } finally {
         connection.release();
     }
@@ -169,7 +177,7 @@ router.put('/:id/activate', verifyToken, isAdmin, async (req, res) => {
         res.json({ success: true, message: 'Session activated. All other sessions deactivated.' });
     } catch (err) {
         await connection.rollback();
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     } finally {
         connection.release();
     }
@@ -195,7 +203,7 @@ router.put('/:id/toggle-registration', verifyToken, isAdmin, async (req, res) =>
             registration_open: !!newVal,
         });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -219,7 +227,7 @@ router.put('/:id/toggle-application', verifyToken, isAdmin, async (req, res) => 
             application_open: !!newVal,
         });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -254,7 +262,7 @@ router.put('/:id/toggle-result', verifyToken, isAdmin, async (req, res) => {
             result_published: !!newVal,
         });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     } finally {
         connection.release();
     }
@@ -279,7 +287,7 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
         await pool.execute('DELETE FROM sessions WHERE id = ?', [req.params.id]);
         res.json({ success: true, message: 'Session deleted successfully.' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 

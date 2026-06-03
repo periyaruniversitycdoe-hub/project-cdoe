@@ -1,3 +1,4 @@
+﻿const { safeError } = require('../../../shared/security/safeError');
 
 const express = require('express');
 const router = express.Router();
@@ -6,7 +7,7 @@ const { verifyToken, isAdmin } = require('../middleware/auth');
 const ExcelJS = require('exceljs');
 const { getActiveSessionId } = require('../services/sessionCache');
 
-// ─── Counselling Settings ─────────────────────────────────────
+// â”€â”€â”€ Counselling Settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * GET /api/counselling/settings
@@ -21,7 +22,7 @@ router.get('/settings', verifyToken, isAdmin, async (req, res) => {
     `);
     res.json({ success: true, data: rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -43,7 +44,7 @@ router.get('/settings/active', async (_req, res) => {
 
     res.json({ success: true, data: settings });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -63,7 +64,7 @@ router.post('/settings', verifyToken, isAdmin, async (req, res) => {
     );
     res.status(201).json({ success: true, message: 'Counselling settings created', id: result.insertId });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -81,7 +82,7 @@ router.put('/settings/:id', verifyToken, isAdmin, async (req, res) => {
     );
     res.json({ success: true, message: 'Settings updated' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -93,11 +94,11 @@ router.delete('/settings/:id', verifyToken, isAdmin, async (req, res) => {
     await pool.execute('DELETE FROM counselling_settings WHERE id = ?', [req.params.id]);
     res.json({ success: true, message: 'Settings deleted' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
-// ─── Research Centers ─────────────────────────────────────────
+// â”€â”€â”€ Research Centers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * GET /api/counselling/research-centers
@@ -109,7 +110,7 @@ router.get('/research-centers', async (req, res) => {
     const [rows] = await pool.execute(`SELECT * FROM research_centers ${where} ORDER BY center_name`);
     res.json({ success: true, data: rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -125,7 +126,7 @@ router.post('/research-centers', verifyToken, isAdmin, async (req, res) => {
     );
     res.status(201).json({ success: true, message: 'Center created', id: result.insertId });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -141,7 +142,7 @@ router.put('/research-centers/:id', verifyToken, isAdmin, async (req, res) => {
     );
     res.json({ success: true, message: 'Center updated' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -153,11 +154,11 @@ router.delete('/research-centers/:id', verifyToken, isAdmin, async (req, res) =>
     await pool.execute('DELETE FROM research_centers WHERE id = ?', [req.params.id]);
     res.json({ success: true, message: 'Center deleted' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
-// ─── Research Supervisors ─────────────────────────────────────
+// â”€â”€â”€ Research Supervisors â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * GET /api/counselling/research-supervisors?center_id=&active=1
@@ -178,7 +179,7 @@ router.get('/research-supervisors', async (req, res) => {
     const [rows] = await pool.execute(query, params);
     res.json({ success: true, data: rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -198,7 +199,7 @@ router.post('/research-supervisors', verifyToken, isAdmin, async (req, res) => {
     );
     res.status(201).json({ success: true, message: 'Supervisor created', id: result.insertId });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -216,7 +217,7 @@ router.put('/research-supervisors/:id', verifyToken, isAdmin, async (req, res) =
     );
     res.json({ success: true, message: 'Supervisor updated' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -228,11 +229,11 @@ router.delete('/research-supervisors/:id', verifyToken, isAdmin, async (req, res
     await pool.execute('DELETE FROM research_supervisors WHERE id = ?', [req.params.id]);
     res.json({ success: true, message: 'Supervisor deleted' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
-// ─── Counselling Applications (Admin View) ────────────────────
+// â”€â”€â”€ Counselling Applications (Admin View) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * GET /api/counselling/applications?session_id=&status=&center_id=&supervisor_id=
@@ -266,11 +267,10 @@ router.get('/applications', verifyToken, isAdmin, async (req, res) => {
     }
 
     if (center_id || supervisor_id) {
-      query += ` AND ca.id IN (
-        SELECT DISTINCT counselling_application_id FROM counselling_research_choices WHERE 1=1
-        ${center_id     ? 'AND research_center_id = ' + parseInt(center_id, 10)   : ''}
-        ${supervisor_id ? 'AND supervisor_id = '       + parseInt(supervisor_id, 10) : ''}
-      )`;
+        let subWhere = 'WHERE 1=1';
+        if (center_id)     { subWhere += ' AND research_center_id = ?'; params.push(parseInt(center_id, 10)); }
+        if (supervisor_id) { subWhere += ' AND supervisor_id = ?';       params.push(parseInt(supervisor_id, 10)); }
+        query += ` AND ca.id IN (SELECT DISTINCT counselling_application_id FROM counselling_research_choices ${subWhere})`;
     }
 
     query += ' ORDER BY ca.created_at DESC';
@@ -302,7 +302,7 @@ router.get('/applications', verifyToken, isAdmin, async (req, res) => {
     const result = rows.map(r => ({ ...r, choices: choiceMap[r.id] || [] }));
     res.json({ success: true, data: result, total: result.length });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -374,14 +374,14 @@ router.get('/applications/export/excel', verifyToken, isAdmin, async (req, res) 
 
     rows.forEach(r => {
       const rc = choiceMap[r.id] || [];
-      const prefStr = (idx) => rc[idx] ? `${rc[idx].center_name} — ${rc[idx].supervisor_name}` : '—';
+      const prefStr = (idx) => rc[idx] ? `${rc[idx].center_name} â€” ${rc[idx].supervisor_name}` : 'â€”';
       worksheet.addRow({
         user_app_id:  r.user_app_id,
         full_name:    r.full_name,
         email:        r.email,
-        session_name: r.session_name || '—',
+        session_name: r.session_name || 'â€”',
         status:       r.status,
-        submitted_at: r.submitted_at ? new Date(r.submitted_at).toLocaleDateString('en-IN') : '—',
+        submitted_at: r.submitted_at ? new Date(r.submitted_at).toLocaleDateString('en-IN') : 'â€”',
         pref1:        prefStr(0),
         pref2:        prefStr(1),
         pref3:        prefStr(2),
@@ -393,11 +393,11 @@ router.get('/applications/export/excel', verifyToken, isAdmin, async (req, res) 
     await workbook.xlsx.write(res);
     res.end();
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
-// ─── Allotment Routes ─────────────────────────────────────────────────────────
+// â”€â”€â”€ Allotment Routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * PUT /api/counselling/allot/:id
@@ -430,7 +430,7 @@ router.put('/allot/:id', verifyToken, isAdmin, async (req, res) => {
     );
     res.json({ success: true, message: `Allotment status set to ${allotment_status}` });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -472,7 +472,7 @@ router.get('/allotments', verifyToken, isAdmin, async (req, res) => {
     const [rows] = await pool.execute(query, params);
     res.json({ success: true, data: rows, total: rows.length });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -503,7 +503,7 @@ router.get('/joining-letter/:id', verifyToken, isAdmin, async (req, res) => {
     const [[settings]] = await pool.execute('SELECT * FROM university_settings LIMIT 1');
     res.json({ success: true, data: ca, settings: settings || {} });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 

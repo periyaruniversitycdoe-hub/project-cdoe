@@ -1,3 +1,6 @@
+﻿const { safeError } = require('../../../shared/security/safeError');
+const { auditWrite } = require('../../../shared/security/writeAudit');
+const cache = require('../../../shared/security/appCache');
 
 const express = require('express');
 const router = express.Router();
@@ -52,34 +55,33 @@ const uploadFile = multer({
     }
 });
 
-// ─── GET SETTINGS ──────────────────────────────────────────────────────
+// â”€â”€â”€ GET SETTINGS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.get('/', async (req, res) => {
     try {
-        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-        const [rows] = await pool.execute('SELECT * FROM university_settings LIMIT 1');
-        if (!rows[0]) return res.json({ success: true, data: {} });
-        
-        // Map the fields so the frontend gets exactly what it expects
-        const mapped = {
-            ...rows[0],
-            university_name_english: rows[0].university_name_english || rows[0].university_name_en || rows[0].header_line1,
-            university_name_tamil: rows[0].university_name_ta || rows[0].university_name_ta,
-            logo: rows[0].logo_url,
-            logo2: rows[0].logo2
-        };
-        res.json({ success: true, data: mapped });
+        const data = await cache.getOrFetch('university_settings', 300, async () => {
+            const [rows] = await pool.execute('SELECT * FROM university_settings LIMIT 1');
+            if (!rows[0]) return {};
+            return {
+                ...rows[0],
+                university_name_english: rows[0].university_name_english || rows[0].university_name_en || rows[0].header_line1,
+                university_name_tamil: rows[0].university_name_ta || rows[0].university_name_ta,
+                logo: rows[0].logo_url,
+                logo2: rows[0].logo2,
+            };
+        });
+        res.json({ success: true, data });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ─── ENTRANCE SETTINGS ────────────────────────────────────────────────
+// â”€â”€â”€ ENTRANCE SETTINGS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.get('/entrance-settings', async (req, res) => {
     try {
         const [rows] = await pool.execute('SELECT * FROM entrance_settings LIMIT 1');
         res.json({ success: true, data: rows[0] || { passing_mark: 50, total_mark: 100 } });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -96,11 +98,11 @@ router.put('/entrance-settings', verifyToken, isAdmin, async (req, res) => {
         }
         res.json({ success: true, message: 'Updated entrance settings.' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ─── UPDATE SETTINGS ───────────────────────────────────────────────────
+// â”€â”€â”€ UPDATE SETTINGS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.put('/update', verifyToken, isAdmin, async (req, res) => {
     const raw = req.body;
     
@@ -108,7 +110,7 @@ router.put('/update', verifyToken, isAdmin, async (req, res) => {
     let uniEn = raw.university_name_english || raw.university_name_en;
     let uniTa = raw.university_name_tamil || raw.university_name_ta;
     if (!uniEn || !uniEn.toString().trim()) uniEn = 'PERIYAR UNIVERSITY';
-    if (!uniTa || !uniTa.toString().trim()) uniTa = 'பெரியார் பல்கலைக்கழகம்';
+    if (!uniTa || !uniTa.toString().trim()) uniTa = 'à®ªà¯†à®°à®¿à®¯à®¾à®°à¯ à®ªà®²à¯à®•à®²à¯ˆà®•à¯à®•à®´à®•à®®à¯';
 
     const SETTINGS_COLUMNS = new Set([
         'university_name_en', 'university_name_ta', 'subtitle', 'naac_details', 
@@ -164,7 +166,7 @@ router.put('/update', verifyToken, isAdmin, async (req, res) => {
     dbData.header_line1 = uniEn;
 
     try {
-        const [oldSettings] = await pool.execute('SELECT id FROM university_settings LIMIT 1');
+        const [oldSettings] = await pool.execute('SELECT * FROM university_settings LIMIT 1');
 
         if (oldSettings.length === 0) {
             const fields = Object.keys(dbData);
@@ -173,6 +175,7 @@ router.put('/update', verifyToken, isAdmin, async (req, res) => {
                 `INSERT INTO university_settings (${fields.map(f => `\`${f}\``).join(', ')}) VALUES (${placeholders})`,
                 Object.values(dbData)
             );
+            await auditWrite(pool, { req, action: 'CREATE', table: 'university_settings', recordId: 1, after: dbData });
         } else {
             const fields = Object.keys(dbData);
             const setClause = fields.map(f => `\`${f}\` = ?`).join(', ');
@@ -181,9 +184,11 @@ router.put('/update', verifyToken, isAdmin, async (req, res) => {
                 `UPDATE university_settings SET ${setClause} WHERE id = ?`,
                 [...values, oldSettings[0].id]
             );
+            await auditWrite(pool, { req, action: 'UPDATE', table: 'university_settings',
+                recordId: oldSettings[0].id, before: oldSettings[0], after: dbData });
         }
-        
-        // Audit Log (non-critical)
+
+        // Legacy audit log
         try {
             await pool.execute(
                 'INSERT INTO settings_audit_logs (admin_id, action, ip_address, user_agent) VALUES (?, ?, ?, ?)',
@@ -191,14 +196,15 @@ router.put('/update', verifyToken, isAdmin, async (req, res) => {
             );
         } catch (_) {}
 
+        cache.del('university_settings');
         res.json({ success: true, message: 'Settings updated successfully' });
     } catch (err) {
         console.error('SETTINGS UPDATE ERROR:', err);
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ─── UPLOAD LOGO / FOUNDER / FILE ──────────────────────────────────────
+// â”€â”€â”€ UPLOAD LOGO / FOUNDER / FILE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.post('/upload-image', verifyToken, isAdmin, uploadImage.single('image'), postUploadCheck(), async (req, res) => {
     if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
     const { field } = req.body;
@@ -219,7 +225,7 @@ router.post('/upload-image', verifyToken, isAdmin, uploadImage.single('image'), 
         }
         res.json({ success: true, path: filePath });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -238,17 +244,17 @@ router.post('/upload-file', verifyToken, isAdmin, uploadFile.single('file'), pos
         }
         res.json({ success: true, path: filePath });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ─── COMMUNITY FEES CRUD ───────────────────────────────────────────────
+// â”€â”€â”€ COMMUNITY FEES CRUD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.get('/community-fees', async (req, res) => {
     try {
         const [rows] = await pool.execute('SELECT * FROM community_fees ORDER BY id ASC');
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -261,7 +267,7 @@ router.post('/community-fees', verifyToken, isAdmin, async (req, res) => {
         );
         res.json({ success: true, id: result.insertId });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -274,7 +280,7 @@ router.put('/community-fees/:id', verifyToken, isAdmin, async (req, res) => {
         );
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -283,11 +289,11 @@ router.delete('/community-fees/:id', verifyToken, isAdmin, async (req, res) => {
         await pool.execute('DELETE FROM community_fees WHERE id = ?', [req.params.id]);
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ─── MASTER DROPDOWN CRUD ──────────────────────────────────────────────
+// â”€â”€â”€ MASTER DROPDOWN CRUD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const VALID_DROPDOWN_TABLES = ['dropdown_subjects', 'dropdown_exam_centers', 'dropdown_districts', 'dropdown_categories', 'dropdown_genders', 'dropdown_departments'];
 
 router.get('/master-data/:table', async (req, res) => {
@@ -297,7 +303,7 @@ router.get('/master-data/:table', async (req, res) => {
         const [rows] = await pool.execute(`SELECT * FROM ${table} ORDER BY name ASC`);
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -309,7 +315,7 @@ router.post('/master-data/:table', verifyToken, isAdmin, async (req, res) => {
         const [result] = await pool.execute(`INSERT INTO ${table} (name) VALUES (?)`, [name]);
         res.json({ success: true, id: result.insertId });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -320,14 +326,14 @@ router.delete('/master-data/:table/:id', verifyToken, isAdmin, async (req, res) 
         await pool.execute(`DELETE FROM ${table} WHERE id = ?`, [id]);
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
 
-// ─── EXAM CENTRE CONFIGURATION ─────────────────────────────────────────────
+// â”€â”€â”€ EXAM CENTRE CONFIGURATION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-// GET exam centre config (public — read by student portal)
+// GET exam centre config (public â€” read by student portal)
 router.get('/exam-centre-config', async (req, res) => {
     try {
         const [rows] = await pool.execute(
@@ -335,7 +341,7 @@ router.get('/exam-centre-config', async (req, res) => {
         );
         res.json({ success: true, data: rows[0] || { max_preferences: 2, status: 'active', description: '' } });
     } catch (err) {
-        // Table may not exist yet — return safe default
+        // Table may not exist yet â€” return safe default
         res.json({ success: true, data: { max_preferences: 2, status: 'active', description: '' } });
     }
 });
@@ -388,11 +394,11 @@ router.put('/exam-centre-config', verifyToken, isAdmin, async (req, res) => {
 
         res.json({ success: true, message: 'Exam centre configuration saved successfully' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ─── PORTAL HEADER LINK MANAGEMENT APIs ──────────────────────────────────────
+// â”€â”€â”€ PORTAL HEADER LINK MANAGEMENT APIs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // 1. Get Portal Header Links
 router.get('/header-links', async (req, res) => {
@@ -407,7 +413,7 @@ router.get('/header-links', async (req, res) => {
         );
         res.json({ success: true, data: rows[0] || {} });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -459,7 +465,7 @@ async function updateLinkSection(section, req, res) {
 
         res.json({ success: true, message: `${section} link settings updated successfully` });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 }
 
@@ -509,7 +515,7 @@ router.patch('/header-links/toggle', verifyToken, isAdmin, async (req, res) => {
 
         res.json({ success: true, message: `Toggled ${field} link visibility successfully` });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 

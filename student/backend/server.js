@@ -4,13 +4,14 @@ if (dns.setDefaultResultOrder) {
 }
 
 const express = require('express');
+const compression = require('compression');
 const mysqlPromise = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
-const { rateLimit } = require('express-rate-limit');
+
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -24,6 +25,8 @@ const CommunityFeeCalculationService = require('./services/CommunityFeeCalculati
 
 const app = express();
 app.set('trust proxy', 1); // Trust reverse proxy (Render/Netlify) for accurate rate limiting
+
+app.use(compression({ level: 6, threshold: 1024 }));
 
 // Capture raw body for payment webhook signature verification (MUST be before express.json)
 app.use('/api/payment/webhook', (req, _res, next) => {
@@ -54,8 +57,10 @@ app.use(helmet({
 }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: false })); // Paytm callback is a form POST
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: false })); // Paytm callback is a form POST
+const hpp = require('hpp');
+app.use(hpp());
 const { sanitize } = require('../../shared/security/inputSanitizer');
 app.use(sanitize);
 
@@ -68,13 +73,11 @@ app.use(cors({
             process.env.PAYMENT_RETURN_URL ? new URL(process.env.PAYMENT_RETURN_URL).origin : null,
         ].filter(Boolean);
 
+        const isDev = process.env.NODE_ENV !== 'production';
         const allowed =
             !origin ||
-            origin.startsWith('http://localhost') ||
-            origin.startsWith('http://127.0.0.1') ||
-            origin.endsWith('netlify.app') ||
-            origin.endsWith('.loca.lt') ||
-            origin.endsWith('.trycloudflare.com') ||
+            (isDev && origin.startsWith('http://localhost')) ||
+            (isDev && origin.startsWith('http://127.0.0.1')) ||
             productionOrigins.includes(origin);
 
         if (allowed) callback(null, true);
@@ -83,48 +86,10 @@ app.use(cors({
     credentials: true
 }));
 
-// â”€â”€ Rate Limiting (registered AFTER cors() so 429 responses carry CORS headers)
-const isProd = process.env.NODE_ENV === 'production';
-const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    limit: isProd ? 50 : 1000000,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { success: false, message: 'Too many login attempts. Please try again later.' },
-    skip: (req) => {
-        if (process.env.NODE_ENV !== 'production') return true;
-        const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
-        return ip.includes('127.0.0.1') || ip === '::1' || ip.includes('localhost');
-    }
-});
-const apiLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    limit: isProd ? 500 : 1000000,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { success: false, message: 'Too many requests. Please try again later.' },
-    // Skip rate limiting for high-frequency read-only public endpoints
-    skip: (req) => {
-        if (process.env.NODE_ENV !== 'production') return true;
-        const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
-        if (ip.includes('127.0.0.1') || ip === '::1' || ip.includes('localhost')) return true;
-
-        const p = req.path;
-        const o = req.originalUrl || '';
-        return p === '/settings' || o === '/api/settings' ||
-               p === '/portals/active' || o === '/api/portals/active' ||
-               p === '/portal-home/settings' || o === '/api/portal-home/settings' ||
-               p === '/announcements/public'  || o === '/api/announcements/public'  ||
-               p === '/news-announcements'   || o === '/api/news-announcements'   ||
-               p === '/portal-notifications' || o === '/api/portal-notifications' ||
-               p === '/active-session' || o === '/api/active-session' ||
-               p.startsWith('/dropdowns') || o.startsWith('/api/dropdowns') ||
-               p.startsWith('/states') || o.startsWith('/api/states') ||
-               p.startsWith('/districts') || o.startsWith('/api/districts');
-    },
-});
-app.use('/api/auth', authLimiter);
-app.use('/api/', apiLimiter);
+// ── Rate Limiting (Redis-backed with memory fallback)
+const { makeAuthLimiter, makeApiLimiter } = require('../../shared/security/redisRateLimiter');
+app.use('/api/auth', makeAuthLimiter());
+app.use('/api/', makeApiLimiter());
 
 // Allow cross-origin access to uploaded files (logos, documents, photos)
 app.use('/uploads', (req, res, next) => {
@@ -140,10 +105,12 @@ const db = mysqlPromise.createPool({
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
     waitForConnections: true,
-    connectionLimit: 5,
-    queueLimit: 0,
+    connectionLimit: 20,
+    queueLimit: 100,
+    enableKeepAlive: true,
+    keepAliveInitialDelay: 0,
     charset: 'utf8mb4',
-    connectTimeout: 60000,
+    connectTimeout: 30000,
 });
 
 // Run database schema self-healing migrations for experience_details dates
@@ -877,7 +844,8 @@ app.use(auditMw.middleware(db, 'student'));
 // --- AUTH ROUTES ---
 const authRouter = express.Router();
 
-authRouter.post('/register', async (req, res) => {
+const { studentLoginSchema, signupSchema: studentSignupSchema, validateBody } = require('../../shared/security/inputSchemas');
+authRouter.post('/register', validateBody(studentSignupSchema), async (req, res) => {
     const { email, password, full_name } = req.body;
     try {
         const { validatePasswordComplexity } = require('../../shared/security/passwordValidator');
@@ -938,13 +906,9 @@ authRouter.post('/register', async (req, res) => {
     }
 });
 
-authRouter.post('/login', async (req, res) => {
+authRouter.post('/login', validateBody(studentLoginSchema), async (req, res) => {
     const { username, password } = req.body;
     const email = username;
-
-    if (!email || !password) {
-        return res.status(400).json({ message: 'Email and password are required' });
-    }
 
     try {
         // 1. Check account lockout before any user lookup
@@ -4111,6 +4075,10 @@ app.get('/api/application/review', authenticateToken, async (req, res) => {
         const settingsMap = {};
         uploadSettings.forEach(s => { settingsMap[s.file_type] = s.is_active !== 0; });
 
+        // Respect admin-configured number of exam centre preferences
+        const [centreConfigRows] = await db.query('SELECT max_preferences FROM exam_centre_config LIMIT 1').catch(() => [[]]);
+        const maxPrefs = Math.max(1, parseInt(centreConfigRows[0]?.max_preferences || 1, 10));
+
         const isSslcActive = settingsMap['10th Standard Marksheet'] !== false;
         const isHscActive  = settingsMap['12th Standard Marksheet'] !== false;
         const isUgActive   = settingsMap['UG Degree Documents'] !== false;
@@ -4173,7 +4141,7 @@ app.get('/api/application/review', authenticateToken, async (req, res) => {
         const checks = {
             personalInfo: !!(application.applicant_name && application.dob && application.gender && application.community),
             contactInfo:  !!(application.mobile && application.email && application.address_1 && application.state && application.district && application.pincode),
-            academicInfo: !!(application.subject && application.exam_center_1 && application.exam_center_2 && isSslcOk && isHscOk && isUgOk && isPgOk && isDipOk && isMphOk && isIntOk),
+            academicInfo: !!(application.subject && application.exam_center_1 && (maxPrefs < 2 || application.exam_center_2) && isSslcOk && isHscOk && isUgOk && isPgOk && isDipOk && isMphOk && isIntOk),
             documents:    (!isPhotoActive || hasDoc('photo')) && 
                           (!isSigActive || hasDoc('signature')) && 
                           (!isIdActive || hasDoc('id_proof')) && 
@@ -4202,7 +4170,7 @@ app.get('/api/application/review', authenticateToken, async (req, res) => {
 
         if (!application.subject) missingFields.academicInfo.push('Subject / Discipline');
         if (!application.exam_center_1) missingFields.academicInfo.push('Exam Center Preference 1');
-        if (!application.exam_center_2) missingFields.academicInfo.push('Exam Center Preference 2');
+        if (maxPrefs >= 2 && !application.exam_center_2) missingFields.academicInfo.push('Exam Center Preference 2');
         if (!isSslcOk) missingFields.academicInfo.push('SSLC (10th) Details & Marksheet');
         if (!isHscOk)  missingFields.academicInfo.push('HSC (12th) Details & Marksheet');
         if (!isUgOk)   missingFields.academicInfo.push('UG Details & Marksheet');
@@ -4218,7 +4186,7 @@ app.get('/api/application/review', authenticateToken, async (req, res) => {
         if (application.community !== 'OC' && isCcActive && !hasDoc('community_cert')) missingFields.documents.push('Community Certificate');
 
         // Dynamic total: count only required items
-        const academicRequired = 3 // subject + 2 exam centres
+        const academicRequired = 1 + maxPrefs // subject + configured exam centre count
             + (isSslcActive && hasSslcChecked ? 1 : 0)
             + (isHscActive  && hasHscChecked  ? 1 : 0)
             + (isUgActive   && hasUgChecked   ? 1 : 0)
@@ -4332,6 +4300,9 @@ app.post('/api/application/final-submit', authenticateToken, async (req, res) =>
         const settingsMap = {};
         uploadSettings.forEach(s => { settingsMap[s.file_type] = s.is_active !== 0; });
 
+        const [centreConfigRowsSub] = await db.query('SELECT max_preferences FROM exam_centre_config LIMIT 1').catch(() => [[]]);
+        const maxPrefsSub = Math.max(1, parseInt(centreConfigRowsSub[0]?.max_preferences || 1, 10));
+
         const isSslcActive     = settingsMap['10th Standard Marksheet'] !== false;
         const isHscActive      = settingsMap['12th Standard Marksheet'] !== false;
         const isUgActive       = settingsMap['UG Degree Documents'] !== false;
@@ -4395,8 +4366,8 @@ app.post('/api/application/final-submit', authenticateToken, async (req, res) =>
         if (!application.district)       missing.push('District');
         if (!application.pincode)        missing.push('Pincode');
         if (!application.subject)        missing.push('Subject / Discipline');
-        if (!application.exam_center_1)  missing.push('Exam Center Preference 1');
-        if (!application.exam_center_2)  missing.push('Exam Center Preference 2');
+        if (!application.exam_center_1)               missing.push('Exam Center Preference 1');
+        if (maxPrefsSub >= 2 && !application.exam_center_2) missing.push('Exam Center Preference 2');
         if (isSslcActive   && hasSslcChecked && !isSslcOk) missing.push('SSLC (10th) Details & Marksheet');
         if (isHscActive    && hasHscChecked  && !isHscOk)  missing.push('HSC (12th) Details & Marksheet');
         if (isUgActive     && hasUgChecked   && !isUgOk)   missing.push('UG Details & Marksheet');
@@ -4551,8 +4522,7 @@ app.use((err, req, res, next) => {
     console.error('GLOBAL ERROR:', err);
     res.status(err.status || 500).json({
         success: false,
-        message: err.message || 'Internal Server Error',
-        stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+        message: process.env.NODE_ENV === 'production' ? 'Internal Server Error' : (err.message || 'Internal Server Error'),
     });
 });
 

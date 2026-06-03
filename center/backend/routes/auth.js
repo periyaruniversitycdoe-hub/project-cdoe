@@ -6,10 +6,11 @@ const accountLock = require('../../../shared/security/accountLock');
 const { logEvent, EVENT_TYPES, SEVERITY } = require('../../../shared/security/auditLogger');
 const { issueTokenPair, refreshHandler } = require('../../../shared/security/tokenManager');
 const { hashPassword, verifyAndMigrate } = require('../../../shared/security/passwordHash');
-const { validatePasswordComplexity } = require('../../../shared/security/passwordValidator');
+const { validatePasswordComplexity, validateLoginInput } = require('../../../shared/security/passwordValidator');
+const { loginSchema, signupSchema, validateBody } = require('../../../shared/security/inputSchemas');
 
 // POST /api/auth/signup
-router.post('/signup', async (req, res) => {
+router.post('/signup', validateBody(signupSchema), async (req, res) => {
     const { name, email, password, mobile } = req.body;
     if (!name || !email || !password)
         return res.status(400).json({ message: 'Name, email and password are required' });
@@ -53,10 +54,10 @@ router.post('/signup', async (req, res) => {
 });
 
 // POST /api/auth/login
-router.post('/login', async (req, res) => {
+router.post('/login', validateBody(loginSchema), async (req, res) => {
     const { email, password } = req.body;
-    if (!email || !password)
-        return res.status(400).json({ message: 'Email and password are required' });
+    const inputCheck = validateLoginInput(email, password);
+    if (!inputCheck.valid) return res.status(400).json({ message: inputCheck.message });
 
     try {
         // Check lockout
@@ -95,6 +96,7 @@ router.post('/login', async (req, res) => {
         }
 
         await accountLock.clearFailures(pool, email, 'center');
+
         await logEvent(pool, {
             eventType: EVENT_TYPES.LOGIN_SUCCESS, portal: 'center', severity: SEVERITY.LOW,
             userId: user.id, email, req, message: 'Center login successful',
@@ -110,7 +112,7 @@ router.post('/login', async (req, res) => {
 
         res.json({
             message:      'Login successful',
-            token:        accessToken,   // legacy field
+            token:        accessToken,
             accessToken,
             refreshToken,
             user: { id: user.id, name: user.name, email: user.email, centerId: user.center_id, role: 'center' }

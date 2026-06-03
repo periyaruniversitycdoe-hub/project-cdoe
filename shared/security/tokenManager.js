@@ -10,8 +10,9 @@
 const jwt    = require('jsonwebtoken');
 const crypto = require('crypto');
 
-const ACCESS_EXPIRY  = '15m';
-const REFRESH_EXPIRY = 7 * 24 * 60 * 60; // seconds (7 days)
+const ACCESS_EXPIRY   = '15m';
+const REFRESH_EXPIRY  = 7 * 24 * 60 * 60; // seconds (7 days)
+const MAX_SESSIONS    = 3; // max concurrent active refresh tokens per user per portal
 
 function hashToken(raw) {
     return crypto.createHash('sha256').update(raw).digest('hex');
@@ -35,12 +36,20 @@ async function issueTokenPair(db, payload, portal, jwtSecret, reqMeta = {}) {
     const refreshHash  = hashToken(rawRefresh);
     const expiresAt    = new Date(Date.now() + REFRESH_EXPIRY * 1000);
 
-    // Revoke any existing refresh tokens for this user+portal before inserting new one
-    await db.query(
-        `UPDATE refresh_tokens SET revoked = 1, revoked_at = NOW()
-          WHERE user_id = ? AND portal = ? AND revoked = 0`,
+    // Enforce max concurrent sessions — revoke oldest if over limit
+    const [activeSessions] = await db.query(
+        `SELECT id FROM refresh_tokens
+          WHERE user_id = ? AND portal = ? AND revoked = 0
+          ORDER BY issued_at ASC`,
         [payload.id, portal]
     );
+    if (activeSessions.length >= MAX_SESSIONS) {
+        const toRevoke = activeSessions.slice(0, activeSessions.length - MAX_SESSIONS + 1).map(r => r.id);
+        await db.query(
+            `UPDATE refresh_tokens SET revoked = 1, revoked_at = NOW() WHERE id IN (${toRevoke.map(() => '?').join(',')})`,
+            toRevoke
+        );
+    }
 
     await db.query(
         `INSERT INTO refresh_tokens (user_id, portal, token_hash, device_hash, ip_address, expires_at)
