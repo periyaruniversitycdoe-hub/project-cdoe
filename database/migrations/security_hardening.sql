@@ -195,10 +195,11 @@ SELECT
     p.id,
     p.transaction_id,
     p.amount,
-    p.status,
+    p.payment_status  AS status,
+    p.paid_at,
     p.created_at,
-    u.full_name  AS student_name,
-    u.email      AS student_email
+    u.full_name       AS student_name,
+    u.email           AS student_email
 FROM payments p
 JOIN users u ON u.id = p.user_id;
 

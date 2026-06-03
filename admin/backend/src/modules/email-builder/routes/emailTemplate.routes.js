@@ -7,6 +7,7 @@ const fs = require('fs');
 const controller = require('../controllers/emailTemplate.controller');
 const { verifyToken, isAdmin } = require('../../../../middleware/auth');
 const { validateTemplate, validatePreviewPayload } = require('../validators/emailTemplate.validator');
+const { postUploadCheck } = require('../../../../../../shared/security/fileValidator');
 
 // Ensure upload directory exists
 const uploadDir = path.join(__dirname, '../../../../uploads/logos');
@@ -76,6 +77,6 @@ router.post('/upload-logo', verifyToken, isAdmin, (req, res, next) => {
         }
         next();
     });
-}, controller.uploadLogo);
+}, postUploadCheck(), controller.uploadLogo);
 
 module.exports = router;
