@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -53,20 +53,28 @@ export default function Dashboard() {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const loadDashboard = useCallback((signal) => {
+    const cfg = { signal };
     Promise.all([
-      axios.get(`${API}/portal/dashboard`),
-      axios.get(`${API}/portal/me`),
-      axios.get(`${API}/notifications`),
+      axios.get(`${API}/portal/dashboard`, cfg),
+      axios.get(`${API}/portal/me`,        cfg),
+      axios.get(`${API}/notifications`,    cfg),
     ]).then(([d, m, notif]) => {
       if (d.data && d.data.stats) setStats(d.data.stats);
       if (d.data) setSupervisors(d.data.recentSupervisors || []);
       if (m.data) setProfile(m.data);
       if (notif.data.success) setNotifications(notif.data.data);
     }).catch(err => {
+      if (err?.code === 'ERR_CANCELED') return;   // AbortController fired — not an error
       console.error('Center Dashboard Load Error:', err);
     }).finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    const ac = new AbortController();
+    loadDashboard(ac.signal);
+    return () => ac.abort();
+  }, [loadDashboard]);
 
   if (loading) return <div style={{ textAlign: 'center', padding: 100, color: '#0891b2', fontWeight: 600 }}>Loading Dashboard...</div>;
   if (!profile) return <div style={{ textAlign: 'center', padding: 100, color: '#ef4444' }}>Error loading profile. Please try logging in again.</div>;

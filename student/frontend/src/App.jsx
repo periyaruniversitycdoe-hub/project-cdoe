@@ -36,6 +36,22 @@ import PaymentCallback from './pages/PaymentCallback';
 import VerifyReceipt from './pages/VerifyReceipt';
 import ReceiptView from './pages/ReceiptView';
 import Layout from './components/layout/Layout';
+import ChatbotWidget from '../../../shared/components/ChatbotWidget';
+
+const STUDENT_API = import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000';
+
+function StudentChatbot() {
+  const { user } = useAuthStore();
+  const token = localStorage.getItem('rsm-auth');
+  return (
+    <ChatbotWidget
+      apiUrl={STUDENT_API}
+      portalKey="student"
+      userInfo={user ? { id: user.id, name: user.full_name || user.name, email: user.email } : null}
+      token={token}
+    />
+  );
+}
 
 const ProtectedRoute = ({ children }) => {
     const { isAuthenticated } = useAuthStore();
@@ -47,6 +63,7 @@ function App() {
   return (
     <Router basename={import.meta.env.BASE_URL}>
       <Toaster position="top-right" />
+      <StudentChatbot />
       <div className="bg-light" style={{ minHeight: '100vh' }}>
         <Routes>
           <Route path="/home" element={<StudentHome />} />

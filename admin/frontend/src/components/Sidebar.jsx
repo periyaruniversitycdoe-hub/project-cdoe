@@ -6,7 +6,7 @@ import {
   ChevronRight, Ticket, CalendarRange, MapPin, GraduationCap,
   IndianRupee, CreditCard, UserCheck, BookOpen, X, Award, Users,
   BarChart3, ShieldCheck, UserSquare2, Building2, Database, History, Layers, KeyRound,
-  Home, Megaphone, ClipboardList
+  Home, Megaphone, ClipboardList, MessageCircle, GitFork
 } from 'lucide-react';
 import { useSession } from '../contexts/SessionContext';
 
@@ -60,11 +60,13 @@ const menuStructure = [
   {
     group: 'COMMUNICATION',
     items: [
+      { icon: MessageCircle,   label: 'Chatbot & Knowledge Base', path: '/chatbot-management' },
       { icon: Megaphone,       label: 'Announcement Mgmt',     path: '/announcements' },
       { icon: BookOpen,        label: 'News & Announcements',  path: '/news-announcements' },
       { icon: Layers,          label: 'Email Categories',       path: '/email-templates' },
       { icon: Database,        label: 'Email Services',        path: '/email-services' },
       { icon: History,         label: 'Email Logs',            path: '/email-logs' },
+      { icon: GitFork,         label: 'Email Delivery Log',    path: '/email-delivery-log' },
     ]
   },
   {
@@ -86,12 +88,15 @@ const Sidebar = ({ isOpen, onClose }) => {
   const [settings, setSettings] = React.useState(null);
 
   React.useEffect(() => {
-    fetch((import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api/settings')
+    const ac = new AbortController();
+    fetch(
+      (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api/settings',
+      { signal: ac.signal }
+    )
       .then(r => r.json())
-      .then(res => {
-        setSettings(res.success ? res.data : res);
-      })
-      .catch(() => {});
+      .then(res => setSettings(res.success ? res.data : res))
+      .catch(err => { if (err.name !== 'AbortError') { /* network error — logo stays null */ } });
+    return () => ac.abort();
   }, []);
 
   const handleLogout = () => {

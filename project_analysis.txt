@@ -1,0 +1,278 @@
+================================================================================
+PERIYAR UNIVERSITY - PHD MANAGEMENT SYSTEM
+COMPREHENSIVE PROJECT ANALYSIS
+================================================================================
+Generated on: 2026-06-03
+Workspace Path: c:\Users\majeed\Downloads\cdoe-main\cdoe-main
+--------------------------------------------------------------------------------
+
+This document provides a detailed overview of the system architecture, database
+schema, technology stack, directory structure, core business logics, and security
+implementations for the Periyar University PhD Management System.
+
+================================================================================
+1. TECHNOLOGY STACK
+================================================================================
+
+The project uses a monorepo architecture structure with several interconnected
+sub-services. The technologies employed include:
+
+*   CORE RUNTIME:
+    - Node.js (version >= 18)
+    - Express.js (v5.x - Backend APIs)
+    - React.js (v19 - Frontends)
+    - NestJS (Microservice for asynchronous/isolated email logic)
+
+*   DATABASE & STATE:
+    - MySQL / MariaDB (version 10.4+ / MySQL 8+)
+    - mysql2 (promise-based connection pooling)
+    - Prisma ORM (used specifically within the NestJS email-service)
+
+*   FRONTEND BUILD TOOLS & PORTALS:
+    - Vite (Fast development server and bundling)
+    - TailwindCSS (Utility-first styling system)
+    - React Router v7 (Client-side routing)
+    - Lucide React (Icon sets)
+    - Axios (HTTP client for API requests)
+
+*   EMAIL & NOTIFICATION PIPELINE:
+    - Nodemailer (Primary provider via SMTP)
+    - Brevo / Sendinblue (Secondary provider via HTTP API)
+    - Failover Management: "failoverEmailService.js" automatically falls back
+      to Brevo if the primary SMTP service fails, logging occurrences to
+      the `email_delivery_log` database table.
+
+*   CONTAINERIZATION & UTILITIES:
+    - Docker & Docker Compose (Multi-container orchestration)
+    - Nginx (Production reverse proxy and static asset server)
+    - Concurrently (Local orchestration script runner)
+    - Multer (Multipart form-data handler for file uploads)
+
+
+================================================================================
+2. PROJECT STRUCTURE
+================================================================================
+
+The repository is organized as an enterprise monorepo:
+
+phd-demo/                          ← Monorepo Root
+│
+├── .env                           ← Centralized configuration file (environment vars)
+├── .env.example                   ← Template file for setting up local variables
+├── package.json                   ← Orchestrates dependency installation and runs portals
+├── gateway.js                     ← API Gateway using http-proxy-middleware
+├── docker-compose.yml             ← Docker setup for the entire infrastructure
+│
+├── shared/                        ← Code and configurations shared across all modules
+│   ├── config/
+│   │   ├── db.js                  ← Centralized MySQL pool initialization
+│   │   └── mail.js                ← Nodemailer SMTP configuration
+│   ├── middleware/
+│   │   └── auth.js                ← JWT authentication middleware (admin check, token verify)
+│   ├── email/
+│   │   └── failoverEmailService.js ← Primary SMTP to Brevo fallback logic
+│   ├── chatbot/                   ← Public & portal-scoped chatbot integrations
+│   ├── constants/                 ← Global shared constant values
+│   └── uploads/                   ← Upload directories structured by user role
+│
+├── database/                      ← Database lifecycle tools
+│   ├── migrations/                ← Raw SQL schemas, upgrade paths, and table mutations
+│   ├── init/                      ← Init scripts for database dockerization
+│   └── ER-Diagram/                ← Architectural diagram materials
+│
+├── student/                       ← Student Portal (Port 5000 Backend / 5173 Frontend)
+│   ├── backend/                   ← Express server for application submission & payments
+│   └── frontend/                  ← React app for student registration and application tracking
+│
+├── admin/                         ← Admin Portal (Port 5001 Backend / 5174 Frontend)
+│   ├── backend/                   ← Express server managing admissions, configurations & results
+│   └── frontend/                  ← React + Tailwind dashboard for university staff
+│
+├── supervisor/                    ← Supervisor Portal (Port 5002 Backend / 5175 Frontend)
+│   ├── backend/                   ← Express server handling supervisor profiles & vacancy limits
+│   └── frontend/                  ← React app for academic supervisors to update details
+│
+├── center/                        ← Research Centre Portal (Port 5003 Backend / 5176 Frontend)
+│   ├── backend/                   ← Express server managing research centers
+│   └── frontend/                  ← React app for colleges to update seat matrices
+│
+├── portal-dashboard/              ← Unified gateway/portal landing dashboard
+├── email-service/                 ← Asynchronous notification microservice (NestJS + Prisma)
+├── nginx/                         ← Nginx server configurations for deployment
+└── logs/                          ← Central repository for system logs
+
+
+================================================================================
+3. DETAILED DATABASE SCHEMA (DB SCHEME)
+================================================================================
+
+The database `rsm_db` uses normalized tables to map configurations, users, and
+application workflows. Key tables and relations include:
+
+1.  USER MANAGEMENT
+    *   `users`: Stores credentials for portals.
+        - `id` (INT PK, Auto-increment)
+        - `application_id` (VARCHAR(20) UNIQUE)
+        - `full_name` (VARCHAR(255))
+        - `email` (VARCHAR(255) UNIQUE)
+        - `password` (VARCHAR(255) - hashed)
+        - `role` (ENUM('student', 'admin'))
+        - `session_id` (INT FK to `sessions`)
+        - `created_at` (TIMESTAMP)
+
+2.  APPLICATIONS & CANDIDATE PROFILE
+    *   `applications`: Main application workbook.
+        - `id` (INT PK, Auto-increment)
+        - `application_id` (VARCHAR(20) UNIQUE, FK to `users.application_id`)
+        - `user_id` (INT, FK to `users.id`)
+        - `exam_center_1`, `exam_center_2` (VARCHAR(100))
+        - `subject` (VARCHAR(100))
+        - `category` (VARCHAR(50) - Part-Time/Full-Time)
+        - `working_district` (VARCHAR(100))
+        - `dob` (DATE), `nationality`, `religion`, `gender`, `community`
+        - `parent_name` (VARCHAR(255))
+        - Communication Address: `address_1`, `address_2`, `address_3`, `district`, `state`, `pincode`, `mobile`, `phone`
+        - Permanent Address: `perm_same_as_comm` (TINYINT), `perm_address_1`, `perm_address_2`, `perm_address_3`, `perm_state`, `perm_district`, `perm_city`, `perm_pincode`
+        - Identity verification: `id_type`, `id_number`
+        - Awaiting final semester: `is_awaiting_final_sem` (TINYINT)
+        - PG Details: `pg_degree`, `score_type`, `score_value`, `year_of_passing`, `pg_university`
+        - Exemption exams: `qualified_exams` (JSON)
+        - Status: `status` (ENUM: 'Draft', 'Submitted', 'Under Review', 'Approved', 'Rejected')
+        - Payment indicators: `payment_status` (ENUM: 'Unpaid', 'Paid', 'Failed'), `payment_reference`, `payment_date`
+        - Result verification: `entrance_mark` (DECIMAL), `interview_mark` (DECIMAL), `qualification_status` (ENUM: 'Pending', 'Qualified', 'Direct Qualified', 'Failed', 'Absent'), `admission_approved` (TINYINT), `remarks` (TEXT)
+        - Lifecycle logging dates: `registration_date`, `approval_date`, `hall_ticket_generated_at`, `hall_ticket_downloaded_at`, `result_published_at`, `counselling_opened_at`, `counselling_submitted_at`
+        - Exemption Engine status: `direct_pass_status` (ENUM: 'None', 'DirectPass'), `entrance_exam_status` (ENUM: 'Required', 'Exempted', 'Completed', 'Absent')
+        - `session_id` (INT FK to `sessions`)
+
+    *   `application_documents`: Path mappings to uploaded user documents.
+        - `id` (INT PK), `application_id`, `document_type`, `file_path`, `uploaded_at`
+
+    *   `school_education`: Logs high school data.
+        - `id` (INT PK), `application_id`, `level` (ENUM: 'SSLC', 'HSC'), `institution_name`, `board_id` (FK to `education_boards`), `passing_month`, `passing_year`, `percentage`, `marksheet_path`
+
+    *   `higher_education`: Logs undergraduate and postgraduate info.
+        - `id` (INT PK), `application_id`, `level` (ENUM: 'UG', 'PG'), `degree_id` (FK), `specialization_id` (FK), `institution_name`, `university_name`, `university_type_id` (FK), `passing_month`, `passing_year`, `score_type`, `score_value`, `marksheet_path`, `consolidated_marksheet_path`
+
+    *   `experience_details`: Logs applicant employment history.
+        - `id` (INT PK), `application_id`, `designation`, `organization_name`, `employment_type_id` (FK), `from_month`, `from_year`, `to_month`, `to_year`, `total_years`, `total_months`, `state_id`, `district_id`, `experience_certificate_path`
+
+3.  PAYMENT TRACKING
+    *   `payments`: Comprehensive audit log ledger for transactions.
+        - `id` (INT PK), `application_id`, `amount`, `currency`, `gateway`, `transaction_id`, `payment_status` (ENUM: 'Initiated', 'Pending', 'Success', 'Failed', 'Refunded'), `payment_mode`, `receipt_number`, `paid_at`, `gateway_response` (JSON), `recorded_by` (admin email for manual entry)
+
+4.  SUPERVISORS & RESEARCH CENTRES
+    *   `supervisors`: Profiles of PhD supervisors.
+        - `id` (INT PK), `supervisor_no` (UNIQUE), `name`, `designation_id` (FK), `recognition_ref_no`, `profile_image`, `department_id` (FK), `gender`, `serving_institute_id` (FK), `address_1`, `address_2`, `address_3`, `district_id` (FK), `pincode`, `aadhaar_no`, `mobile`, `email`, `dob`, `date_of_joining`, `date_of_superannuation`, `recognition_certificate`
+        - Vacancy thresholds: `max_candidates`, `current_vacancy`, `max_part_time`, `max_full_time`
+        - System status: `status` (ENUM: 'Active', 'Inactive', 'Pending'), `remarks`
+        - Mapping to eligibility: `eligibility_dept_id`, `program_offered_id`
+
+    *   `supervisor_disciplines`: Academic fields mapped to a supervisor.
+        - `id` (INT PK), `supervisor_id` (FK), `type` (ENUM: 'Primary', 'Additional'), `discipline_id` (FK to `master_disciplines`), `centre_id`, `recognition_date`, `sort_order`
+
+    *   `research_centres`: Affiliated colleges/departments authorized as centers.
+        - `id` (INT PK), `centre_ref_no` (UNIQUE), `centre_type_id` (FK), `subject_id` (FK), `name`, `abbreviation`, `category_id` (FK), `institute_id` (FK), `address_1`, `address_2`, `address_3`, `district_id` (FK), `pincode`, `contact_number`, `email`, `recognition_date`, `hod_email`, `recognition_certificate`, `logo`, `remark`, `is_active`
+
+5.  ACADEMIC SESSIONS & TIMELINES
+    *   `sessions` & `session_types`: Configures seasonal admission intakes. Toggles gates for registration opening, application submissions, and results.
+    *   `qualification_rules`: Configurable matrix defining credentials qualifying for direct pass (e.g. NET/SET/JRF).
+
+6.  COUNSELLING PHASE TABLES
+    *   `counselling_settings`: Setup thresholds (dates, max selections).
+    *   `counselling_applications`: Logs student submission of choices.
+    *   `counselling_research_choices`: Stores preference list order (`preference_order`) linking candidate to center (`research_center_id`) and supervisor (`supervisor_id`).
+
+7.  AUDITING & SYSTEM LOGS
+    *   `email_delivery_log`: Monitors nodemailer/brevo delivery statuses, execution times, errors, and message IDs.
+    *   `password_reset_otps`: Generates temporary passcodes for accounts.
+    *   `dashboard_audit_logs`: Records administrative action history (IP, changes made, timestamp).
+    *   `attendance_upload_logs` & `result_publish_logs`: Audits XLS/CSV bulk uploads and publishes.
+
+8.  LOOKUPS / DROPDOWNS:
+    *   Master reference tables: `master_designations`, `master_departments`, `master_institutes`, `master_districts`, `master_centre_types`, `master_research_subjects`, `master_research_categories`, `master_disciplines`, `education_boards`, `degree_types`, `university_types`, `specializations`, `employment_types`, `dropdown_id_types`, `dropdown_score_types`, `dropdown_mark_statement_types`.
+
+
+================================================================================
+4. CORE BUSINESS LOGICS & WORKFLOWS
+================================================================================
+
+1.  ONE-ACTIVE-SESSION CONSTRAINT
+    The admin dashboard allows only one active academic session at any given time.
+    All users (students, supervisors) registering or updating files are mapped
+    automatically to the currently active session.
+
+2.  THE ELIGIBILITY & EXEMPTION ENGINE (DIRECT PASS)
+    - During registration/draft, students input national-level qualifications
+      (NET, SET, JRF, SLET).
+    - If a valid exemptive qualification is provided, the backend applies the
+      `qualification_rules` mapping and flags the student application as
+      `entrance_exam_status = 'Exempted'` and `direct_pass_status = 'DirectPass'`.
+    - These candidates skip the entrance exam entirely. Upon application approval
+      and fee payment, they advance straight to the Counselling phase.
+
+3.  HALL TICKET PIPELINE
+    - Only candidates who are NOT marked as 'Exempted' (i.e. those required to
+      take the written entrance exam) and whose applications are marked
+      `status = 'Approved'` are permitted to generate and download hall tickets.
+    - Hall tickets contain dates, mapped exam centers (`exam_center_1`,
+      `exam_center_2`), and seat designations.
+
+4.  EXAM ATTENDANCE & MARK PROCESSING
+    - Post-examination, admins can upload a bulk attendance/mark Excel sheet.
+    - The backend processes files via asynchronous workers, logging rows to
+      `attendance_upload_logs`.
+    - Marks are checked against `entrance_settings` (e.g., standard 50% passing).
+      Admin publishes results by locking and updating `result_published_at`.
+
+5.  PREFERENCE-BASED COUNSELLING ALLOCATION
+    - Qualified/Direct Qualified candidates are invited to counselling.
+    - Candidates pick a set of choices matching their research topic,
+      assigning priority ranks to combinations of research centers and
+      supervisors (up to a configured threshold).
+    - Supervisors' seat allocations check real-time availability using vacancy
+      variables (`max_candidates` - `current_vacancy`).
+
+
+================================================================================
+5. SYSTEM SECURITY & DEFENSIVE MEASURES
+================================================================================
+
+The application implements enterprise-level security protocols at multiple
+layers of the stack:
+
+1.  PASSWORD PROTECTIONS
+    - Passwords are encrypted on signup/reset using `bcrypt` (or `bcryptjs`) with
+      a work factor / salt rounds of 10. Plain text passwords are never stored.
+
+2.  MUTUALLY ISOLATED SESSION AUTHENTICATION (JWT)
+    - Tokens are issued upon login with payload fields (id, email, role, session).
+    - Authentication is managed via separate, distinct environment variables
+      (`STUDENT_JWT_SECRET`, `ADMIN_JWT_SECRET`, `SUPERVISOR_JWT_SECRET`,
+      `CENTER_JWT_SECRET`).
+    - Attempting to use a Student token to gain access to Admin APIs will fail
+      since the signature validation checks fail under differing secrets.
+
+3.  API LAYER DEFENSES (EXPRESS MIDDLEWARE)
+    - HELMET: Disables header signatures like `X-Powered-By` to prevent tech
+      stack fingerprinting and restricts HTTP protocol vulnerabilities.
+    - CORS: Rejects connections from unauthorized domains. Whitelists local ports
+      (5173, 5174, 5175, 5176) and production Netlify instances.
+    - RATE LIMITING: `express-rate-limit` monitors requests to authenticate (`/api/auth`)
+      and general routes (`/api/*`), throttling IPs that exceed thresholds
+      (e.g., max 20 auth calls within 15 minutes in production).
+
+4.  SQL INJECTION PREVENTION
+    - Raw database commands are parameterized. Variables are passed as separate
+      binding arrays rather than string concatenation, prompting the database
+      driver (`mysql2`) to execute them securely as prepared statements.
+
+5.  FILE UPLOAD VETTING
+    - File upload endpoints pass through Multer middleware, validating allowed
+      types (configured globally in `file_upload_settings`) and size restrictions
+      (typically 1MB for certs, 200KB for photos).
+    - Uploaded files are renamed using randomized hashes and timestamp keys to
+      prevent path traversal exploits.
+
+================================================================================
+EOF
+================================================================================

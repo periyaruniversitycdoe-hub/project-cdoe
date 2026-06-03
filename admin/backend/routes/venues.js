@@ -5,16 +5,18 @@ const pool    = require('../config/db');
 const { verifyToken, isAdmin } = require('../middleware/auth');
 const { getActiveSessionId }   = require('../services/sessionCache');
 
-// ── helpers ────────────────────────────────────────────────────────────────────
-
-function fmtTime(t) {
-  if (!t) return '';
-  const [h, m] = t.split(':');
-  const hr = parseInt(h, 10);
-  const ampm = hr >= 12 ? 'PM' : 'AM';
-  const hr12 = hr % 12 || 12;
-  return `${String(hr12).padStart(2, '0')}:${m} ${ampm}`;
-}
+// Migration: make scheduling columns nullable so exam details live in generation, not venue master
+;(async () => {
+  try {
+    const conn = await pool.getConnection();
+    try {
+      await conn.query('ALTER TABLE venues MODIFY COLUMN exam_date DATE NULL');
+      await conn.query('ALTER TABLE venues MODIFY COLUMN from_time TIME NULL');
+      await conn.query('ALTER TABLE venues MODIFY COLUMN to_time   TIME NULL');
+    } catch (_) { /* columns already nullable or table not yet created — safe */ }
+    finally { conn.release(); }
+  } catch (_) {}
+})();
 
 // ── GET /api/venues?session_id=active|all|<id>&department= ─────────────────────
 router.get('/', verifyToken, isAdmin, async (req, res) => {
@@ -50,7 +52,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
       FROM venues v
       JOIN sessions s ON v.session_id = s.id
       ${whereClause}
-      ORDER BY v.department, v.exam_date, v.from_time
+      ORDER BY v.department, v.hall_name
     `, params);
 
     res.json({ success: true, data: rows });
@@ -84,14 +86,13 @@ router.get('/:id', verifyToken, isAdmin, async (req, res) => {
 });
 
 // ── POST /api/venues ───────────────────────────────────────────────────────────
+// Venue master: Session, Department, Hall Name, Capacity only.
+// Exam scheduling (date/time) is captured at hall ticket generation time.
 router.post('/', verifyToken, isAdmin, async (req, res) => {
-  const { session_id, department, hall_name, exam_date, from_time, to_time, capacity } = req.body;
+  const { session_id, department, hall_name, capacity } = req.body;
 
-  if (!session_id || !department || !hall_name || !exam_date || !from_time || !to_time || !capacity) {
-    return res.status(400).json({ success: false, message: 'All fields are required' });
-  }
-  if (from_time >= to_time) {
-    return res.status(400).json({ success: false, message: '"From Time" must be before "To Time"' });
+  if (!session_id || !department || !hall_name || !capacity) {
+    return res.status(400).json({ success: false, message: 'Session, Department, Hall Name and Capacity are required' });
   }
   const cap = parseInt(capacity, 10);
   if (isNaN(cap) || cap < 1) {
@@ -99,23 +100,9 @@ router.post('/', verifyToken, isAdmin, async (req, res) => {
   }
 
   try {
-    // Time-overlap check: same hall, same date, overlapping slot
-    const [overlap] = await pool.execute(`
-      SELECT id FROM venues
-      WHERE hall_name = ? AND exam_date = ?
-        AND NOT (to_time <= ? OR from_time >= ?)
-    `, [hall_name, exam_date, from_time, to_time]);
-
-    if (overlap.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: `Time conflict: "${hall_name}" already has a slot that overlaps with ${fmtTime(from_time)}–${fmtTime(to_time)} on ${exam_date}.`
-      });
-    }
-
     const [result] = await pool.execute(
-      'INSERT INTO venues (session_id, department, hall_name, exam_date, from_time, to_time, capacity) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [session_id, department, hall_name, exam_date, from_time, to_time, cap]
+      'INSERT INTO venues (session_id, department, hall_name, capacity) VALUES (?, ?, ?, ?)',
+      [session_id, department, hall_name, cap]
     );
     res.json({ success: true, message: 'Venue created successfully', id: result.insertId });
   } catch (err) {
@@ -125,14 +112,11 @@ router.post('/', verifyToken, isAdmin, async (req, res) => {
 
 // ── PUT /api/venues/:id ────────────────────────────────────────────────────────
 router.put('/:id', verifyToken, isAdmin, async (req, res) => {
-  const { session_id, department, hall_name, exam_date, from_time, to_time, capacity } = req.body;
+  const { session_id, department, hall_name, capacity } = req.body;
   const { id } = req.params;
 
-  if (!session_id || !department || !hall_name || !exam_date || !from_time || !to_time || !capacity) {
-    return res.status(400).json({ success: false, message: 'All fields are required' });
-  }
-  if (from_time >= to_time) {
-    return res.status(400).json({ success: false, message: '"From Time" must be before "To Time"' });
+  if (!session_id || !department || !hall_name || !capacity) {
+    return res.status(400).json({ success: false, message: 'Session, Department, Hall Name and Capacity are required' });
   }
   const cap = parseInt(capacity, 10);
   if (isNaN(cap) || cap < 1) {
@@ -140,20 +124,6 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
   }
 
   try {
-    // Time-overlap check (excluding self)
-    const [overlap] = await pool.execute(`
-      SELECT id FROM venues
-      WHERE hall_name = ? AND exam_date = ? AND id != ?
-        AND NOT (to_time <= ? OR from_time >= ?)
-    `, [hall_name, exam_date, id, from_time, to_time]);
-
-    if (overlap.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: `Time conflict: "${hall_name}" already has a slot that overlaps with ${fmtTime(from_time)}–${fmtTime(to_time)} on ${exam_date}.`
-      });
-    }
-
     // Capacity must not go below already-allocated count
     const [[{ allocated }]] = await pool.execute(
       'SELECT COUNT(*) as allocated FROM hall_tickets WHERE venue_id = ?', [id]
@@ -166,17 +136,17 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
     }
 
     await pool.execute(
-      `UPDATE venues SET session_id=?, department=?, hall_name=?, exam_date=?, from_time=?, to_time=?, capacity=?, updated_at=NOW()
+      `UPDATE venues SET session_id=?, department=?, hall_name=?, capacity=?, updated_at=NOW()
        WHERE id=?`,
-      [session_id, department, hall_name, exam_date, from_time, to_time, cap, id]
+      [session_id, department, hall_name, cap, id]
     );
-    
-    // Enterprise sync: update dependent hall_tickets to match new venue department
+
+    // Enterprise sync: cascade department change to dependent hall_tickets
     await pool.execute(
       `UPDATE hall_tickets SET department=? WHERE venue_id=?`,
       [department, id]
     );
-    
+
     res.json({ success: true, message: 'Venue updated successfully' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

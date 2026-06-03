@@ -178,6 +178,10 @@ app.use('/api/announcements', announcementRoutes);
 const newsAnnouncementsRoutes = require('./routes/news-announcements');
 app.use('/api/news-announcements', newsAnnouncementsRoutes);
 
+// Centralized Chatbot, Knowledge Base & Query Management System
+const chatbotRoutes = require('./routes/chatbot');
+app.use('/api/chatbot', chatbotRoutes);
+
 // ── Institute Master auto-migration ──────────────────────────────────────────
 (async () => {
     // 1. Extend master_institutes with enterprise columns

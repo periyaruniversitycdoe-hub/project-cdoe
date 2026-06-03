@@ -5,13 +5,12 @@ import { Link } from 'react-router-dom';
 import {
   Ticket, Calendar, Clock, MapPin, Plus, Trash2, Printer, Send,
   CheckCircle, Edit2, X, Users, Building2, Zap, Eye, RefreshCw,
-  ChevronDown, AlertCircle, Download
+  AlertCircle
 } from 'lucide-react';
 import { useSession } from '../contexts/SessionContext';
 
 const API_URL = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
 
-// ─── tiny helpers ─────────────────────────────────────────────────────────────
 const token   = () => localStorage.getItem('adminToken');
 const headers = () => ({ Authorization: `Bearer ${token()}` });
 
@@ -20,7 +19,8 @@ function fmt(date) {
   return new Date(date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-const BLANK_VENUE = { session_id: '', department: '', hall_name: '', exam_date: '', from_time: '', to_time: '', capacity: '' };
+// Venue master form: exam scheduling fields removed (they belong to generation now)
+const BLANK_VENUE = { session_id: '', department: '', hall_name: '', capacity: '' };
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -37,8 +37,8 @@ function StatPill({ icon, label, value, color }) {
 }
 
 function CapacityBar({ allocated, capacity }) {
-  const pct  = capacity ? Math.min(100, Math.round((allocated / capacity) * 100)) : 0;
-  const col  = pct >= 100 ? 'danger' : pct >= 75 ? 'warning' : 'success';
+  const pct = capacity ? Math.min(100, Math.round((allocated / capacity) * 100)) : 0;
+  const col = pct >= 100 ? 'danger' : pct >= 75 ? 'warning' : 'success';
   return (
     <div style={{ minWidth: 90 }}>
       <div className="progress" style={{ height: 6, borderRadius: 4 }}>
@@ -53,7 +53,6 @@ function CapacityBar({ allocated, capacity }) {
 const HallTickets = () => {
   const { sessions, activeSession, sessionLabel } = useSession();
 
-  // tabs: 'bulk' | 'issued' | 'manual'
   const [tab, setTab] = useState('bulk');
 
   /* ── Bulk Generator state ── */
@@ -61,6 +60,9 @@ const HallTickets = () => {
   const [genDept,     setGenDept]     = useState('');
   const [genVenue,    setGenVenue]    = useState('');
   const [genCount,    setGenCount]    = useState('');
+  const [genExamDate, setGenExamDate] = useState('');
+  const [genFromTime, setGenFromTime] = useState('');
+  const [genToTime,   setGenToTime]   = useState('');
   const [deptCounts,  setDeptCounts]  = useState([]);
   const [venues,      setVenues]      = useState([]);
   const [departmentsMaster, setDepartmentsMaster] = useState([]);
@@ -70,11 +72,6 @@ const HallTickets = () => {
   const [autoSend,    setAutoSend]    = useState(false);
   const [autoAllocating, setAutoAllocating] = useState(false);
 
-  /* ── Offered Courses state ── */
-  const [offeredCourses, setOfferedCourses] = useState([]);
-  const [selectedOfferedCourse, setSelectedOfferedCourse] = useState('');
-  const [loadingOfferedCourses, setLoadingOfferedCourses] = useState(false);
-
   /* ── Issued Tickets state ── */
   const [issued,        setIssued]       = useState([]);
   const [issuedSession, setIssuedSession] = useState('active');
@@ -83,54 +80,44 @@ const HallTickets = () => {
   const [sendingAll,    setSendingAll]    = useState(false);
 
   /* ── Manual Generator state ── */
-  const [manualForm,    setManualForm]    = useState({ application_id: '', exam_date: '', exam_time: '', exam_venue: 'Periyar University, Salem - 636 011' });
-  const [manualSaving,  setManualSaving]  = useState(false);
+  const [manualForm,   setManualForm]   = useState({ application_id: '', exam_date: '', exam_time: '', exam_venue: 'Periyar University, Salem - 636 011' });
+  const [manualSaving, setManualSaving] = useState(false);
 
   /* ── Venue management state ── */
-  const [venueForm,     setVenueForm]     = useState(BLANK_VENUE);
+  const [venueForm,      setVenueForm]      = useState(BLANK_VENUE);
   const [editingVenueId, setEditingVenueId] = useState(null);
-  const [venueLoading,  setVenueLoading]  = useState(false);
-  const [showVenueForm, setShowVenueForm] = useState(false);
+  const [venueLoading,   setVenueLoading]   = useState(false);
+  const [showVenueForm,  setShowVenueForm]  = useState(false);
 
-  // ── resolved session id for generator ──
+  // ── resolved session id ──
   const resolvedGenSession = useCallback(() => {
     if (genSession === 'active') return activeSession?.id || null;
     if (genSession === 'all')   return null;
     return parseInt(genSession, 10) || null;
   }, [genSession, activeSession]);
 
-  // ── fetch offered courses list ──
-  useEffect(() => {
-    const fetchOfferedCourses = async () => {
-      setLoadingOfferedCourses(true);
-      try {
-        const res = await axios.get(`${API_URL}/hall-tickets/offered-courses`, { headers: headers() });
-        setOfferedCourses(res.data.data || []);
-      } catch {
-        toast.error('Failed to load offered courses');
-      } finally {
-        setLoadingOfferedCourses(false);
-      }
-    };
-    fetchOfferedCourses();
-  }, []);
-
-  // ── fetch dept counts & venues whenever session/dept/offered course changes ──
+  // ── fetch dept counts, venues and departments master ──
   const fetchGenData = useCallback(async () => {
     try {
-      const sid = resolvedGenSession();
+      const sid  = resolvedGenSession();
       const qSid = sid || 'active';
 
       const [stuRes, venRes, deptRes] = await Promise.all([
-        axios.get(`${API_URL}/hall-tickets/students?session_id=${qSid}${selectedOfferedCourse ? `&offered_course=${encodeURIComponent(selectedOfferedCourse)}` : ''}${genDept ? `&department=${encodeURIComponent(genDept)}` : ''}`, { headers: headers() }),
-        axios.get(`${API_URL}/venues?session_id=${qSid}${genDept ? `&department=${encodeURIComponent(genDept)}` : ''}`, { headers: headers() }),
+        axios.get(
+          `${API_URL}/hall-tickets/students?session_id=${qSid}${genDept ? `&department=${encodeURIComponent(genDept)}` : ''}`,
+          { headers: headers() }
+        ),
+        axios.get(
+          `${API_URL}/venues?session_id=${qSid}${genDept ? `&department=${encodeURIComponent(genDept)}` : ''}`,
+          { headers: headers() }
+        ),
         axios.get(`${API_URL}/settings/master-data/dropdown_departments`, { headers: headers() }),
       ]);
       setDeptCounts(stuRes.data.deptCounts || []);
       setVenues(venRes.data.data || []);
       setDepartmentsMaster(deptRes.data.data || []);
     } catch { /* silent */ }
-  }, [resolvedGenSession, genDept, selectedOfferedCourse]);
+  }, [resolvedGenSession, genDept]);
 
   useEffect(() => { fetchGenData(); }, [fetchGenData]);
 
@@ -151,49 +138,38 @@ const HallTickets = () => {
 
   // ── Send All Tickets ──
   const handleSendAll = async () => {
-    if (issued.length === 0) {
-      toast.error('No hall tickets found to send.');
-      return;
-    }
-    if (!window.confirm(`Are you sure you want to send/re-send all ${issued.length} hall ticket(s) to students' dashboards and emails?`)) {
-      return;
-    }
+    if (issued.length === 0) { toast.error('No hall tickets found to send.'); return; }
+    if (!window.confirm(`Are you sure you want to send/re-send all ${issued.length} hall ticket(s) to students' dashboards and emails?`)) return;
     setSendingAll(true);
     try {
       const res = await axios.post(`${API_URL}/hall-tickets/send-all`, {}, { headers: headers() });
       toast.success(res.data.message);
       fetchIssued();
-    } catch {
-      toast.error('Failed to send all tickets');
-    } finally {
-      setSendingAll(false);
-    }
+    } catch { toast.error('Failed to send all tickets'); }
+    finally { setSendingAll(false); }
   };
 
-  // ── unique department list from deptCounts + issuedTickets ──
-  const deptOptions = deptCounts.map(d => d.department).filter(Boolean);
-
-  // ── selected venue object ──
-  const selectedVenue = venues.find(v => String(v.id) === String(genVenue));
-
-  // ── Offered Course change handler ──
-  const handleOfferedCourseChange = (e) => {
-    setSelectedOfferedCourse(e.target.value);
-    setGenDept('');
-    setGenVenue('');
-  };
+  const selectedVenue  = venues.find(v => String(v.id) === String(genVenue));
+  const selDeptStats   = deptCounts.find(d => d.department === genDept);
+  const selVenueAllocated = selectedVenue ? parseInt(selectedVenue.allocated_count, 10) : 0;
+  const selVenueRemaining = selectedVenue ? parseInt(selectedVenue.remaining_seats, 10)  : 0;
 
   // ── Preview ──
   const handlePreview = async () => {
     const sid = resolvedGenSession();
-    if (!sid)     { toast.error('Select a session first'); return; }
-    if (!genDept) { toast.error('Select a department first'); return; }
-    if (!genVenue){ toast.error('Select a venue first'); return; }
+    if (!sid)        { toast.error('Select a session first'); return; }
+    if (!genDept)    { toast.error('Select a department first'); return; }
+    if (!genVenue)   { toast.error('Select a venue first'); return; }
+    if (!genExamDate){ toast.error('Enter the exam date'); return; }
+    if (!genFromTime){ toast.error('Enter the from time'); return; }
+    if (!genToTime)  { toast.error('Enter the to time'); return; }
+    if (genFromTime >= genToTime) { toast.error('"From Time" must be before "To Time"'); return; }
 
     setPreviewing(true);
     try {
-      const res = await axios.post(`${API_URL}/hall-tickets/preview`,
-        { venue_id: genVenue, session_id: sid, department: genDept, offered_course: selectedOfferedCourse || undefined, count: genCount || undefined },
+      const res = await axios.post(
+        `${API_URL}/hall-tickets/preview`,
+        { venue_id: genVenue, session_id: sid, department: genDept, exam_date: genExamDate, from_time: genFromTime, to_time: genToTime, count: genCount || undefined },
         { headers: headers() }
       );
       setPreviewData(res.data);
@@ -209,8 +185,9 @@ const HallTickets = () => {
     const sid = resolvedGenSession();
     setGenerating(true);
     try {
-      const res = await axios.post(`${API_URL}/hall-tickets/bulk-generate`,
-        { venue_id: genVenue, session_id: sid, department: genDept, offered_course: selectedOfferedCourse || undefined, count: genCount || undefined, auto_send: autoSend },
+      const res = await axios.post(
+        `${API_URL}/hall-tickets/bulk-generate`,
+        { venue_id: genVenue, session_id: sid, department: genDept, exam_date: genExamDate, from_time: genFromTime, to_time: genToTime, count: genCount || undefined, auto_send: autoSend },
         { headers: headers() }
       );
       toast.success(res.data.message);
@@ -228,11 +205,20 @@ const HallTickets = () => {
   // ── Auto Allocate All ──
   const handleAutoAllocate = async () => {
     const sid = resolvedGenSession();
-    if (!sid) { toast.error('Select a session first'); return; }
+    if (!sid)        { toast.error('Select a session first'); return; }
+    if (!genExamDate){ toast.error('Enter the exam date before auto-allocating'); return; }
+    if (!genFromTime){ toast.error('Enter the from time before auto-allocating'); return; }
+    if (!genToTime)  { toast.error('Enter the to time before auto-allocating'); return; }
+    if (genFromTime >= genToTime) { toast.error('"From Time" must be before "To Time"'); return; }
     if (!window.confirm('Auto-allocate all unallocated students across available venues for this session?')) return;
+
     setAutoAllocating(true);
     try {
-      const res = await axios.post(`${API_URL}/hall-tickets/auto-allocate`, { session_id: sid }, { headers: headers() });
+      const res = await axios.post(
+        `${API_URL}/hall-tickets/auto-allocate`,
+        { session_id: sid, exam_date: genExamDate, from_time: genFromTime, to_time: genToTime },
+        { headers: headers() }
+      );
       toast.success(res.data.message);
       fetchGenData();
     } catch (err) {
@@ -298,9 +284,6 @@ const HallTickets = () => {
       session_id: v.session_id,
       department: v.department,
       hall_name:  v.hall_name,
-      exam_date:  String(v.exam_date).substring(0, 10),
-      from_time:  String(v.from_time).substring(0, 5),
-      to_time:    String(v.to_time).substring(0, 5),
       capacity:   v.capacity,
     });
     setShowVenueForm(true);
@@ -345,7 +328,6 @@ const HallTickets = () => {
     if (!deptObj) return;
     const newName = window.prompt('Edit Department name:', deptName);
     if (!newName || !newName.trim() || newName === deptName) return;
-    
     try {
       await axios.put(`${API_URL}/settings/master-data/dropdown_departments/${deptObj.id}`, { name: newName.trim() }, { headers: headers() });
       toast.success('Department updated');
@@ -365,15 +347,7 @@ const HallTickets = () => {
     }
   };
 
-  // ── issued dept list ──
   const issuedDepts = [...new Set(issued.map(t => t.subject).filter(Boolean))];
-
-  // ── venue stats for selected venue ──
-  const selVenueAllocated = selectedVenue ? parseInt(selectedVenue.allocated_count, 10) : 0;
-  const selVenueRemaining = selectedVenue ? parseInt(selectedVenue.remaining_seats, 10) : 0;
-
-  // dept summary for selected dept
-  const selDeptStats = deptCounts.find(d => d.department === genDept);
 
   return (
     <div>
@@ -396,7 +370,7 @@ const HallTickets = () => {
           <ul className="nav nav-tabs border-0 mb-0">
             {[
               { key: 'bulk',   label: 'Bulk Generator',   icon: <Zap size={15} /> },
-              { key: 'issued', label: `Issued Tickets`,   icon: <CheckCircle size={15} /> },
+              { key: 'issued', label: 'Issued Tickets',   icon: <CheckCircle size={15} /> },
               { key: 'manual', label: 'Manual Generator', icon: <Plus size={15} /> },
             ].map(t => (
               <li key={t.key} className="nav-item">
@@ -426,34 +400,11 @@ const HallTickets = () => {
                 <div className="fw-bold d-flex align-items-center gap-2" style={{ fontSize: 14 }}>
                   <Ticket size={16} className="text-primary" /> Hall Ticket Generator
                 </div>
-                <button
-                  className="btn btn-sm btn-outline-secondary"
-                  style={{ fontSize: 11 }}
-                  onClick={fetchGenData}
-                  title="Refresh"
-                >
+                <button className="btn btn-sm btn-outline-secondary" style={{ fontSize: 11 }} onClick={fetchGenData} title="Refresh">
                   <RefreshCw size={13} />
                 </button>
               </div>
               <div className="card-body">
-
-                {/* Offered Course */}
-                <div className="mb-3">
-                  <label className="form-label small fw-bold mb-1">Offered Course</label>
-                  <select
-                    className="form-select form-select-sm"
-                    value={selectedOfferedCourse}
-                    onChange={handleOfferedCourseChange}
-                    disabled={loadingOfferedCourses}
-                  >
-                    <option value="">— Select Offered Course —</option>
-                    {offeredCourses.map(course => (
-                      <option key={course} value={course}>
-                        {course}
-                      </option>
-                    ))}
-                  </select>
-                </div>
 
                 {/* Department */}
                 <div className="mb-3">
@@ -462,7 +413,6 @@ const HallTickets = () => {
                     className="form-select form-select-sm"
                     value={genDept}
                     onChange={e => { setGenDept(e.target.value); setGenVenue(''); }}
-                    disabled={!selectedOfferedCourse}
                   >
                     <option value="">— Select Department —</option>
                     {deptCounts.map(d => (
@@ -476,16 +426,21 @@ const HallTickets = () => {
                 {/* Dept summary pills */}
                 {selDeptStats && (
                   <div className="d-flex gap-2 flex-wrap mb-3">
-                    <StatPill icon={<Users size={14} />} label="Total Students" value={selDeptStats.total}       color="secondary" />
-                    <StatPill icon={<CheckCircle size={14} />} label="Allocated"   value={selDeptStats.allocated}  color="success" />
-                    <StatPill icon={<AlertCircle size={14} />} label="Unallocated" value={selDeptStats.unallocated} color="warning" />
+                    <StatPill icon={<Users size={14} />}       label="Total Students" value={selDeptStats.total}        color="secondary" />
+                    <StatPill icon={<CheckCircle size={14} />} label="Allocated"      value={selDeptStats.allocated}   color="success" />
+                    <StatPill icon={<AlertCircle size={14} />} label="Unallocated"    value={selDeptStats.unallocated} color="warning" />
                   </div>
                 )}
 
                 {/* Venue */}
                 <div className="mb-3">
                   <label className="form-label small fw-bold mb-1">Venue / Hall</label>
-                  <select className="form-select form-select-sm" value={genVenue} onChange={e => setGenVenue(e.target.value)} disabled={!genDept}>
+                  <select
+                    className="form-select form-select-sm"
+                    value={genVenue}
+                    onChange={e => setGenVenue(e.target.value)}
+                    disabled={!genDept}
+                  >
                     <option value="">— Select Venue —</option>
                     {venues.map(v => (
                       <option key={v.id} value={v.id} disabled={parseInt(v.remaining_seats, 10) <= 0}>
@@ -501,7 +456,7 @@ const HallTickets = () => {
                   )}
                 </div>
 
-                {/* Venue status card */}
+                {/* Venue capacity card (no exam date/time — those are entered below) */}
                 {selectedVenue && (
                   <div className="rounded-3 border p-3 mb-3" style={{ background: '#f8fdfe', fontSize: 13 }}>
                     <div className="d-flex justify-content-between align-items-start mb-2">
@@ -510,13 +465,60 @@ const HallTickets = () => {
                         {selVenueRemaining <= 0 ? 'FULL' : `${selVenueRemaining} seats left`}
                       </span>
                     </div>
-                    <div className="d-flex gap-3 text-muted small mb-2">
-                      <span><Calendar size={12} className="me-1" />{fmt(selectedVenue.exam_date)}</span>
-                      <span><Clock size={12} className="me-1" />{selectedVenue.from_time_fmt} – {selectedVenue.to_time_fmt}</span>
-                    </div>
                     <CapacityBar allocated={selVenueAllocated} capacity={selectedVenue.capacity} />
                   </div>
                 )}
+
+                {/* Exam Date */}
+                <div className="mb-3">
+                  <label className="form-label small fw-bold mb-1">
+                    Exam Date <span className="text-danger">*</span>
+                  </label>
+                  <div className="input-group input-group-sm">
+                    <span className="input-group-text bg-light"><Calendar size={14} /></span>
+                    <input
+                      type="date"
+                      className="form-control form-control-sm"
+                      value={genExamDate}
+                      onChange={e => setGenExamDate(e.target.value)}
+                      disabled={!genVenue}
+                    />
+                  </div>
+                </div>
+
+                {/* From Time / To Time */}
+                <div className="row g-2 mb-3">
+                  <div className="col-6">
+                    <label className="form-label small fw-bold mb-1">
+                      From Time <span className="text-danger">*</span>
+                    </label>
+                    <div className="input-group input-group-sm">
+                      <span className="input-group-text bg-light"><Clock size={14} /></span>
+                      <input
+                        type="time"
+                        className="form-control form-control-sm"
+                        value={genFromTime}
+                        onChange={e => setGenFromTime(e.target.value)}
+                        disabled={!genVenue}
+                      />
+                    </div>
+                  </div>
+                  <div className="col-6">
+                    <label className="form-label small fw-bold mb-1">
+                      To Time <span className="text-danger">*</span>
+                    </label>
+                    <div className="input-group input-group-sm">
+                      <span className="input-group-text bg-light"><Clock size={14} /></span>
+                      <input
+                        type="time"
+                        className="form-control form-control-sm"
+                        value={genToTime}
+                        onChange={e => setGenToTime(e.target.value)}
+                        disabled={!genVenue}
+                      />
+                    </div>
+                  </div>
+                </div>
 
                 {/* Number of students */}
                 <div className="mb-3">
@@ -562,6 +564,7 @@ const HallTickets = () => {
                     Auto Allocate All
                   </button>
                 </div>
+
               </div>
             </div>
           </div>
@@ -573,11 +576,7 @@ const HallTickets = () => {
                 <div className="fw-bold d-flex align-items-center gap-2" style={{ fontSize: 14 }}>
                   <Building2 size={16} className="text-success" /> Venue Management
                 </div>
-                <button
-                  className="btn btn-sm btn-success d-flex align-items-center gap-1"
-                  style={{ fontSize: 11 }}
-                  onClick={openAddVenue}
-                >
+                <button className="btn btn-sm btn-success d-flex align-items-center gap-1" style={{ fontSize: 11 }} onClick={openAddVenue}>
                   <Plus size={13} /> Add Venue
                 </button>
               </div>
@@ -623,19 +622,7 @@ const HallTickets = () => {
                           <input className="form-control form-control-sm" required placeholder="e.g. Seminar Hall A" value={venueForm.hall_name} onChange={e => setVenueForm(f => ({ ...f, hall_name: e.target.value }))} />
                         </div>
                         <div className="col-12">
-                          <label className="form-label small fw-semibold mb-0">Exam Date</label>
-                          <input type="date" className="form-control form-control-sm" required value={venueForm.exam_date} onChange={e => setVenueForm(f => ({ ...f, exam_date: e.target.value }))} />
-                        </div>
-                        <div className="col-6">
-                          <label className="form-label small fw-semibold mb-0">From Time</label>
-                          <input type="time" className="form-control form-control-sm" required value={venueForm.from_time} onChange={e => setVenueForm(f => ({ ...f, from_time: e.target.value }))} />
-                        </div>
-                        <div className="col-6">
-                          <label className="form-label small fw-semibold mb-0">To Time</label>
-                          <input type="time" className="form-control form-control-sm" required value={venueForm.to_time} onChange={e => setVenueForm(f => ({ ...f, to_time: e.target.value }))} />
-                        </div>
-                        <div className="col-12">
-                          <label className="form-label small fw-semibold mb-0">Capacity (max students)</label>
+                          <label className="form-label small fw-semibold mb-0">Capacity (Maximum Students)</label>
                           <input type="number" min="1" className="form-control form-control-sm" required placeholder="e.g. 40" value={venueForm.capacity} onChange={e => setVenueForm(f => ({ ...f, capacity: e.target.value }))} />
                         </div>
                         <div className="col-12 d-flex gap-2">
@@ -657,15 +644,14 @@ const HallTickets = () => {
                       No venues yet. Click "Add Venue" to create one.
                     </div>
                   ) : venues.map(v => {
-                    const rem = parseInt(v.remaining_seats, 10);
+                    const rem   = parseInt(v.remaining_seats, 10);
                     const alloc = parseInt(v.allocated_count, 10);
                     return (
                       <div key={v.id} className="px-3 py-2 border-bottom" style={{ fontSize: 12 }}>
                         <div className="d-flex justify-content-between align-items-start">
                           <div className="flex-fill me-2">
                             <div className="fw-bold" style={{ fontSize: 13 }}>{v.hall_name}</div>
-                            <div className="text-muted">{v.department} · {fmt(v.exam_date)}</div>
-                            <div className="text-muted">{v.from_time_fmt} – {v.to_time_fmt}</div>
+                            <div className="text-muted">{v.department}</div>
                             <CapacityBar allocated={alloc} capacity={v.capacity} />
                           </div>
                           <div className="d-flex gap-1 flex-shrink-0">
@@ -707,11 +693,9 @@ const HallTickets = () => {
       ══════════════════════════════════════════════ */}
       {tab === 'issued' && (
         <div>
-          {/* Filters */}
           <div className="card border-0 shadow-sm mb-3">
             <div className="card-body py-3">
               <div className="row g-2 align-items-end">
-
                 <div className="col-auto">
                   <select className="form-select form-select-sm" value={issuedDept} onChange={e => setIssuedDept(e.target.value)}>
                     <option value="">All Departments</option>
@@ -783,11 +767,10 @@ const HallTickets = () => {
                           <div className="text-muted" style={{ fontSize: 11 }}>{item.exam_time}</div>
                         </td>
                         <td>
-                          {item.is_sent ? (
-                            <span className="badge bg-success">Sent</span>
-                          ) : (
-                            <span className="badge bg-warning text-dark">Pending</span>
-                          )}
+                          {item.is_sent
+                            ? <span className="badge bg-success">Sent</span>
+                            : <span className="badge bg-warning text-dark">Pending</span>
+                          }
                         </td>
                         <td className="text-center">
                           <div className="d-flex gap-1 justify-content-center">
@@ -883,7 +866,6 @@ const HallTickets = () => {
                 <button className="btn-close" onClick={() => setPreviewData(null)} />
               </div>
               <div className="modal-body">
-                {/* Venue summary */}
                 <div className="rounded-3 border p-3 mb-3" style={{ background: '#f8fdfe', fontSize: 13 }}>
                   <div className="row g-2">
                     <div className="col-sm-4">
@@ -891,9 +873,9 @@ const HallTickets = () => {
                       <div className="fw-bold">{previewData.venue?.hall_name}</div>
                     </div>
                     <div className="col-sm-4">
-                      <div className="text-muted small">Date & Time</div>
-                      <div className="fw-semibold">{fmt(previewData.venue?.exam_date)}</div>
-                      <div className="text-muted">{previewData.venue?.from_time_fmt} – {previewData.venue?.to_time_fmt}</div>
+                      <div className="text-muted small">Date &amp; Time</div>
+                      <div className="fw-semibold">{fmt(previewData.exam_date)}</div>
+                      <div className="text-muted">{previewData.from_time_fmt} – {previewData.to_time_fmt}</div>
                     </div>
                     <div className="col-sm-4">
                       <div className="text-muted small">Allocation</div>
@@ -903,7 +885,6 @@ const HallTickets = () => {
                   </div>
                 </div>
 
-                {/* Student table */}
                 <div className="table-responsive" style={{ maxHeight: 320 }}>
                   <table className="table table-sm align-middle mb-0" style={{ fontSize: 12 }}>
                     <thead className="table-light sticky-top">

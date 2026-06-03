@@ -4550,6 +4550,10 @@ app.get('/api/test-email', async (req, res) => {
 const paymentRoutes = require('./routes/payment');
 app.use('/api/payment', paymentRoutes);
 
+// Chatbot public APIs
+const chatbotPublicRoutes = require('../../shared/chatbot/chatbotPublicRoutes');
+app.use('/api/chatbot', chatbotPublicRoutes({ portalKey: 'student', jwtSecret: process.env.STUDENT_JWT_SECRET, db }));
+
 // Global error handler â€” must be last middleware
 app.use((err, _req, res, _next) => {
     console.error('UNHANDLED SERVER ERROR:', err);

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { fetchServices, deleteEmailService, toggleService } from '../services/emailService.api';
 import { Mail, History, Search, ShieldCheck, ShieldAlert, Sparkles, Server, RotateCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -10,7 +10,12 @@ export default function EmailServicesPage() {
     const [search, setSearch] = useState('');
 
 
-    const loadData = async () => {
+    // Stable reference — safe to call from buttons and other handlers.
+    // Does NOT run on mount; mount uses the effect below which has a
+    // cancellation guard to prevent StrictMode's double-invoke from
+    // updating state after the first (immediately cleaned-up) mount.
+    const loadData = useCallback(async () => {
+        setLoading(true);
         try {
             const res = await fetchServices();
             setServices(res.data.data || []);
@@ -19,7 +24,7 @@ export default function EmailServicesPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
 
     const handleRefresh = async () => {
         setLoading(true);
@@ -34,7 +39,18 @@ export default function EmailServicesPage() {
         }
     };
 
-    useEffect(() => { loadData(); }, []);
+    // Cancellation guard: if StrictMode unmounts this component before
+    // the request resolves, `cancelled` will be true and no state setter
+    // will be called — preventing the "setState on unmounted component"
+    // warning and ensuring only one successful render occurs.
+    useEffect(() => {
+        let cancelled = false;
+        fetchServices()
+            .then(res  => { if (!cancelled) setServices(res.data.data || []); })
+            .catch(()  => { if (!cancelled) toast.error('Failed to load email services'); })
+            .finally(() => { if (!cancelled) setLoading(false); });
+        return () => { cancelled = true; };
+    }, []);
 
     const handleDelete = async (id) => {
         if (!window.confirm('Are you sure you want to delete this service configuration?')) return;

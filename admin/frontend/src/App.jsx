@@ -51,6 +51,8 @@ import AnnouncementManagement from './pages/AnnouncementManagement';
 import NewsAnnouncementsManagement from './pages/NewsAnnouncementsManagement';
 import SupervisorTracking from './pages/SupervisorTracking';
 import CentreTracking from './pages/CentreTracking';
+import ChatbotManagement from './pages/ChatbotManagement';
+import EmailDeliveryLog from './pages/EmailDeliveryLog';
 
 // Global 401 interceptor — clears stale token and forces re-login
 axios.interceptors.response.use(
@@ -151,6 +153,12 @@ function App() {
 
         {/* News & Announcements Module */}
         <Route path="/news-announcements" element={<ProtectedRoute><NewsAnnouncementsManagement /></ProtectedRoute>} />
+
+        {/* Chatbot & Knowledge Base Management */}
+        <Route path="/chatbot-management" element={<ProtectedRoute><ChatbotManagement /></ProtectedRoute>} />
+
+        {/* Email Failover Delivery Log */}
+        <Route path="/email-delivery-log" element={<ProtectedRoute><EmailDeliveryLog /></ProtectedRoute>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

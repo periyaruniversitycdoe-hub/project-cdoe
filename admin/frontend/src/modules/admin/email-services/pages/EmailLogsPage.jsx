@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { fetchEmailLogs, sendTestEmail } from '../services/emailService.api';
 import { History, Search, CheckCircle, XCircle, Clock, ArrowLeft, RefreshCw, Filter, Eye, ChevronRight, X, AlertTriangle, ShieldCheck, Mail, Send, Cpu } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -14,7 +14,9 @@ export default function EmailLogsPage() {
     const [resending, setResending] = useState(false);
     const navigate = useNavigate();
 
-    const loadData = async () => {
+    // Stable reference — called by handleResend after a successful re-send
+    // so the table refreshes without requiring a page reload.
+    const loadData = useCallback(async () => {
         setLoading(true);
         try {
             const res = await fetchEmailLogs();
@@ -24,9 +26,18 @@ export default function EmailLogsPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
 
-    useEffect(() => { loadData(); }, []);
+    // Cancellation guard prevents stale state updates if StrictMode
+    // unmounts the component before the initial fetch resolves.
+    useEffect(() => {
+        let cancelled = false;
+        fetchEmailLogs()
+            .then(res  => { if (!cancelled) setLogs(res.data.data || []); })
+            .catch(()  => { if (!cancelled) toast.error('Failed to load transmission logs'); })
+            .finally(() => { if (!cancelled) setLoading(false); });
+        return () => { cancelled = true; };
+    }, []);
 
     // Calculate metrics
     const totalCount = logs.length;

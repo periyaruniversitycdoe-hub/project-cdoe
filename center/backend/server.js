@@ -105,6 +105,10 @@ app.get('/api/news-announcements/categories', async (_req, res) => {
     }
 });
 
+// Chatbot public APIs
+const chatbotPublicRoutes = require('../../shared/chatbot/chatbotPublicRoutes');
+app.use('/api/chatbot', chatbotPublicRoutes({ portalKey: 'center', jwtSecret: process.env.CENTER_JWT_SECRET, db }));
+
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'center-portal', port: PORT }));
 
 app.use((err, _req, res, _next) => {

@@ -1,6 +1,14 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import ChatbotWidget from '../../../shared/components/ChatbotWidget';
+
+const SUPERVISOR_API = import.meta.env.VITE_SUPERVISOR_API_URL || 'http://localhost:5002';
+function SupervisorChatbot() {
+  const { user, token } = useAuth();
+  return <ChatbotWidget apiUrl={SUPERVISOR_API} portalKey="supervisor"
+    userInfo={user ? { id: user.id, name: user.name, email: user.email } : null} token={token} />;
+}
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import ForgotPassword from './pages/ForgotPassword';
@@ -27,6 +35,7 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter basename={import.meta.env.BASE_URL}>
+        <SupervisorChatbot />
         <Routes>
           <Route path="/login" element={<GuestRoute><Login /></GuestRoute>} />
           <Route path="/signup" element={<GuestRoute><Signup /></GuestRoute>} />

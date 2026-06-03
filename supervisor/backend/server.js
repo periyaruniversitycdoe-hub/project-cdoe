@@ -158,6 +158,10 @@ app.get('/api/eligibility-programs', async (req, res) => {
     }
 });
 
+// Chatbot public APIs
+const chatbotPublicRoutes = require('../../shared/chatbot/chatbotPublicRoutes');
+app.use('/api/chatbot', chatbotPublicRoutes({ portalKey: 'supervisor', jwtSecret: process.env.SUPERVISOR_JWT_SECRET, db }));
+
 // Health check
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'supervisor-portal', port: PORT }));
 

@@ -12,12 +12,15 @@ const Navbar = ({ onMenuClick }) => {
   const [settings, setSettings] = React.useState(null);
 
   React.useEffect(() => {
-    fetch((import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api/settings')
+    const ac = new AbortController();
+    fetch(
+      (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api/settings',
+      { signal: ac.signal }
+    )
       .then(r => r.json())
-      .then(res => {
-        setSettings(res.success ? res.data : res);
-      })
-      .catch(() => {});
+      .then(res => setSettings(res.success ? res.data : res))
+      .catch(err => { if (err.name !== 'AbortError') { /* network error — settings stay null */ } });
+    return () => ac.abort();
   }, []);
 
   const notifications = [

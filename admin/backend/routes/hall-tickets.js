@@ -147,7 +147,6 @@ router.post('/generate', verifyToken, isAdmin, async (req, res) => {
        app[0].session_id || null, app[0].subject || null]
     );
 
-    // Notify the student
     const [[appUser]] = await pool.execute('SELECT user_id FROM applications WHERE application_id = ?', [application_id]);
     if (appUser) {
       const { notifyUser } = require('../services/notifyUser');
@@ -192,17 +191,17 @@ router.get('/print/:id', verifyToken, isAdmin, async (req, res) => {
     const dept = ticket.subject ? ticket.subject.trim().toUpperCase() : '';
     const hall = (ticket.venue_hall_name || ticket.exam_venue || '').trim().toUpperCase();
     if (dept && hall) {
-        if (hall.includes(dept)) {
-            ticket.venue_hall_name = hall;
-            ticket.exam_venue = hall;
-        } else {
-            ticket.venue_hall_name = `${dept} - ${hall}`;
-            ticket.exam_venue = `${dept} - ${hall}`;
-        }
+      if (hall.includes(dept)) {
+        ticket.venue_hall_name = hall;
+        ticket.exam_venue = hall;
+      } else {
+        ticket.venue_hall_name = `${dept} - ${hall}`;
+        ticket.exam_venue = `${dept} - ${hall}`;
+      }
     } else {
-        const val = hall || dept || '—';
-        ticket.venue_hall_name = val;
-        ticket.exam_venue = val;
+      const val = hall || dept || '—';
+      ticket.venue_hall_name = val;
+      ticket.exam_venue = val;
     }
 
     res.json({ success: true, data: ticket });
@@ -213,7 +212,6 @@ router.get('/print/:id', verifyToken, isAdmin, async (req, res) => {
 
 /**
  * POST /api/hall-tickets/send/:id
- * Send a single hall ticket (enqueues dashboard notification + physical email)
  */
 router.post('/send/:id', verifyToken, isAdmin, async (req, res) => {
   try {
@@ -250,7 +248,7 @@ router.post('/send/:id', verifyToken, isAdmin, async (req, res) => {
 });
 
 /**
- * POST /api/hall-tickets/send-bulk  (send all tickets for a venue)
+ * POST /api/hall-tickets/send-bulk
  */
 router.post('/send-bulk', verifyToken, isAdmin, async (req, res) => {
   const { venue_id } = req.body;
@@ -292,7 +290,6 @@ router.post('/send-bulk', verifyToken, isAdmin, async (req, res) => {
 
 /**
  * POST /api/hall-tickets/send-all
- * Send all hall tickets globally for the active session (enqueues dashboard notifications + physical emails)
  */
 router.post('/send-all', verifyToken, isAdmin, async (req, res) => {
   try {
@@ -344,10 +341,9 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
   try {
     const [[ticket]] = await pool.execute('SELECT application_id FROM hall_tickets WHERE id = ?', [req.params.id]);
     if (!ticket) return res.status(404).json({ success: false, message: 'Not found' });
-    
-    // Engine Cascade Sync: Remove from downstream flows first
+
     await DependencyEngine.onHallTicketRevoked(ticket.application_id);
-    
+
     await pool.execute('DELETE FROM hall_tickets WHERE id = ?', [req.params.id]);
     res.json({ success: true, message: 'Hall Ticket revoked and workflows synchronized' });
   } catch (err) {
@@ -355,11 +351,11 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
   }
 });
 
-// ─── NEW ROUTES ───────────────────────────────────────────────────────────────
+// ─── RESTRUCTURED ROUTES ──────────────────────────────────────────────────────
 
 /**
  * GET /api/hall-tickets/offered-courses
- * Fetch unique offered courses (programs) from applications
+ * Kept for backward compatibility — no longer called by the new UI.
  */
 router.get('/offered-courses', verifyToken, isAdmin, async (req, res) => {
   try {
@@ -369,20 +365,20 @@ router.get('/offered-courses', verifyToken, isAdmin, async (req, res) => {
       WHERE program_offered_name IS NOT NULL AND program_offered_name != ''
       ORDER BY program_offered_name ASC
     `);
-    const courses = rows.map(r => r.program_offered_name);
-    res.json({ success: true, data: courses });
+    res.json({ success: true, data: rows.map(r => r.program_offered_name) });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 });
 
 /**
- * GET /api/hall-tickets/students?session_id=&department=&offered_course=
- * All eligible students with allocation status for bulk-generator
+ * GET /api/hall-tickets/students?session_id=&department=
+ * Eligible students with allocation status. Offered-course filter removed;
+ * generation is now application-ID based across the whole department.
  */
 router.get('/students', verifyToken, isAdmin, async (req, res) => {
   try {
-    const { session_id, department, offered_course } = req.query;
+    const { session_id, department } = req.query;
 
     let resolvedSessionId = session_id;
     if (!resolvedSessionId || resolvedSessionId === 'active') {
@@ -395,8 +391,7 @@ router.get('/students', verifyToken, isAdmin, async (req, res) => {
     const params     = [];
 
     if (resolvedSessionId) { conditions.push('COALESCE(a.session_id, u.session_id) = ?'); params.push(resolvedSessionId); }
-    if (department)        { conditions.push('a.subject = ?');    params.push(department); }
-    if (offered_course)    { conditions.push('a.program_offered_name = ?'); params.push(offered_course); }
+    if (department)        { conditions.push('a.subject = ?'); params.push(department); }
 
     const [rows] = await pool.execute(`
       SELECT a.id, a.application_id, u.full_name, a.subject,
@@ -414,16 +409,12 @@ router.get('/students', verifyToken, isAdmin, async (req, res) => {
       ORDER BY u.full_name ASC
     `, params);
 
-    // Department-wise summary for the selected session
+    // Department-wise summary
     const deptParams = [];
     const conditionsSummary = ["a.status IN ('Approved', 'Submitted')", "a.payment_status IN ('Paid', 'Approved')"];
     if (resolvedSessionId) {
       conditionsSummary.push("COALESCE(a.session_id, u.session_id) = ?");
       deptParams.push(resolvedSessionId);
-    }
-    if (offered_course) {
-      conditionsSummary.push("a.program_offered_name = ?");
-      deptParams.push(offered_course);
     }
     const whereSummary = conditionsSummary.length ? `WHERE ${conditionsSummary.join(' AND ')}` : '';
     const [deptCounts] = await pool.execute(`
@@ -447,19 +438,23 @@ router.get('/students', verifyToken, isAdmin, async (req, res) => {
 
 /**
  * POST /api/hall-tickets/preview
- * Dry-run: returns the list of students + generated numbers WITHOUT committing
+ * Dry-run: returns the list of students + generated numbers WITHOUT committing.
+ * Exam date/time are now supplied by the caller (generation form), not the venue.
  */
 router.post('/preview', verifyToken, isAdmin, async (req, res) => {
-  const { venue_id, session_id, department, offered_course, count } = req.body;
+  const { venue_id, session_id, department, exam_date, from_time, to_time, count } = req.body;
+
   if (!venue_id || !session_id || !department) {
-    return res.status(400).json({ success: false, message: 'venue_id, session_id, department are required' });
+    return res.status(400).json({ success: false, message: 'venue_id, session_id and department are required' });
+  }
+  if (!exam_date || !from_time || !to_time) {
+    return res.status(400).json({ success: false, message: 'Exam Date, From Time and To Time are required' });
   }
 
   let resolvedSessionId = session_id;
   if (!resolvedSessionId || resolvedSessionId === 'active') {
     resolvedSessionId = await getActiveSessionId();
   }
-
   if (!resolvedSessionId) {
     return res.status(400).json({ success: false, message: 'Active session could not be resolved.' });
   }
@@ -471,14 +466,14 @@ router.post('/preview', verifyToken, isAdmin, async (req, res) => {
     const [[{ allocated }]] = await pool.execute(
       'SELECT COUNT(*) as allocated FROM hall_tickets WHERE venue_id = ?', [venue_id]
     );
-    const remaining      = venue.capacity - allocated;
-    const numToAllocate  = Math.min(parseInt(count, 10) || remaining, remaining);
+    const remaining     = venue.capacity - allocated;
+    const numToAllocate = Math.min(parseInt(count, 10) || remaining, remaining);
 
     if (numToAllocate <= 0) {
       return res.status(400).json({ success: false, message: 'No remaining seats in this venue' });
     }
 
-    // Students not yet allocated to any venue in this session+department+offered_course (non-exempted only)
+    // Students eligible for this session+department, not yet allocated to any venue
     const conditions = [
       "a.status IN ('Approved', 'Submitted')",
       "a.payment_status IN ('Paid', 'Approved')",
@@ -488,10 +483,6 @@ router.post('/preview', verifyToken, isAdmin, async (req, res) => {
       "ht.id IS NULL"
     ];
     const params = [resolvedSessionId, department];
-    if (offered_course) {
-      conditions.push("a.program_offered_name = ?");
-      params.push(offered_course);
-    }
 
     const [students] = await pool.execute(`
       SELECT a.id, a.application_id, u.full_name, a.subject
@@ -509,7 +500,6 @@ router.post('/preview', verifyToken, isAdmin, async (req, res) => {
 
     const year = new Date().getFullYear();
     const dc   = deptCode(department);
-
     const [[{ maxNum }]] = await pool.execute(
       `SELECT MAX(CAST(SUBSTRING_INDEX(hall_ticket_number, '-', -1) AS UNSIGNED)) AS maxNum
        FROM hall_tickets WHERE hall_ticket_number LIKE ?`,
@@ -529,7 +519,12 @@ router.post('/preview', verifyToken, isAdmin, async (req, res) => {
 
     res.json({
       success: true,
-      venue: { ...venue, from_time_fmt: fmtTime(venue.from_time), to_time_fmt: fmtTime(venue.to_time) },
+      venue: { id: venue.id, hall_name: venue.hall_name, capacity: venue.capacity },
+      exam_date,
+      from_time,
+      to_time,
+      from_time_fmt: fmtTime(from_time),
+      to_time_fmt:   fmtTime(to_time),
       allocated,
       remaining,
       count: preview.length,
@@ -542,19 +537,23 @@ router.post('/preview', verifyToken, isAdmin, async (req, res) => {
 
 /**
  * POST /api/hall-tickets/bulk-generate
- * Confirm and commit the allocation from a preview
+ * Confirm and commit the allocation.
+ * Exam date/time are supplied by the caller, not pulled from the venue record.
  */
 router.post('/bulk-generate', verifyToken, isAdmin, async (req, res) => {
-  const { venue_id, session_id, department, offered_course, count, auto_send } = req.body;
+  const { venue_id, session_id, department, exam_date, from_time, to_time, count, auto_send } = req.body;
+
   if (!venue_id || !session_id || !department) {
-    return res.status(400).json({ success: false, message: 'venue_id, session_id, department are required' });
+    return res.status(400).json({ success: false, message: 'venue_id, session_id and department are required' });
+  }
+  if (!exam_date || !from_time || !to_time) {
+    return res.status(400).json({ success: false, message: 'Exam Date, From Time and To Time are required' });
   }
 
   let resolvedSessionId = session_id;
   if (!resolvedSessionId || resolvedSessionId === 'active') {
     resolvedSessionId = await getActiveSessionId();
   }
-
   if (!resolvedSessionId) {
     return res.status(400).json({ success: false, message: 'Active session could not be resolved.' });
   }
@@ -563,11 +562,13 @@ router.post('/bulk-generate', verifyToken, isAdmin, async (req, res) => {
   try {
     await connection.beginTransaction();
 
-    // Lock the venue row for this transaction
     const [[venue]] = await connection.execute(
       'SELECT * FROM venues WHERE id = ? FOR UPDATE', [venue_id]
     );
-    if (!venue) { await connection.rollback(); return res.status(404).json({ success: false, message: 'Venue not found' }); }
+    if (!venue) {
+      await connection.rollback();
+      return res.status(404).json({ success: false, message: 'Venue not found' });
+    }
 
     const [[{ allocated }]] = await connection.execute(
       'SELECT COUNT(*) as allocated FROM hall_tickets WHERE venue_id = ?', [venue_id]
@@ -589,10 +590,6 @@ router.post('/bulk-generate', verifyToken, isAdmin, async (req, res) => {
       "ht.id IS NULL"
     ];
     const params = [resolvedSessionId, department];
-    if (offered_course) {
-      conditions.push("a.program_offered_name = ?");
-      params.push(offered_course);
-    }
 
     const [students] = await connection.execute(`
       SELECT a.id, a.application_id, u.full_name, a.subject
@@ -609,15 +606,10 @@ router.post('/bulk-generate', verifyToken, isAdmin, async (req, res) => {
       return res.status(400).json({ success: false, message: 'No unallocated students found' });
     }
 
-    const year   = new Date().getFullYear();
-    const dc     = deptCode(department);
-    
-    // Safely format the JS Date object to YYYY-MM-DD format
-    const dObj   = new Date(venue.exam_date);
-    const examDateStr = `${dObj.getFullYear()}-${String(dObj.getMonth() + 1).padStart(2, '0')}-${String(dObj.getDate()).padStart(2, '0')}`;
-    
-    const examTimeStr  = `${fmtTime(venue.from_time)} - ${fmtTime(venue.to_time)}`;
-    const isSent       = auto_send ? 1 : 0;
+    const year        = new Date().getFullYear();
+    const dc          = deptCode(department);
+    const examTimeStr = `${fmtTime(from_time)} - ${fmtTime(to_time)}`;
+    const isSent      = auto_send ? 1 : 0;
 
     const [[{ maxNum }]] = await connection.execute(
       `SELECT MAX(CAST(SUBSTRING_INDEX(hall_ticket_number, '-', -1) AS UNSIGNED)) AS maxNum
@@ -640,8 +632,8 @@ router.post('/bulk-generate', verifyToken, isAdmin, async (req, res) => {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         student.application_id, htNumber,
-        examDateStr, examTimeStr, venue.hall_name,
-        venue_id, seatNumber, session_id, department, isSent
+        exam_date, examTimeStr, venue.hall_name,
+        venue_id, seatNumber, resolvedSessionId, department, isSent
       ]);
 
       generated.push({ application_id: student.application_id, full_name: student.full_name, hall_ticket_number: htNumber, seat_number: seatNumber });
@@ -651,7 +643,7 @@ router.post('/bulk-generate', verifyToken, isAdmin, async (req, res) => {
 
     await connection.commit();
 
-    // Bulk notify all generated students
+    // Bulk notify
     if (generated.length > 0) {
       try {
         const appIds = generated.map(g => g.application_id);
@@ -665,7 +657,7 @@ router.post('/bulk-generate', verifyToken, isAdmin, async (req, res) => {
           const userIds = userRows.map(r => r.user_id);
           await notifyBulk(connection, userIds,
             'Hall Ticket Generated ✓',
-            `Your hall ticket has been generated. Exam: ${examDateStr} at ${examTimeStr}, Venue: ${venue.hall_name}. Download it from your dashboard.`,
+            `Your hall ticket has been generated. Exam: ${exam_date} at ${examTimeStr}, Venue: ${venue.hall_name}. Download it from your dashboard.`,
             'hall_ticket'
           );
         }
@@ -687,25 +679,30 @@ router.post('/bulk-generate', verifyToken, isAdmin, async (req, res) => {
 
 /**
  * POST /api/hall-tickets/auto-allocate
- * Auto-fill ALL venues for a session by spreading unallocated students across venues with remaining capacity
+ * Auto-fill ALL venues for a session.
+ * Exam date/time are now supplied in the request body and applied to all generated tickets.
  */
 router.post('/auto-allocate', verifyToken, isAdmin, async (req, res) => {
-  const { session_id } = req.body;
+  const { session_id, exam_date, from_time, to_time } = req.body;
+
   if (!session_id)
     return res.status(400).json({ success: false, message: 'session_id required' });
+  if (!exam_date || !from_time || !to_time)
+    return res.status(400).json({ success: false, message: 'Exam Date, From Time and To Time are required for auto-allocation' });
+
+  const examTimeStr = `${fmtTime(from_time)} - ${fmtTime(to_time)}`;
 
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
 
-    // Venues with remaining capacity
     const [venues] = await connection.execute(`
       SELECT v.*,
              v.capacity - COALESCE((SELECT COUNT(*) FROM hall_tickets ht WHERE ht.venue_id = v.id), 0) AS remaining
       FROM venues v
       WHERE v.session_id = ?
       HAVING remaining > 0
-      ORDER BY v.department, v.exam_date, v.from_time
+      ORDER BY v.department, v.hall_name
     `, [session_id]);
 
     if (venues.length === 0) {
@@ -746,13 +743,8 @@ router.post('/auto-allocate', verifyToken, isAdmin, async (req, res) => {
         [`PHD${year}-${dc}-%`]
       );
 
-      // Safely format the JS Date object to YYYY-MM-DD format
-      const dObj = new Date(venue.exam_date);
-      const examDateStr = `${dObj.getFullYear()}-${String(dObj.getMonth() + 1).padStart(2, '0')}-${String(dObj.getDate()).padStart(2, '0')}`;
-      
-      const examTimeStr = `${fmtTime(venue.from_time)} - ${fmtTime(venue.to_time)}`;
-      let runningNum    = (maxNum || 0) + 1;
-      let seatBase      = parseInt(allocated, 10);
+      let runningNum = (maxNum || 0) + 1;
+      let seatBase   = parseInt(allocated, 10);
 
       for (const student of students) {
         const htNumber   = `PHD${year}-${dc}-${String(runningNum).padStart(3, '0')}`;
@@ -762,7 +754,7 @@ router.post('/auto-allocate', verifyToken, isAdmin, async (req, res) => {
             (application_id, hall_ticket_number, exam_date, exam_time, exam_venue,
              venue_id, seat_number, session_id, department)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [student.application_id, htNumber, examDateStr, examTimeStr, venue.hall_name,
+        `, [student.application_id, htNumber, exam_date, examTimeStr, venue.hall_name,
             venue.id, seatNumber, session_id, venue.department]);
         runningNum++;
         seatBase++;
