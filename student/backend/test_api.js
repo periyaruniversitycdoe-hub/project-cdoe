@@ -48,7 +48,7 @@ const get = (path) => new Promise((resolve, reject) => {
 
     // Test 3: Register
     console.log('🔵 TEST: POST /api/auth/register');
-    const reg = await post('/api/auth/register', { full_name: 'Majeed Test', email: 'majeedtest@test.com', password: 'test1234' });
+    const reg = await post('/api/auth/register', { full_name: 'Majeed Test', email: 'majeedtest2@test.com', password: 'Test1234!' });
     console.log(`   Status: ${reg.status}`);
     console.log(`   Message: ${reg.body.message}`);
     console.log(`   Application ID: ${reg.body.application_id}`);
@@ -57,7 +57,7 @@ const get = (path) => new Promise((resolve, reject) => {
 
     // Test 4: Login
     console.log('🔵 TEST: POST /api/auth/login');
-    const login = await post('/api/auth/login', { username: 'majeedtest@test.com', password: 'test1234' });
+    const login = await post('/api/auth/login', { username: 'majeedtest2@test.com', password: 'Test1234!' });
     console.log(`   Status: ${login.status}`);
     console.log(`   Message: ${login.body.message}`);
     if (login.body.data) {

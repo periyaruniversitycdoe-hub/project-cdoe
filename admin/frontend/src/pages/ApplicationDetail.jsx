@@ -234,7 +234,7 @@ const ApplicationDetail = () => {
             </button>
             <div>
               <span className="fw-bold" style={{ fontSize: '15px' }}>Application: </span>
-              <span className="fw-bold text-primary">{app.application_id}</span>
+              <span className="fw-bold text-primary">{app.application_id || `Pending Payment (${app.email})`}</span>
               <span className="text-muted ms-2" style={{ fontSize: '13px' }}>| {app.full_name}</span>
             </div>
           </div>
@@ -846,7 +846,7 @@ function RejectionDialog({ app, loading, onConfirm, onCancel }) {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px' }}>
               <div>
                 <div style={{ color: '#6b7280', fontSize: 11, fontWeight: 600, marginBottom: 2 }}>Application ID</div>
-                <div style={{ fontWeight: 700, fontFamily: 'monospace' }}>{app?.application_id || '—'}</div>
+                <div style={{ fontWeight: 700, fontFamily: 'monospace' }}>{app?.application_id || `Pending (${app?.email})`}</div>
               </div>
               <div>
                 <div style={{ color: '#6b7280', fontSize: 11, fontWeight: 600, marginBottom: 2 }}>Applicant Name</div>

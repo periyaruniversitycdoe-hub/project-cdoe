@@ -1,18 +1,19 @@
-
+﻿
 const express = require('express');
+const { safeError } = require('../../../shared/security/safeError');
 const router  = express.Router();
 const pool    = require('../config/db');
 const { verifyToken, isAdmin } = require('../middleware/auth');
 const { getActiveSessionId }   = require('../services/sessionCache');
 
-// ─── Helper: resolve session ──────────────────────────────────────────────────
+// â”€â”€â”€ Helper: resolve session â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function resolveSession(session_id) {
   if (!session_id || session_id === 'active') return getActiveSessionId();
   if (session_id === 'all') return null;
   return parseInt(session_id, 10) || null;
 }
 
-// ─── Helper: build date range condition ───────────────────────────────────────
+// â”€â”€â”€ Helper: build date range condition â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function dateRange(column, from_date, to_date) {
   const parts = [];
   const params = [];
@@ -21,13 +22,13 @@ function dateRange(column, from_date, to_date) {
   return { sql: parts.join(' AND '), params };
 }
 
-// ─── GET /api/results/analytics  — date-filtered dashboard analytics ──────────
+// â”€â”€â”€ GET /api/results/analytics  â€” date-filtered dashboard analytics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 /**
  * Query params:
- *   session_id  — 'active' | 'all' | <numeric>
- *   from_date   — YYYY-MM-DD
- *   to_date     — YYYY-MM-DD
- *   period      — 'today' | 'yesterday' | 'month' | 'custom'
+ *   session_id  â€” 'active' | 'all' | <numeric>
+ *   from_date   â€” YYYY-MM-DD
+ *   to_date     â€” YYYY-MM-DD
+ *   period      â€” 'today' | 'yesterday' | 'month' | 'custom'
  */
 router.get('/analytics', verifyToken, isAdmin, async (req, res) => {
   try {
@@ -149,11 +150,11 @@ router.get('/analytics', verifyToken, isAdmin, async (req, res) => {
       }
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
-// ─── POST /api/results/publish ────────────────────────────────────────────────
+// â”€â”€â”€ POST /api/results/publish â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 /**
  * Publish entrance results for a session.
  * Sets result_published_at on all approved present applications and
@@ -222,7 +223,7 @@ router.post('/publish', verifyToken, isAdmin, async (req, res) => {
       const failIds  = affectedUsers.filter(r => r.direct_pass_status !== 'DirectPass' && r.final_result_status === 'FAIL').map(r => r.user_id);
       const otherIds = affectedUsers.filter(r => r.direct_pass_status !== 'DirectPass' && !['PASS','FAIL'].includes(r.final_result_status)).map(r => r.user_id);
 
-      if (passIds.length)       await notifyBulk(connection, passIds,       'Entrance Result: PASS ✓',  'Congratulations! You have passed the entrance examination. Login to access the counselling form.', 'success');
+      if (passIds.length)       await notifyBulk(connection, passIds,       'Entrance Result: PASS âœ“',  'Congratulations! You have passed the entrance examination. Login to access the counselling form.', 'success');
       if (failIds.length)       await notifyBulk(connection, failIds,       'Entrance Result: FAIL',    'Your entrance examination results are now available. Login to view your marks and attendance.', 'danger');
       if (directPassIds.length) await notifyBulk(connection, directPassIds, 'Results Published',        'Your Direct Pass status is confirmed. You are eligible to access the counselling form directly.', 'success');
       if (otherIds.length)      await notifyBulk(connection, otherIds,      'Entrance Results Published','Your entrance examination results are now available. Login to view your marks and attendance.', 'result');
@@ -232,13 +233,13 @@ router.post('/publish', verifyToken, isAdmin, async (req, res) => {
     res.json({ success: true, message: `Results published for ${cnt} application(s)`, total: cnt });
   } catch (err) {
     await connection.rollback();
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   } finally {
     connection.release();
   }
 });
 
-// ─── POST /api/results/unpublish ──────────────────────────────────────────────
+// â”€â”€â”€ POST /api/results/unpublish â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.post('/unpublish', verifyToken, isAdmin, async (req, res) => {
   const { session_id } = req.body;
   const connection = await pool.getConnection();
@@ -264,13 +265,13 @@ router.post('/unpublish', verifyToken, isAdmin, async (req, res) => {
     res.json({ success: true, message: 'Results unpublished' });
   } catch (err) {
     await connection.rollback();
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   } finally {
     connection.release();
   }
 });
 
-// ─── GET /api/results/publish-status ─────────────────────────────────────────
+// â”€â”€â”€ GET /api/results/publish-status â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.get('/publish-status', verifyToken, isAdmin, async (req, res) => {
   try {
     const { session_id } = req.query;
@@ -282,11 +283,11 @@ router.get('/publish-status', verifyToken, isAdmin, async (req, res) => {
     );
     res.json({ success: true, data: sess || { published: false } });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
-// ─── GET /api/results/publish-logs ───────────────────────────────────────────
+// â”€â”€â”€ GET /api/results/publish-logs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.get('/publish-logs', verifyToken, isAdmin, async (req, res) => {
   try {
     const [rows] = await pool.execute(
@@ -297,11 +298,11 @@ router.get('/publish-logs', verifyToken, isAdmin, async (req, res) => {
     );
     res.json({ success: true, data: rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
-// ─── GET /api/results/list ────────────────────────────────────────────────────
+// â”€â”€â”€ GET /api/results/list â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Published results list for a session (what students see on their dashboard)
 router.get('/list', verifyToken, isAdmin, async (req, res) => {
   try {
@@ -333,7 +334,7 @@ router.get('/list', verifyToken, isAdmin, async (req, res) => {
     );
     res.json({ success: true, data: rows, total: rows.length });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 

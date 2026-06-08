@@ -1,3 +1,4 @@
+﻿const { safeError } = require('../../../shared/security/safeError');
 const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
@@ -38,13 +39,13 @@ const uploadGuidance = multer({
     }
 });
 
-// ─── CATEGORIES ──────────────────────────────────────────────────────────────
+// â”€â”€â”€ CATEGORIES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 router.get('/categories', async (req, res) => {
     try {
         const [rows] = await pool.execute('SELECT * FROM part_time_categories ORDER BY category_reference_code ASC');
         res.json({ success: true, data: rows });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
 router.post('/categories', verifyToken, isAdmin, async (req, res) => {
@@ -68,7 +69,7 @@ router.post('/categories', verifyToken, isAdmin, async (req, res) => {
             );
         } catch (_) {}
         res.json({ success: true, id: result.insertId });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
 router.put('/categories/:id', verifyToken, isAdmin, async (req, res) => {
@@ -101,7 +102,7 @@ router.put('/categories/:id', verifyToken, isAdmin, async (req, res) => {
         }
 
         res.json({ success: true });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
 router.delete('/categories/:id', verifyToken, isAdmin, async (req, res) => {
@@ -127,10 +128,10 @@ router.delete('/categories/:id', verifyToken, isAdmin, async (req, res) => {
         }
 
         res.json({ success: true });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
-// ─── GLOBAL GUIDANCE DOCUMENT ───────────────────────────────────────────────
+// â”€â”€â”€ GLOBAL GUIDANCE DOCUMENT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // GET /global-guidance - Get global guidance metadata
 router.get('/global-guidance', async (req, res) => {
@@ -141,7 +142,7 @@ router.get('/global-guidance', async (req, res) => {
         }
         res.json({ success: true, data: rows[0] });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -236,7 +237,7 @@ router.post('/global-guidance', verifyToken, isAdmin, uploadGuidance.single('fil
         if (req.file && fs.existsSync(req.file.path)) {
             try { fs.unlinkSync(req.file.path); } catch (_) {}
         }
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -278,7 +279,7 @@ router.delete('/global-guidance', verifyToken, isAdmin, async (req, res) => {
 
         res.json({ success: true, message: 'Document deleted successfully' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -322,17 +323,17 @@ router.get('/global-guidance/preview', verifyToken, async (req, res) => {
         res.setHeader('Content-Disposition', `inline; filename="${doc.file_name}"`);
         fs.createReadStream(absolutePath).pipe(res);
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ─── ROLES (DEPENDENT ON CATEGORY) ───────────────────────────────────────────
+// â”€â”€â”€ ROLES (DEPENDENT ON CATEGORY) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 router.get('/categories/:categoryId/roles', async (req, res) => {
     try {
         const [rows] = await pool.execute('SELECT * FROM part_time_roles WHERE category_id = ? ORDER BY role_name ASC', [req.params.categoryId]);
         res.json({ success: true, data: rows });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
 router.post('/roles', verifyToken, isAdmin, async (req, res) => {
@@ -340,7 +341,7 @@ router.post('/roles', verifyToken, isAdmin, async (req, res) => {
     try {
         const [result] = await pool.execute('INSERT INTO part_time_roles (category_id, role_name, role_hint) VALUES (?, ?, ?)', [category_id, role_name, role_hint ?? null]);
         res.json({ success: true, id: result.insertId });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
 router.put('/roles/:id', verifyToken, isAdmin, async (req, res) => {
@@ -348,23 +349,23 @@ router.put('/roles/:id', verifyToken, isAdmin, async (req, res) => {
     try {
         await pool.execute('UPDATE part_time_roles SET role_name = ?, role_hint = ?, status = ? WHERE id = ?', [role_name, role_hint ?? null, status ?? 1, req.params.id]);
         res.json({ success: true });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
 router.delete('/roles/:id', verifyToken, isAdmin, async (req, res) => {
     try {
         await pool.execute('DELETE FROM part_time_roles WHERE id = ?', [req.params.id]);
         res.json({ success: true });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
-// ─── ELIGIBLE AREAS (DEPENDENT ON ROLE) ──────────────────────────────────────
+// â”€â”€â”€ ELIGIBLE AREAS (DEPENDENT ON ROLE) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 router.get('/roles/:roleId/areas', async (req, res) => {
     try {
         const [rows] = await pool.execute('SELECT * FROM part_time_eligible_areas WHERE role_id = ? ORDER BY eligible_area_name ASC', [req.params.roleId]);
         res.json({ success: true, data: rows });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
 router.post('/areas', verifyToken, isAdmin, async (req, res) => {
@@ -372,7 +373,7 @@ router.post('/areas', verifyToken, isAdmin, async (req, res) => {
     try {
         const [result] = await pool.execute('INSERT INTO part_time_eligible_areas (role_id, eligible_area_name) VALUES (?, ?)', [role_id, eligible_area_name]);
         res.json({ success: true, id: result.insertId });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
 router.put('/areas/:id', verifyToken, isAdmin, async (req, res) => {
@@ -380,17 +381,17 @@ router.put('/areas/:id', verifyToken, isAdmin, async (req, res) => {
     try {
         await pool.execute('UPDATE part_time_eligible_areas SET eligible_area_name = ?, status = ? WHERE id = ?', [eligible_area_name, status ?? 1, req.params.id]);
         res.json({ success: true });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
 router.delete('/areas/:id', verifyToken, isAdmin, async (req, res) => {
     try {
         await pool.execute('DELETE FROM part_time_eligible_areas WHERE id = ?', [req.params.id]);
         res.json({ success: true });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
-// ─── DISTRICTS (DEPENDENT ON AREA / STATE) ────────────────────────────────────
+// â”€â”€â”€ DISTRICTS (DEPENDENT ON AREA / STATE) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 router.get('/areas/:areaId/districts', async (req, res) => {
     try {
@@ -399,7 +400,7 @@ router.get('/areas/:areaId/districts', async (req, res) => {
             [req.params.areaId]
         );
         res.json({ success: true, data: rows });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
 router.post('/districts', verifyToken, isAdmin, async (req, res) => {
@@ -423,7 +424,7 @@ router.post('/districts', verifyToken, isAdmin, async (req, res) => {
         if (err.code === 'ER_DUP_ENTRY') {
             return res.status(409).json({ success: false, message: 'District already exists under this state' });
         }
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -451,7 +452,7 @@ router.put('/districts/:id', verifyToken, isAdmin, async (req, res) => {
         if (err.code === 'ER_DUP_ENTRY') {
             return res.status(409).json({ success: false, message: 'District already exists under this state' });
         }
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -468,10 +469,10 @@ router.delete('/districts/:id', verifyToken, isAdmin, async (req, res) => {
             } catch (_) {}
         }
         res.json({ success: true });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
-// ─── WORKING AREA EDIT (add name edit support for admin UI) ──────────────────
+// â”€â”€â”€ WORKING AREA EDIT (add name edit support for admin UI) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 router.put('/areas/:id/name', verifyToken, isAdmin, async (req, res) => {
     const { eligible_area_name, status } = req.body;
@@ -484,7 +485,7 @@ router.put('/areas/:id/name', verifyToken, isAdmin, async (req, res) => {
             [eligible_area_name.trim(), status ?? 1, req.params.id]
         );
         res.json({ success: true });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
 // Legacy backward compatibility (Stub)
@@ -494,7 +495,7 @@ router.get('/all', async (req, res) => {
         const [roles] = await pool.execute('SELECT * FROM part_time_roles WHERE status = 1');
         const [areas] = await pool.execute('SELECT * FROM part_time_eligible_areas WHERE status = 1');
         res.json({ success: true, categories: cats, roles, areas });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
 module.exports = router;

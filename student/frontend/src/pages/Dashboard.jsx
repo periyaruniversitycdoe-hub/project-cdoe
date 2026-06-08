@@ -366,6 +366,10 @@ const Dashboard = () => {
   const resultPublished     = eligibility?.result_published;
   const paymentWindowActive = eligibility?.payment_window_active !== false;
 
+  // Form locked after payment — permanent view-only mode
+  const isFormLocked = !!(eligibility?.form_locked || eligibility?.is_locked || eligibility?.final_submitted);
+  const applicationLockedDate = eligibility?.application_generated_date || eligibility?.application_id_generated_at || eligibility?.submitted_at;
+
   // Deferred payment state — show pending card when waiting for payment
   const isAwaitingPayment = pendingStatus?.awaiting_payment && !pendingStatus?.is_paid;
   const paymentDecision   = pendingStatus?.payment_decision || eligibility?.payment_decision;
@@ -400,10 +404,12 @@ const Dashboard = () => {
 
       {/* Stat Grid */}
       <div className="stats-grid">
-        {/* Application ID — only shown after registration form submission */}
-        <div className="stat-card">
+        {/* Application ID — generated after payment confirmation */}
+        <div className="stat-card" style={isFormLocked ? { borderLeft: '3px solid #10b981' } : {}}>
           <div className="stat-card-header">
-            <div className="stat-icon-box" style={{ background: '#eff6ff', color: '#3b82f6' }}><FileCheck size={20} /></div>
+            <div className="stat-icon-box" style={{ background: isFormLocked ? '#ecfdf5' : '#eff6ff', color: isFormLocked ? '#10b981' : '#3b82f6' }}>
+              {isFormLocked ? <ShieldCheck size={20} /> : <FileCheck size={20} />}
+            </div>
             {user?.application_id ? (
               <button onClick={copyAppId} className="btn btn-link p-0 text-muted" title="Copy Application ID">
                 {copied ? <Check size={16} className="text-success" /> : <Copy size={16} />}
@@ -412,12 +418,17 @@ const Dashboard = () => {
           </div>
           <div className="stat-title">Application ID</div>
           {user?.application_id ? (
-            <div className="stat-value font-monospace" style={{ fontSize: 14, letterSpacing: '0.5px' }}>
+            <div className="stat-value font-monospace" style={{ fontSize: 14, letterSpacing: '0.5px', color: isFormLocked ? '#059669' : undefined }}>
               {user.application_id}
             </div>
           ) : (
             <div className="stat-value" style={{ fontSize: 13, color: '#6b7280' }}>
-              Assigned after submission
+              Generated after payment
+            </div>
+          )}
+          {isFormLocked && (
+            <div style={{ fontSize: 10, color: '#10b981', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+              🔒 Locked &amp; Permanent
             </div>
           )}
         </div>
@@ -670,18 +681,39 @@ const Dashboard = () => {
           </div>
         )}
 
-        {/* Application PDF download (after payment) */}
-        {isPaid && isSubmitted && (
-          <div className="action-banner" style={{ background: 'linear-gradient(135deg,#475569,#1e293b)' }}>
+        {/* ── Locked Application Banner — shown after payment confirmation ── */}
+        {isFormLocked && isPaid && (
+          <div className="action-banner" style={{ background: 'linear-gradient(135deg,#0f4c81,#1e3a5f)', position: 'relative', overflow: 'hidden' }}>
+            {/* Lock watermark */}
+            <div style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)', opacity: 0.06, fontSize: 96, lineHeight: 1, pointerEvents: 'none', userSelect: 'none' }}>🔒</div>
             <div className="banner-content">
-              <div className="banner-icon-bg"><FileCheck size={28} /></div>
+              <div className="banner-icon-bg" style={{ background: 'rgba(16,185,129,0.18)' }}>
+                <ShieldCheck size={28} className="text-success" />
+              </div>
               <div className="banner-text">
-                <h4>Application Submitted &amp; Payment Confirmed</h4>
-                <p>Your application is complete. Download your acknowledgement or view details below.</p>
-                {payHistory[0]?.paid_at && (
-                  <div style={{ fontSize: 12, opacity: 0.7 }}>
-                    Payment Date: {new Date(payHistory[0].paid_at).toLocaleDateString('en-IN')}
-                    {payHistory[0].transaction_id ? ` · Txn: ${payHistory[0].transaction_id}` : ''}
+                <h4 className="fw-bold mb-1">Application Locked &amp; Submitted</h4>
+                <div className="d-flex align-items-center gap-2 mb-1" style={{ fontSize: 13 }}>
+                  <span className="text-white-50">Application ID:</span>
+                  <span className="fw-bold font-monospace text-warning" style={{ fontSize: 15, letterSpacing: 1 }}>
+                    {user?.application_id || eligibility?.application_id || '—'}
+                  </span>
+                  {user?.application_id && (
+                    <button
+                      onClick={copyAppId}
+                      className="btn btn-link p-0"
+                      style={{ color: copied ? '#10b981' : 'rgba(255,255,255,0.5)', fontSize: 12 }}
+                      title="Copy Application ID"
+                    >
+                      {copied ? <Check size={14} /> : <Copy size={14} />}
+                    </button>
+                  )}
+                </div>
+                <p className="mb-1" style={{ fontSize: 12, opacity: 0.8 }}>
+                  Payment confirmed. Your form is permanently locked — no further edits are permitted.
+                </p>
+                {applicationLockedDate && (
+                  <div style={{ fontSize: 11, opacity: 0.6 }}>
+                    Locked on {new Date(applicationLockedDate).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
                   </div>
                 )}
               </div>
@@ -697,7 +729,7 @@ const Dashboard = () => {
                   <Download size={16} className="me-1" /> Download PDF
                 </a>
               )}
-              <button className="banner-btn bg-transparent border text-white" onClick={() => navigate('/review')}>
+              <button className="banner-btn" style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.25)' }} onClick={() => navigate('/review')}>
                 <Eye size={16} className="me-1" /> View Application
               </button>
             </div>
@@ -839,8 +871,8 @@ const Dashboard = () => {
           </div>
         )}
 
-        {/* Draft banner */}
-        {appStatus === 'Draft' && (
+        {/* Draft banner — hidden once form is locked after payment */}
+        {appStatus === 'Draft' && !isFormLocked && (
           <div className="action-banner" style={{ background: 'linear-gradient(135deg,#0f766e,#134e4a)' }}>
             <div className="banner-content">
               <div className="banner-icon-bg"><PlusCircle size={28} /></div>

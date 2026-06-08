@@ -1,3 +1,4 @@
+﻿const { safeError } = require('../../../shared/security/safeError');
 'use strict';
 
 const express = require('express');
@@ -6,7 +7,7 @@ const pool    = require('../config/db');
 const { verifyToken, isAdmin } = require('../middleware/auth');
 const ExcelJS = require('exceljs');
 
-// ── Audit Logging Helper ──────────────────────────────────────────────────────
+// â”€â”€ Audit Logging Helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function audit(conn, { adminId, action, reportType, filters, ip }) {
     try {
         await conn.execute(
@@ -24,7 +25,7 @@ async function audit(conn, { adminId, action, reportType, filters, ip }) {
     } catch (_) { /* Failures in audit should not break core reports operations */ }
 }
 
-// ── Unified Filters Builder ───────────────────────────────────────────────────
+// â”€â”€ Unified Filters Builder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function buildFilters(req, tableAlias = 'a') {
     const { session_id, start_date, end_date, department_id, program_offered_id, community, status, payment_status, category, district } = req.query;
     const conditions = [];
@@ -78,7 +79,7 @@ function buildFilters(req, tableAlias = 'a') {
     };
 }
 
-// ── 1. Analytics Dashboard ────────────────────────────────────────────────────
+// â”€â”€ 1. Analytics Dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.get('/analytics', verifyToken, isAdmin, async (req, res) => {
     try {
         const { whereClause, params } = buildFilters(req, 'a');
@@ -170,11 +171,11 @@ router.get('/analytics', verifyToken, isAdmin, async (req, res) => {
             }
         });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ── 2. Operational Reports Endpoints ──────────────────────────────────────────
+// â”€â”€ 2. Operational Reports Endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // GET Applications list and summaries
 router.get('/applications', verifyToken, isAdmin, async (req, res) => {
@@ -191,7 +192,7 @@ router.get('/applications', verifyToken, isAdmin, async (req, res) => {
         );
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -211,7 +212,7 @@ router.get('/payments', verifyToken, isAdmin, async (req, res) => {
         );
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -232,7 +233,7 @@ router.get('/hall-tickets', verifyToken, isAdmin, async (req, res) => {
         );
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -251,7 +252,7 @@ router.get('/attendance', verifyToken, isAdmin, async (req, res) => {
         );
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -269,7 +270,7 @@ router.get('/entrance-marks', verifyToken, isAdmin, async (req, res) => {
         );
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -287,7 +288,7 @@ router.get('/results', verifyToken, isAdmin, async (req, res) => {
         );
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -305,7 +306,7 @@ router.get('/student-tracking', verifyToken, isAdmin, async (req, res) => {
         );
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -326,7 +327,7 @@ router.get('/counselling', verifyToken, isAdmin, async (req, res) => {
         );
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -344,7 +345,7 @@ router.get('/qualifications', verifyToken, isAdmin, async (req, res) => {
         );
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -370,7 +371,7 @@ router.get('/audit', verifyToken, isAdmin, async (req, res) => {
         );
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -393,11 +394,11 @@ router.get('/supervisor-capacity', verifyToken, isAdmin, async (req, res) => {
         );
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ── 3. Centralized Export Engine ──────────────────────────────────────────────
+// â”€â”€ 3. Centralized Export Engine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 router.post('/export', verifyToken, isAdmin, async (req, res) => {
     const { report_type, format, filters } = req.body;
@@ -522,7 +523,7 @@ router.post('/export', verifyToken, isAdmin, async (req, res) => {
             res.setHeader('Content-Disposition', `attachment; filename="${report_type}_report_${Date.now()}.csv"`);
 
             // UTF-8 BOM ensures Excel opens Tamil/Unicode characters correctly
-            let csvContent = '﻿' + headers.map(h => `"${h.replace(/"/g, '""')}"`).join(',') + '\n';
+            let csvContent = 'ï»¿' + headers.map(h => `"${h.replace(/"/g, '""')}"`).join(',') + '\n';
             rows.forEach(r => {
                 const values = Object.values(r).map(val => {
                     if (val === null || val === undefined) return '""';

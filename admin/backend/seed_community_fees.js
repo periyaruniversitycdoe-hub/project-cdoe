@@ -8,16 +8,16 @@ const path = require('path');
 dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 const communities = [
-  { community: 'OC',                  pg_min_mark: 55, fee_general: 1000, fee_diff_abled: 500, sort_order: 1 },
-  { community: 'BC',                  pg_min_mark: 55, fee_general: 1000, fee_diff_abled: 500, sort_order: 2 },
-  { community: 'BC(Muslim)',          pg_min_mark: 55, fee_general: 1000, fee_diff_abled: 500, sort_order: 3 },
-  { community: 'MBC',                 pg_min_mark: 55, fee_general: 1000, fee_diff_abled: 500, sort_order: 4 },
-  { community: 'DNC',                 pg_min_mark: 55, fee_general: 1000, fee_diff_abled: 500, sort_order: 5 },
-  { community: 'OBC',                 pg_min_mark: null, fee_general: null, fee_diff_abled: null, sort_order: 6 },
-  { community: 'OBC - Non Creamy Layer', pg_min_mark: null, fee_general: null, fee_diff_abled: null, sort_order: 7 },
-  { community: 'SC',                  pg_min_mark: 50, fee_general: 500,  fee_diff_abled: 500, sort_order: 8 },
-  { community: 'SC(A)',               pg_min_mark: 50, fee_general: 500,  fee_diff_abled: 500, sort_order: 9 },
-  { community: 'ST',                  pg_min_mark: 50, fee_general: 500,  fee_diff_abled: 500, sort_order: 10 },
+  { community_name: 'OC',                  pg_min_mark: 55, general_fee: 1000, differently_abled_fee: 500, sort_order: 1 },
+  { community_name: 'BC',                  pg_min_mark: 55, general_fee: 1000, differently_abled_fee: 500, sort_order: 2 },
+  { community_name: 'BC(Muslim)',          pg_min_mark: 55, general_fee: 1000, differently_abled_fee: 500, sort_order: 3 },
+  { community_name: 'MBC',                 pg_min_mark: 55, general_fee: 1000, differently_abled_fee: 500, sort_order: 4 },
+  { community_name: 'DNC',                 pg_min_mark: 55, general_fee: 1000, differently_abled_fee: 500, sort_order: 5 },
+  { community_name: 'OBC',                 pg_min_mark: 55, general_fee: 1000, differently_abled_fee: 500, sort_order: 6 },
+  { community_name: 'OBC - Non Creamy Layer', pg_min_mark: 55, general_fee: 1000, differently_abled_fee: 500, sort_order: 7 },
+  { community_name: 'SC',                  pg_min_mark: 50, general_fee: 500,  differently_abled_fee: 500, sort_order: 8 },
+  { community_name: 'SC(A)',               pg_min_mark: 50, general_fee: 500,  differently_abled_fee: 500, sort_order: 9 },
+  { community_name: 'ST',                  pg_min_mark: 50, general_fee: 500,  differently_abled_fee: 500, sort_order: 10 },
 ];
 
 async function seed() {
@@ -35,10 +35,12 @@ async function seed() {
     await pool.execute(`
       CREATE TABLE IF NOT EXISTS community_fees (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        community VARCHAR(100) NOT NULL UNIQUE,
+        community_name VARCHAR(100) NOT NULL UNIQUE,
         pg_min_mark DECIMAL(5,2) DEFAULT NULL,
-        fee_general DECIMAL(10,2) DEFAULT NULL,
-        fee_diff_abled DECIMAL(10,2) DEFAULT NULL,
+        general_fee DECIMAL(10,2) DEFAULT NULL,
+        differently_abled_fee DECIMAL(10,2) DEFAULT NULL,
+        roster_percentage DECIMAL(5,2) DEFAULT 0.00,
+        status VARCHAR(20) DEFAULT 'active',
         sort_order INT DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -53,10 +55,10 @@ async function seed() {
     // Insert all communities
     for (const c of communities) {
       await pool.execute(
-        'INSERT INTO community_fees (community, pg_min_mark, fee_general, fee_diff_abled, sort_order) VALUES (?, ?, ?, ?, ?)',
-        [c.community, c.pg_min_mark, c.fee_general, c.fee_diff_abled, c.sort_order]
+        'INSERT INTO community_fees (community_name, pg_min_mark, general_fee, differently_abled_fee, sort_order) VALUES (?, ?, ?, ?, ?)',
+        [c.community_name, c.pg_min_mark, c.general_fee, c.differently_abled_fee, c.sort_order]
       );
-      console.log(`  ✔ Inserted: ${c.community}`);
+      console.log(`  ✔ Inserted: ${c.community_name}`);
     }
 
     console.log('\n🎉 All 10 community fee records seeded successfully!');

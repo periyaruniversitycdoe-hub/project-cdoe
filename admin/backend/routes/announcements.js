@@ -1,3 +1,4 @@
+﻿const { safeError } = require('../../../shared/security/safeError');
 'use strict';
 
 const express = require('express');
@@ -9,7 +10,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// ── Multer Setup ───────────────────────────────────────────────────────────────
+// â”€â”€ Multer Setup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const sanitizeFilename = (name) => path.basename(name).replace(/[^a-zA-Z0-9._-]/g, '_');
 
 const allowedMimetypes = [
@@ -48,7 +49,7 @@ const upload = multer({
     },
 });
 
-// ── Auto-migration ─────────────────────────────────────────────────────────────
+// â”€â”€ Auto-migration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 (async () => {
     try {
         await pool.execute(`
@@ -145,13 +146,13 @@ const upload = multer({
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         `);
 
-        console.log('✅ Announcement Management schema verified.');
+        console.log('âœ… Announcement Management schema verified.');
     } catch (err) {
         console.error('[announcements] Schema error:', err.message);
     }
 })();
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
+// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const PRIORITY_ORDER = { critical: 5, high: 4, medium: 3, normal: 2, low: 1 };
 
 function autoExpireStatus(row) {
@@ -184,7 +185,7 @@ async function auditLog(announcementId, action, actor, ip, oldVal, newVal) {
     }
 }
 
-// ── PUBLIC ENDPOINT — no auth required (portal-dashboard reads this) ───────────
+// â”€â”€ PUBLIC ENDPOINT â€” no auth required (portal-dashboard reads this) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.get('/public', async (req, res) => {
     try {
         const now = new Date();
@@ -203,11 +204,11 @@ router.get('/public', async (req, res) => {
         );
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ── CATEGORY CRUD ──────────────────────────────────────────────────────────────
+// â”€â”€ CATEGORY CRUD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // GET all categories
 router.get('/categories', verifyToken, isAdmin, async (req, res) => {
@@ -217,7 +218,7 @@ router.get('/categories', verifyToken, isAdmin, async (req, res) => {
         );
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -234,7 +235,7 @@ router.post('/categories', verifyToken, isAdmin, async (req, res) => {
         res.status(201).json({ success: true, message: 'Category created', id: result.insertId });
     } catch (err) {
         if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ success: false, message: 'Category already exists' });
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -248,7 +249,7 @@ router.put('/categories/:id', verifyToken, isAdmin, async (req, res) => {
         );
         res.json({ success: true, message: 'Category updated' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -261,11 +262,11 @@ router.delete('/categories/:id', verifyToken, isAdmin, async (req, res) => {
         await pool.execute('DELETE FROM announcement_categories WHERE id=?', [req.params.id]);
         res.json({ success: true, message: 'Category deleted' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ── ANNOUNCEMENT CRUD ──────────────────────────────────────────────────────────
+// â”€â”€ ANNOUNCEMENT CRUD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // GET list with filters, search, pagination
 router.get('/', verifyToken, isAdmin, async (req, res) => {
@@ -292,7 +293,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
         if (start_from) { where += ' AND a.start_at >= ?'; params.push(start_from); }
         if (start_to)   { where += ' AND a.start_at <= ?'; params.push(start_to); }
 
-        // Use pool.query() (non-prepared) for dynamic WHERE + LIMIT/OFFSET —
+        // Use pool.query() (non-prepared) for dynamic WHERE + LIMIT/OFFSET â€”
         // pool.execute() prepared statements reject LIMIT/OFFSET params in some MySQL versions.
         const safeLimit  = Math.max(1, parseInt(limit)  || 20);
         const safeOffset = Math.max(0, parseInt(offset) || (parseInt(page) - 1) * safeLimit);
@@ -324,7 +325,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
 
         res.json({ success: true, data: rows, total, page: parseInt(page), limit: parseInt(limit) });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -341,7 +342,7 @@ router.get('/:id', verifyToken, isAdmin, async (req, res) => {
         if (!rows[0]) return res.status(404).json({ success: false, message: 'Announcement not found' });
         res.json({ success: true, data: rows[0] });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -388,7 +389,7 @@ router.post('/', verifyToken, isAdmin, upload.single('attachment'), postUploadCh
         res.status(201).json({ success: true, message: 'Announcement created', id: result.insertId });
     } catch (err) {
         if (req.file) fs.unlink(req.file.path, () => {});
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -455,7 +456,7 @@ router.put('/:id', verifyToken, isAdmin, upload.single('attachment'), postUpload
         res.json({ success: true, message: 'Announcement updated' });
     } catch (err) {
         if (req.file) fs.unlink(req.file.path, () => {});
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -474,7 +475,7 @@ router.patch('/:id/publish', verifyToken, isAdmin, async (req, res) => {
         await auditLog(req.params.id, 'publish', actor, req.ip, { status: rows[0].status }, { status: 'published' });
         res.json({ success: true, message: 'Announcement published' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -489,7 +490,7 @@ router.patch('/:id/unpublish', verifyToken, isAdmin, async (req, res) => {
         await auditLog(req.params.id, 'unpublish', actor, req.ip, null, { status: 'inactive' });
         res.json({ success: true, message: 'Announcement unpublished' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -504,7 +505,7 @@ router.patch('/:id/archive', verifyToken, isAdmin, async (req, res) => {
         await auditLog(req.params.id, 'archive', actor, req.ip, null, { status: 'archived' });
         res.json({ success: true, message: 'Announcement archived' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -519,7 +520,7 @@ router.patch('/:id/restore', verifyToken, isAdmin, async (req, res) => {
         await auditLog(req.params.id, 'restore', actor, req.ip, null, { status: 'draft' });
         res.json({ success: true, message: 'Announcement restored to draft' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -550,7 +551,7 @@ router.post('/:id/duplicate', verifyToken, isAdmin, async (req, res) => {
         await auditLog(result.insertId, 'duplicate', actor, req.ip, { source_id: src.id }, null);
         res.status(201).json({ success: true, message: 'Announcement duplicated', id: result.insertId });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -569,7 +570,7 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
         await auditLog(req.params.id, 'delete', actor, req.ip, { title: rows[0].title }, null);
         res.json({ success: true, message: 'Announcement deleted' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -582,7 +583,7 @@ router.get('/:id/audit', verifyToken, isAdmin, async (req, res) => {
         );
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 

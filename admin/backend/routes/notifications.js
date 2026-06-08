@@ -1,3 +1,4 @@
+﻿const { safeError } = require('../../../shared/security/safeError');
 'use strict';
 
 const express = require('express');
@@ -26,7 +27,7 @@ const { verifyToken, isAdmin } = require('../middleware/auth');
     }
 })();
 
-// GET /api/notifications — list all (admin)
+// GET /api/notifications â€” list all (admin)
 router.get('/', verifyToken, isAdmin, async (req, res) => {
     try {
         const [rows] = await pool.query(
@@ -34,11 +35,11 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
         );
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// POST /api/notifications — create
+// POST /api/notifications â€” create
 router.post('/', verifyToken, isAdmin, async (req, res) => {
     const { title, content, type = 'notification', priority = 0, is_active = 1, published_at } = req.body;
     if (!title) return res.status(400).json({ success: false, message: 'Title is required' });
@@ -50,11 +51,11 @@ router.post('/', verifyToken, isAdmin, async (req, res) => {
         );
         res.status(201).json({ success: true, message: 'Notification created', id: result.insertId });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// PUT /api/notifications/:id — update
+// PUT /api/notifications/:id â€” update
 router.put('/:id', verifyToken, isAdmin, async (req, res) => {
     const { title, content, type, priority, is_active, published_at } = req.body;
     try {
@@ -66,21 +67,21 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
         );
         res.json({ success: true, message: 'Notification updated' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// DELETE /api/notifications/:id — delete
+// DELETE /api/notifications/:id â€” delete
 router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
     try {
         await pool.query('DELETE FROM portal_notifications WHERE id = ?', [req.params.id]);
         res.json({ success: true, message: 'Notification deleted' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// PATCH /api/notifications/:id/toggle — toggle active
+// PATCH /api/notifications/:id/toggle â€” toggle active
 router.patch('/:id/toggle', verifyToken, isAdmin, async (req, res) => {
     try {
         await pool.query(
@@ -89,7 +90,7 @@ router.patch('/:id/toggle', verifyToken, isAdmin, async (req, res) => {
         );
         res.json({ success: true, message: 'Status toggled' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 

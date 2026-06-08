@@ -13,16 +13,163 @@ export default function CentreManagement() {
     const [view, setView] = useState('list');
     const [editId, setEditId] = useState(null);
 
-    if (view === 'form') {
+    const handleAdd = async () => {
+        try {
+            const res = await fetch(`${API}/settings`, { headers: authHeaders() });
+            const json = await res.json();
+            const configUrl = json.data?.research_centre_registration_url;
+            if (configUrl && configUrl.trim()) {
+                window.location.href = configUrl;
+            } else {
+                alert('Registration link has not been configured by Administrator.');
+            }
+        } catch (err) {
+            alert('Failed to retrieve registration settings.');
+        }
+    };
+
+    if (view === 'form' && editId !== null) {
+        // Edit existing centre — keep using the full ApplicationForm
         return (
-            <ApplicationForm 
-                isAdminMode={true} 
-                centerId={editId} 
-                onDone={() => { setView('list'); setEditId(null); }} 
+            <ApplicationForm
+                isAdminMode={true}
+                centerId={editId}
+                onDone={() => { setView('list'); setEditId(null); }}
             />
         );
     }
-    return <CentreList onAdd={() => { setEditId(null); setView('form'); }} onEdit={id => { setEditId(id); setView('form'); }} />;
+    if (view === 'register') {
+        // Register new centre — same form and service as Centre Portal Signup.jsx
+        return (
+            <CentreRegisterForm onDone={() => setView('list')} />
+        );
+    }
+    return (
+        <CentreList
+            onAdd={handleAdd}
+            onEdit={id => { setEditId(id); setView('form'); }}
+        />
+    );
+}
+
+// ─── Register Centre Form ──────────────────────────────────────────────────────
+// Phase 1: Account creation (same as Centre Portal Signup.jsx)
+// Phase 2: Full centre profile form — exact same ApplicationForm used by portal (SSoT)
+function CentreRegisterForm({ onDone }) {
+    const [form, setForm]     = useState({ name: '', email: '', mobile: '', password: '', confirm: '' });
+    const [error, setError]   = useState('');
+    const [phase, setPhase]   = useState('account'); // 'account' | 'profile'
+    const [registered, setRegistered] = useState(null);
+    const [loading, setLoading] = useState(false);
+
+    const set = key => e => setForm(f => ({ ...f, [key]: e.target.value }));
+
+    async function handleSubmit(e) {
+        e.preventDefault();
+        setError('');
+        if (form.password !== form.confirm) return setError('Passwords do not match');
+        if (form.password.length < 8)        return setError('Password must be at least 8 characters');
+        if (!/[A-Z]/.test(form.password))    return setError('Password must contain at least one uppercase letter');
+        if (!/[0-9]/.test(form.password))    return setError('Password must contain at least one number');
+        if (!/[^A-Za-z0-9]/.test(form.password)) return setError('Password must contain at least one special character');
+        setLoading(true);
+        try {
+            const res = await fetch(`${API}/admin/register-centre`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...authHeaders() },
+                body: JSON.stringify({ name: form.name, email: form.email, password: form.password, mobile: form.mobile }),
+            });
+            const data = await res.json();
+            if (!res.ok) return setError(data.message || 'Registration failed');
+            setRegistered(data);
+            setPhase('profile');
+        } catch {
+            setError('Network error. Please try again.');
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    // ── Phase 2: Full centre profile form — exact same ApplicationForm as Centre Portal (SSoT) ──
+    if (phase === 'profile' && registered) {
+        return (
+            <div>
+                <div className="alert alert-success d-flex align-items-center gap-2 m-4 mb-0 py-2">
+                    <span style={{ fontSize: 20 }}>✓</span>
+                    <span>
+                        <strong>Account created.</strong> {registered.message}
+                        {registered.autoLinked && <span className="ms-2 badge bg-success">Auto-linked to centre #{registered.centerId}</span>}
+                        <span className="ms-2 text-muted small">Now fill the full centre profile below.</span>
+                    </span>
+                </div>
+                <ApplicationForm
+                    isAdminMode={true}
+                    centerId={registered.centerId || null}
+                    onDone={onDone}
+                />
+            </div>
+        );
+    }
+
+    return (
+        <div className="container-fluid px-4 py-4">
+            <div className="row justify-content-center">
+                <div className="col-md-6">
+                    <div className="d-flex align-items-center gap-2 mb-4">
+                        <button className="btn btn-sm btn-outline-secondary" onClick={onDone}>←</button>
+                        <div>
+                            <h4 className="fw-bold mb-0">Register Research Centre Account</h4>
+                            <small className="text-muted">Same form and service as Centre Portal self-registration</small>
+                        </div>
+                    </div>
+
+                    <div className="card border-0 shadow-sm">
+                        <div className="card-header bg-white fw-semibold">Research Centre Registration Form</div>
+                        <div className="card-body">
+                            <div className="alert alert-info py-2 small mb-3">
+                                This form is identical to the Research Centre Portal registration form.
+                                If the email matches an existing approved centre record (centre email or HOD email), the account will be auto-linked.
+                            </div>
+                            {error && <div className="alert alert-danger py-2 small">{error}</div>}
+                            <form onSubmit={handleSubmit}>
+                                <div className="mb-3">
+                                    <label className="form-label fw-semibold">Full Name / Centre Director Name</label>
+                                    <input className="form-control" placeholder="Dr. Jane Smith" value={form.name} onChange={set('name')} required />
+                                </div>
+                                <div className="mb-3">
+                                    <label className="form-label fw-semibold">Email Address</label>
+                                    <input className="form-control" type="email" placeholder="centre@university.edu" value={form.email} onChange={set('email')} required />
+                                </div>
+                                <div className="mb-3">
+                                    <label className="form-label fw-semibold">Mobile Number</label>
+                                    <input className="form-control" placeholder="9XXXXXXXXX" value={form.mobile} onChange={set('mobile')} />
+                                </div>
+                                <div className="row g-2 mb-4">
+                                    <div className="col-6">
+                                        <label className="form-label fw-semibold">Password</label>
+                                        <input className="form-control" type="password" placeholder="••••••••" value={form.password} onChange={set('password')} required />
+                                    </div>
+                                    <div className="col-6">
+                                        <label className="form-label fw-semibold">Confirm Password</label>
+                                        <input className="form-control" type="password" placeholder="••••••••" value={form.confirm} onChange={set('confirm')} required />
+                                    </div>
+                                    <div className="col-12">
+                                        <small className="text-muted">Min 8 chars · 1 uppercase · 1 number · 1 special character</small>
+                                    </div>
+                                </div>
+                                <div className="d-flex gap-2">
+                                    <button type="button" className="btn btn-outline-secondary" onClick={onDone}>Cancel</button>
+                                    <button type="submit" className="btn btn-primary flex-grow-1" disabled={loading}>
+                                        {loading ? 'Creating Account...' : 'Create Centre Account'}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
 }
 
 // ─── List View ────────────────────────────────────────────────────────────────

@@ -233,6 +233,11 @@ export default function ChatbotWidget({ apiUrl = 'http://localhost:5000', portal
         .cb-send-btn:hover { background:${COLORS.primary}; }
         .cb-send-btn:disabled { background:#d1d5db; cursor:not-allowed; }
         .cb-query-card { background:#f8fafc; border:1px solid ${COLORS.border}; border-radius:8px; padding:10px 12px; margin-bottom:8px; }
+        @media print {
+          .cb-fab, .cb-window {
+            display: none !important;
+          }
+        }
       `}</style>
 
       {/* FAB */}
@@ -257,7 +262,7 @@ export default function ChatbotWidget({ apiUrl = 'http://localhost:5000', portal
 
       {/* Chat Window */}
       {open && (
-        <div style={S.window}>
+        <div className="cb-window" style={S.window}>
           {/* Header */}
           <div style={S.header}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

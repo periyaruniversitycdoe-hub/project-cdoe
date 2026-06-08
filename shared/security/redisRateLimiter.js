@@ -35,6 +35,7 @@ function tryInitRedis() {
 }
 
 function makeStore(keyPrefix) {
+    if (process.env.NODE_ENV !== 'production') return undefined;
     tryInitRedis();
     if (!redisClient || !RedisStore) return undefined; // express-rate-limit default: memory
 

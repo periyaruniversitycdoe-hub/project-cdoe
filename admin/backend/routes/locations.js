@@ -1,15 +1,16 @@
+﻿const { safeError } = require('../../../shared/security/safeError');
 const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
 const { verifyToken, isAdmin } = require('../middleware/auth');
 
-// ─── STATES ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€ STATES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 router.get('/states', async (req, res) => {
     try {
         const [rows] = await pool.execute('SELECT id, state_name, created_at FROM states ORDER BY state_name ASC');
         res.json({ success: true, data: rows });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
 router.post('/states', verifyToken, isAdmin, async (req, res) => {
@@ -20,7 +21,7 @@ router.post('/states', verifyToken, isAdmin, async (req, res) => {
         res.json({ success: true, message: 'State added', id: result.insertId });
     } catch (err) {
         if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ success: false, message: 'State already exists' });
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -30,7 +31,7 @@ router.put('/states/:id', verifyToken, isAdmin, async (req, res) => {
     try {
         await pool.execute('UPDATE states SET state_name = ? WHERE id = ?', [state_name.trim(), req.params.id]);
         res.json({ success: true, message: 'State updated' });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
 router.delete('/states/:id', verifyToken, isAdmin, async (req, res) => {
@@ -41,10 +42,10 @@ router.delete('/states/:id', verifyToken, isAdmin, async (req, res) => {
         }
         await pool.execute('DELETE FROM states WHERE id = ?', [req.params.id]);
         res.json({ success: true, message: 'State deleted' });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
-// ─── DISTRICTS ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ DISTRICTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 router.get('/districts', async (req, res) => {
     const { state_id } = req.query;
@@ -65,7 +66,7 @@ router.get('/districts', async (req, res) => {
             );
         }
         res.json({ success: true, data: rows });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
 router.post('/districts', verifyToken, isAdmin, async (req, res) => {
@@ -79,7 +80,7 @@ router.post('/districts', verifyToken, isAdmin, async (req, res) => {
             [state_id, district_name.trim()]
         );
         res.json({ success: true, message: 'District added', id: result.insertId });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
 router.put('/districts/:id', verifyToken, isAdmin, async (req, res) => {
@@ -91,14 +92,14 @@ router.put('/districts/:id', verifyToken, isAdmin, async (req, res) => {
             [district_name.trim(), state_id, req.params.id]
         );
         res.json({ success: true, message: 'District updated' });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
 router.delete('/districts/:id', verifyToken, isAdmin, async (req, res) => {
     try {
         await pool.execute('DELETE FROM districts WHERE id = ?', [req.params.id]);
         res.json({ success: true, message: 'District deleted' });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
 module.exports = router;

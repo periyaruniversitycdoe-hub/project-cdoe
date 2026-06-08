@@ -56,7 +56,8 @@ app.use(cors({
         const isDev = process.env.NODE_ENV !== 'production';
         const allowed = !origin ||
             allowedAdminOrigins.includes(origin) ||
-            (isDev && (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1')));
+            (isDev && (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1'))) ||
+            origin.endsWith('.trycloudflare.com');
         if (allowed) callback(null, true);
         else callback(new Error('Not allowed by CORS'));
     },
@@ -183,6 +184,10 @@ app.use('/api/portal-home', portalHomeRoutes);
 // Enterprise Dynamic Roster Management Engine
 const rosterRoutes = require('./routes/roster');
 app.use('/api/roster', rosterRoutes);
+
+// Admin Registration Proxy — same services as each portal's self-registration
+const adminRegisterRoutes = require('./routes/admin-register');
+app.use('/api/admin', adminRegisterRoutes);
 
 // Enterprise Consolidated Import/Export Engine
 const importsRoutes = require('./routes/imports');

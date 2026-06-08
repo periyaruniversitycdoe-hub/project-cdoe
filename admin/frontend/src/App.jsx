@@ -47,7 +47,6 @@ import CredentialManagement from './pages/CredentialManagement';
 import Reports from './pages/Reports';
 import RosterManagement from './pages/RosterManagement';
 import PortalHomeManagement from './pages/PortalHomeManagement';
-import AnnouncementManagement from './pages/AnnouncementManagement';
 import NewsAnnouncementsManagement from './pages/NewsAnnouncementsManagement';
 import SupervisorTracking from './pages/SupervisorTracking';
 import CentreTracking from './pages/CentreTracking';
@@ -197,9 +196,6 @@ function App() {
 
         {/* Portal Home Management */}
         <Route path="/portal-home" element={<ProtectedRoute><PortalHomeManagement /></ProtectedRoute>} />
-
-        {/* Announcement Management Engine */}
-        <Route path="/announcements" element={<ProtectedRoute><AnnouncementManagement /></ProtectedRoute>} />
 
         {/* News & Announcements Module */}
         <Route path="/news-announcements" element={<ProtectedRoute><NewsAnnouncementsManagement /></ProtectedRoute>} />

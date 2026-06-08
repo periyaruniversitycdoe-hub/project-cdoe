@@ -1,6 +1,7 @@
-'use strict';
+﻿'use strict';
 
 const express = require('express');
+const { safeError } = require('../../../shared/security/safeError');
 const router  = express.Router();
 const pool    = require('../config/db');
 const { verifyToken, isAdmin } = require('../middleware/auth');
@@ -9,7 +10,7 @@ const multer  = require('multer');
 const path    = require('path');
 const fs      = require('fs');
 
-// ── Upload storage for prospectus PDF ────────────────────────────────────────
+// â”€â”€ Upload storage for prospectus PDF â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const prospectusDir = path.join(__dirname, '../../../uploads/prospectus');
 if (!fs.existsSync(prospectusDir)) fs.mkdirSync(prospectusDir, { recursive: true });
 
@@ -26,7 +27,7 @@ const upload = multer({
     },
 });
 
-// ── Auto-create table (idempotent) ────────────────────────────────────────────
+// â”€â”€ Auto-create table (idempotent) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 (async () => {
     try {
         await pool.query(`
@@ -47,7 +48,7 @@ const upload = multer({
             INSERT IGNORE INTO portal_home_settings (id) VALUES (1)
         `);
 
-        console.log('✅ portal_home_settings table verified.');
+        console.log('âœ… portal_home_settings table verified.');
 
         // Self-healing portal_announcements table check
         await pool.query(`
@@ -67,24 +68,24 @@ const upload = multer({
                 updated_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         `);
-        console.log('✅ portal_announcements table verified.');
+        console.log('âœ… portal_announcements table verified.');
     } catch (err) {
         console.error('[portal-home] Schema error:', err.message);
     }
 })();
 
 
-// ── GET /api/portal-home/settings (public — also called by student frontend) ──
+// â”€â”€ GET /api/portal-home/settings (public â€” also called by student frontend) â”€â”€
 router.get('/settings', async (_req, res) => {
     try {
         const [[row]] = await pool.query('SELECT * FROM portal_home_settings WHERE id = 1');
         res.json({ success: true, data: row || {} });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ── PUT /api/portal-home/settings — update text settings ─────────────────────
+// â”€â”€ PUT /api/portal-home/settings â€” update text settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.put('/settings', verifyToken, isAdmin, async (req, res) => {
     const { home_page_title, admission_status_text, show_prospectus_btn } = req.body;
     try {
@@ -96,11 +97,11 @@ router.put('/settings', verifyToken, isAdmin, async (req, res) => {
         );
         res.json({ success: true, message: 'Settings saved successfully' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ── POST /api/portal-home/prospectus — upload/replace PDF ────────────────────
+// â”€â”€ POST /api/portal-home/prospectus â€” upload/replace PDF â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.post('/prospectus', verifyToken, isAdmin, upload.single('prospectus'), postUploadCheck(), async (req, res) => {
     if (!req.file) return res.status(400).json({ success: false, message: 'No PDF file provided' });
     try {
@@ -124,11 +125,11 @@ router.post('/prospectus', verifyToken, isAdmin, upload.single('prospectus'), po
             data: { path: relativePath, name: req.file.originalname }
         });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ── DELETE /api/portal-home/prospectus — remove PDF ──────────────────────────
+// â”€â”€ DELETE /api/portal-home/prospectus â€” remove PDF â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.delete('/prospectus', verifyToken, isAdmin, async (req, res) => {
     try {
         const [[row]] = await pool.query('SELECT prospectus_path FROM portal_home_settings WHERE id = 1');
@@ -143,11 +144,11 @@ router.delete('/prospectus', verifyToken, isAdmin, async (req, res) => {
         );
         res.json({ success: true, message: 'Prospectus removed' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ── GET /api/portal-home/prospectus/download — stream file ───────────────────
+// â”€â”€ GET /api/portal-home/prospectus/download â€” stream file â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.get('/prospectus/download', async (_req, res) => {
     try {
         const [[row]] = await pool.query(
@@ -162,13 +163,13 @@ router.get('/prospectus/download', async (_req, res) => {
         res.setHeader('Content-Disposition', `attachment; filename="${row.prospectus_file_name || 'prospectus.pdf'}"`);
         fs.createReadStream(full).pipe(res);
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // NOTIFICATIONS CRUD (type-aware: notification | date | guideline)
-// ══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 // GET /api/portal-home/notifications[?type=notification|date|guideline]
 router.get('/notifications', verifyToken, isAdmin, async (req, res) => {
@@ -181,7 +182,7 @@ router.get('/notifications', verifyToken, isAdmin, async (req, res) => {
         const [rows] = await pool.query(sql, args);
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -197,7 +198,7 @@ router.post('/notifications', verifyToken, isAdmin, async (req, res) => {
         );
         res.status(201).json({ success: true, message: 'Created', id: result.insertId });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -213,7 +214,7 @@ router.put('/notifications/:id', verifyToken, isAdmin, async (req, res) => {
         );
         res.json({ success: true, message: 'Updated' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -223,7 +224,7 @@ router.delete('/notifications/:id', verifyToken, isAdmin, async (req, res) => {
         await pool.query('DELETE FROM portal_notifications WHERE id = ?', [req.params.id]);
         res.json({ success: true, message: 'Deleted' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -236,13 +237,13 @@ router.patch('/notifications/:id/toggle', verifyToken, isAdmin, async (req, res)
         );
         res.json({ success: true, message: 'Toggled' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // DYNAMIC MOVING ANNOUNCEMENTS CRUD
-// ══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 // GET /api/portal-home/announcements
 router.get('/announcements', verifyToken, isAdmin, async (req, res) => {
@@ -250,7 +251,7 @@ router.get('/announcements', verifyToken, isAdmin, async (req, res) => {
         const [rows] = await pool.query('SELECT * FROM portal_announcements ORDER BY display_order ASC, created_at DESC');
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -297,7 +298,7 @@ router.post('/announcements', verifyToken, isAdmin, async (req, res) => {
 
         res.status(201).json({ success: true, message: 'Announcement created successfully', id: result.insertId });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -351,7 +352,7 @@ router.put('/announcements/:id', verifyToken, isAdmin, async (req, res) => {
 
         res.json({ success: true, message: 'Announcement updated successfully' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -372,7 +373,7 @@ router.delete('/announcements/:id', verifyToken, isAdmin, async (req, res) => {
 
         res.json({ success: true, message: 'Announcement deleted successfully' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -397,7 +398,7 @@ router.patch('/announcements/:id/toggle', verifyToken, isAdmin, async (req, res)
 
         res.json({ success: true, message: 'Announcement visibility toggled successfully', is_active: newActive });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -423,7 +424,7 @@ router.put('/announcements/reorder', verifyToken, isAdmin, async (req, res) => {
 
         res.json({ success: true, message: 'Announcements reordered successfully' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 

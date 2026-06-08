@@ -1,3 +1,4 @@
+﻿const { safeError } = require('../../../shared/security/safeError');
 const express = require('express');
 const router = express.Router();
 const { authenticateToken } = require('../../../shared/middleware/auth');
@@ -51,9 +52,9 @@ router.get('/stats', authenticateToken, async (req, res, next) => {
     }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ENTERPRISE EMAIL DELIVERY LOG  (Failover visibility — Admin only)
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ENTERPRISE EMAIL DELIVERY LOG  (Failover visibility â€” Admin only)
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * @route   GET /api/mail/delivery-stats

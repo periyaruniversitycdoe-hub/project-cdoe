@@ -11,6 +11,12 @@ const Settings = () => {
   const [settings, setSettings] = useState({});
   const [activeTab, setActiveTab] = useState('admission');
 
+  const [editingFields, setEditingFields] = useState({
+    application_registration_url: false,
+    supervisor_registration_url: false,
+    research_centre_registration_url: false
+  });
+
   // Exam Centre Config state
   const [examConfig, setExamConfig] = useState({ max_preferences: 2, status: 'active', description: '' });
   const [examConfigSaving, setExamConfigSaving] = useState(false);
@@ -69,6 +75,11 @@ const Settings = () => {
       toast.success('Settings saved successfully!', {
         icon: <CheckCircle size={20} style={{ color: '#10b981' }} />,
         duration: 3000
+      });
+      setEditingFields({
+        application_registration_url: false,
+        supervisor_registration_url: false,
+        research_centre_registration_url: false
       });
     } catch { toast.error('Failed to save settings'); }
     setSaving(false);
@@ -150,6 +161,98 @@ const Settings = () => {
       <td><input type="date" className="form-control form-control-sm" value={settings[closeField] ? settings[closeField].slice(0,10) : ''} onChange={e => set(closeField, e.target.value)} /></td>
     </tr>
   );
+
+  const renderRegistrationUrlField = (label, field, example) => {
+    const adminUser = JSON.parse(localStorage.getItem('adminUser') || '{}');
+    const isSystemAdmin = adminUser.role === 'admin';
+    const isEditing = editingFields[field];
+    const urlValue = settings[field] || '';
+    const hasValue = !!urlValue.trim();
+
+    const handleTest = () => {
+      if (!hasValue) {
+        toast.error('Registration link has not been configured by Administrator.');
+        return;
+      }
+      window.open(urlValue, '_blank');
+    };
+
+    const handleEdit = () => {
+      setEditingFields(prev => ({ ...prev, [field]: true }));
+    };
+
+    const handleCancel = () => {
+      fetchAll();
+      setEditingFields(prev => ({ ...prev, [field]: false }));
+    };
+
+    const handleSaveField = async () => {
+      setSaving(true);
+      try {
+        await axios.put(`${API}/settings/update`, { ...settings, [field]: urlValue }, { headers: authHeader() });
+        toast.success(`${label} saved successfully!`);
+        setEditingFields(prev => ({ ...prev, [field]: false }));
+        fetchAll();
+      } catch (err) {
+        toast.error(`Failed to save ${label}`);
+      } finally {
+        setSaving(false);
+      }
+    };
+
+    return (
+      <div className="mb-4 pb-3 border-bottom" style={{ borderBottomStyle: 'dashed' }}>
+        <label className="form-label small fw-semibold text-secondary d-block mb-1">{label}</label>
+        <div className="input-group">
+          <input
+            type="text"
+            className="form-control"
+            placeholder={example ? `Example: ${example}` : 'Enter URL...'}
+            value={urlValue}
+            onChange={e => set(field, e.target.value)}
+            disabled={!isEditing || !isSystemAdmin}
+            style={{ backgroundColor: (!isEditing || !isSystemAdmin) ? '#f8fafc' : '#ffffff' }}
+          />
+          {isSystemAdmin ? (
+            <>
+              {isEditing ? (
+                <>
+                  <button className="btn btn-success text-white fw-bold" onClick={handleSaveField} disabled={saving}>
+                    Save URL
+                  </button>
+                  <button className="btn btn-outline-secondary" onClick={handleCancel} disabled={saving}>
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button className="btn btn-outline-primary fw-bold" onClick={handleEdit}>
+                    {hasValue ? 'Edit URL' : 'Add URL'}
+                  </button>
+                  <button className="btn btn-outline-info" onClick={handleTest} disabled={!hasValue}>
+                    Test URL
+                  </button>
+                </>
+              )}
+            </>
+          ) : (
+            <button className="btn btn-outline-info" onClick={handleTest} disabled={!hasValue}>
+              Test URL
+            </button>
+          )}
+        </div>
+        <div className="form-text text-muted small mt-1">
+          {isEditing ? (
+            <span className="text-warning fw-semibold">✏️ You have unsaved changes. Click 'Save URL' or 'Save All Changes' to apply.</span>
+          ) : hasValue ? (
+            <span className="text-success fw-semibold">● Configured: {urlValue}</span>
+          ) : (
+            <span className="text-danger fw-semibold">○ Registration link has not been configured by Administrator.</span>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   if (loading) return <div className="p-5 text-center"><div className="spinner-border text-primary" /></div>;
 
@@ -498,6 +601,18 @@ const Settings = () => {
               </tbody>
             </table>
           </div>
+        </div>
+      </div>
+
+      {/* ── SECTION 4.5: REGISTRATION PORTAL SETTINGS ── */}
+      <div className="card mb-4">
+        <div className="card-header fw-bold text-uppercase" style={{ fontSize: 12, letterSpacing: 1 }}>
+          🔗 REGISTRATION PORTAL SETTINGS
+        </div>
+        <div className="card-body">
+          {renderRegistrationUrlField('Application Registration URL', 'application_registration_url', 'https://portal.university.edu/application-registration')}
+          {renderRegistrationUrlField('Supervisor Registration URL', 'supervisor_registration_url', 'https://portal.university.edu/supervisor-registration')}
+          {renderRegistrationUrlField('Research Centre Registration URL', 'research_centre_registration_url', 'https://portal.university.edu/research-centre-registration')}
         </div>
       </div>
 

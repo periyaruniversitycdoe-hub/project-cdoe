@@ -17,13 +17,14 @@ const CATEGORIES    = ['OC', 'BC', 'BCM', 'MBC/DNC', 'SC', 'SCA', 'ST'];
 const STATUS_COLORS = { ALLOCATED: 'success', WAITING: 'warning', NOT_ALLOCATED: 'secondary' };
 const STATUS_ICONS  = { ALLOCATED: CheckCircle, WAITING: Clock, NOT_ALLOCATED: XCircle };
 const ACTION_LABELS = {
-  MERIT_LIST_GENERATED: 'Merit List Generated',
-  ROSTER_GENERATED:     'Roster Generated',
-  MERIT_MANUAL_UPDATED: 'Merit Entry Updated',
-  ROSTER_MANUAL_UPDATED:'Roster Entry Updated',
+  MERIT_LIST_GENERATED:   'Merit List Generated',
+  ROSTER_GENERATED:       'Roster Generated',
+  MERIT_MANUAL_UPDATED:   'Merit Entry Updated',
+  ROSTER_MANUAL_UPDATED:  'Roster Entry Updated',
   CATEGORY_CONFIG_UPDATED:'Category Config Updated',
-  EXCEL_IMPORTED:       'Excel Imported',
-  EXCEL_EXPORTED:       'Excel Exported',
+  MERIT_CONFIG_UPDATED:   'Merit Config Updated',
+  EXCEL_IMPORTED:         'Excel Imported',
+  EXCEL_EXPORTED:         'Excel Exported',
 };
 
 // ── Stat Card ─────────────────────────────────────────────────────────────────
@@ -72,9 +73,9 @@ function FormulaHint() {
     <div className="alert alert-info py-2 mb-3 d-flex gap-3 flex-wrap" style={{ fontSize: 12 }}>
       <span><strong>Entrance:</strong> stored /70</span>
       <span>|</span>
-      <span><strong>Qual. Score:</strong> (%) / 100 × 30</span>
+      <span><strong>Qual. Score:</strong> (%) / 100 × 20 (max 20)</span>
       <span>|</span>
-      <span><strong>Merit Score:</strong> Entrance + Qual. Score (max 100)</span>
+      <span><strong>Final Roster Score:</strong> Entrance + Qual. Score (max 90)</span>
       <span>|</span>
       <span><strong>Tie-break:</strong> Entrance → Qual% → Application Date → App. ID</span>
     </div>
@@ -111,6 +112,10 @@ export default function RosterManagement() {
   // Category config
   const [catConfig,    setCatConfig]    = useState([]);
   const [catSaving,    setCatSaving]    = useState(false);
+
+  // Merit / Reservation config
+  const [meritConfig,  setMeritConfig]  = useState({ merit_percentage: 30, reservation_percentage: 70 });
+  const [meritSaving,  setMeritSaving]  = useState(false);
 
   // Allocation generate
   const [totalSeats,   setTotalSeats]   = useState('');
@@ -195,6 +200,16 @@ export default function RosterManagement() {
 
   useEffect(() => { if (activeTab === 'config') loadCatConfig(); }, [activeTab, loadCatConfig]);
 
+  // ── Merit / Reservation config ─────────────────────────────────────────────
+  const loadMeritConfig = useCallback(() => {
+    const p = sessionId ? `?session_id=${sessionId}` : '';
+    axios.get(`${API}/merit-config${p}`, getHeaders())
+      .then(r => setMeritConfig(r.data.data || { merit_percentage: 30, reservation_percentage: 70 }))
+      .catch(() => toast.error('Failed to load merit configuration'));
+  }, [sessionId]);
+
+  useEffect(() => { if (activeTab === 'merit-config') loadMeritConfig(); }, [activeTab, loadMeritConfig]);
+
   // ── Audit logs ─────────────────────────────────────────────────────────────
   const loadAudit = useCallback(() => {
     setLoading(true);
@@ -251,6 +266,20 @@ export default function RosterManagement() {
 
   const handleCatPctChange = (idx, val) => {
     setCatConfig(prev => prev.map((c, i) => i === idx ? { ...c, percentage: val } : c));
+  };
+
+  const handleSaveMeritConfig = async () => {
+    const mp = parseFloat(meritConfig.merit_percentage);
+    const rp = parseFloat(meritConfig.reservation_percentage);
+    if (isNaN(mp) || isNaN(rp)) return toast.error('Enter valid percentages');
+    if (Math.abs(mp + rp - 100) > 0.5) return toast.error(`Merit % + Reservation % must equal 100 (current: ${(mp + rp).toFixed(2)}%)`);
+    setMeritSaving(true);
+    try {
+      await axios.put(`${API}/merit-config`, { session_id: sessionId || null, merit_percentage: mp, reservation_percentage: rp }, getHeaders());
+      toast.success('Merit configuration saved');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to save merit configuration');
+    } finally { setMeritSaving(false); }
   };
 
   const handleImportPreview = async () => {
@@ -312,13 +341,14 @@ export default function RosterManagement() {
 
   // ── Tab nav ────────────────────────────────────────────────────────────────
   const TABS = [
-    { id: 'dashboard', label: 'Dashboard',      icon: BarChart3 },
-    { id: 'merit',     label: 'Merit List',      icon: Trophy },
-    { id: 'roster',    label: 'Roster',          icon: ListOrdered },
-    { id: 'config',    label: 'Category Config', icon: Settings },
-    { id: 'import',    label: 'Import',          icon: Upload },
-    { id: 'export',    label: 'Export',          icon: Download },
-    { id: 'audit',     label: 'Audit Logs',      icon: History },
+    { id: 'dashboard',    label: 'Dashboard',      icon: BarChart3 },
+    { id: 'merit',        label: 'Merit List',      icon: Trophy },
+    { id: 'roster',       label: 'Roster',          icon: ListOrdered },
+    { id: 'merit-config', label: 'Merit Config',    icon: Award },
+    { id: 'config',       label: 'Category Config', icon: Settings },
+    { id: 'import',       label: 'Import',          icon: Upload },
+    { id: 'export',       label: 'Export',          icon: Download },
+    { id: 'audit',        label: 'Audit Logs',      icon: History },
   ];
 
   const catTotal = catConfig.reduce((s, c) => s + parseFloat(c.percentage || 0), 0);
@@ -370,9 +400,9 @@ export default function RosterManagement() {
           </div>
           {dashData?.scoreStats && (
             <div className="row mt-1">
-              <StatCard icon={TrendingUp} label="Highest Merit Score" value={dashData.scoreStats.highest} color="success" sub="out of 100" />
-              <StatCard icon={Award}      label="Lowest Merit Score"  value={dashData.scoreStats.lowest}  color="danger"  sub="out of 100" />
-              <StatCard icon={BarChart3}  label="Average Merit Score" value={dashData.scoreStats.avg}     color="primary" sub="out of 100" />
+              <StatCard icon={TrendingUp} label="Highest Merit Score" value={dashData.scoreStats.highest} color="success" sub="out of 90" />
+              <StatCard icon={Award}      label="Lowest Merit Score"  value={dashData.scoreStats.lowest}  color="danger"  sub="out of 90" />
+              <StatCard icon={BarChart3}  label="Average Merit Score" value={dashData.scoreStats.avg}     color="primary" sub="out of 90" />
               <StatCard icon={FileText}   label="Total Roster"        value={dashData?.totalRoster}       color="secondary" />
             </div>
           )}
@@ -449,8 +479,8 @@ export default function RosterManagement() {
                       <th className="text-center">Entrance (/70)</th>
                       <th className="text-center">Qual. Source</th>
                       <th className="text-center">Qual. %</th>
-                      <th className="text-center">Qual. Score (/30)</th>
-                      <th className="text-center fw-bold">Merit Score (/100)</th>
+                      <th className="text-center">Qual. Score (/20)</th>
+                      <th className="text-center fw-bold">Final Roster Score (/90)</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -511,6 +541,12 @@ export default function RosterManagement() {
                 {genResult && (
                   <div className="d-flex gap-3 mt-3 flex-wrap small">
                     <span className="badge bg-success fs-6">{genResult.allocated} Allocated</span>
+                    {genResult.merit_allocated != null && (
+                      <span className="badge bg-primary fs-6">{genResult.merit_allocated} Merit</span>
+                    )}
+                    {genResult.reserve_allocated != null && (
+                      <span className="badge bg-secondary fs-6">{genResult.reserve_allocated} Reservation</span>
+                    )}
                     <span className="badge bg-warning text-dark fs-6">{genResult.waiting} Waiting</span>
                     <span className="badge bg-info text-dark fs-6">{genResult.conversions} Conversions</span>
                   </div>
@@ -567,6 +603,7 @@ export default function RosterManagement() {
                       <th className="text-center">Entrance</th>
                       <th className="text-center">Qual. %</th>
                       <th className="text-center">Score</th>
+                      <th className="text-center">Type</th>
                       <th className="text-center">Status</th>
                       <th className="text-center">Converted?</th>
                     </tr>
@@ -601,6 +638,13 @@ export default function RosterManagement() {
                             <span className="fw-bold small">{parseFloat(r.final_merit_score || 0).toFixed(2)}</span>
                           </td>
                           <td className="text-center">
+                            {r.allocation_type
+                              ? <span className={`badge small ${r.allocation_type === 'MERIT' ? 'bg-primary' : 'bg-secondary'}`}>
+                                  {r.allocation_type === 'MERIT' ? 'Merit' : 'Reservation'}
+                                </span>
+                              : <span className="text-muted small">—</span>}
+                          </td>
+                          <td className="text-center">
                             <span className={`badge bg-${STATUS_COLORS[r.allocation_status] || 'secondary'} d-flex align-items-center gap-1 justify-content-center`} style={{ width: 'max-content', margin: 'auto' }}>
                               <StatusIcon size={11} />
                               {r.allocation_status}
@@ -622,6 +666,122 @@ export default function RosterManagement() {
             </div>
           </div>
           <Pagination page={rosterPage} limit={ROSTER_LIMIT} total={rosterTotal} onPage={setRosterPage} />
+        </div>
+      )}
+
+      {/* ── MERIT CONFIG ──────────────────────────────────────────────────── */}
+      {activeTab === 'merit-config' && (
+        <div className="row justify-content-center">
+          <div className="col-md-7">
+            <div className="card border-0 shadow-sm">
+              <div className="card-header bg-white fw-semibold d-flex align-items-center justify-content-between">
+                <span>Merit &amp; Reservation Configuration</span>
+                <small className="text-muted">Must sum to 100%</small>
+              </div>
+              <div className="card-body">
+                <div className="alert alert-info py-2 small mb-4">
+                  <strong>Merit seats</strong> go to the top-ranked candidates by Final Roster Score, regardless of community.
+                  &nbsp;<strong>Reservation seats</strong> are distributed by community category using the percentages in Category Config.
+                </div>
+
+                {/* Merit % */}
+                <div className="mb-4">
+                  <label className="form-label fw-semibold">Merit Percentage</label>
+                  <div className="d-flex align-items-center gap-3">
+                    <div className="flex-grow-1">
+                      <input
+                        type="range" className="form-range" min="0" max="100" step="1"
+                        value={parseFloat(meritConfig.merit_percentage) || 0}
+                        onChange={e => setMeritConfig(prev => ({
+                          ...prev,
+                          merit_percentage: parseFloat(e.target.value),
+                          reservation_percentage: Math.max(0, 100 - parseFloat(e.target.value)),
+                        }))}
+                      />
+                    </div>
+                    <div className="input-group input-group-sm" style={{ width: 110 }}>
+                      <input
+                        type="number" className="form-control text-end fw-bold" min="0" max="100" step="1"
+                        value={meritConfig.merit_percentage}
+                        onChange={e => setMeritConfig(prev => ({ ...prev, merit_percentage: e.target.value }))}
+                      />
+                      <span className="input-group-text">%</span>
+                    </div>
+                  </div>
+                  <small className="text-muted">Top candidates allocated by merit score (any community)</small>
+                </div>
+
+                {/* Reservation % */}
+                <div className="mb-4">
+                  <label className="form-label fw-semibold">Reservation Percentage</label>
+                  <div className="d-flex align-items-center gap-3">
+                    <div className="flex-grow-1">
+                      <input
+                        type="range" className="form-range" min="0" max="100" step="1"
+                        value={parseFloat(meritConfig.reservation_percentage) || 0}
+                        onChange={e => setMeritConfig(prev => ({
+                          ...prev,
+                          reservation_percentage: parseFloat(e.target.value),
+                          merit_percentage: Math.max(0, 100 - parseFloat(e.target.value)),
+                        }))}
+                      />
+                    </div>
+                    <div className="input-group input-group-sm" style={{ width: 110 }}>
+                      <input
+                        type="number" className="form-control text-end fw-bold" min="0" max="100" step="1"
+                        value={meritConfig.reservation_percentage}
+                        onChange={e => setMeritConfig(prev => ({ ...prev, reservation_percentage: e.target.value }))}
+                      />
+                      <span className="input-group-text">%</span>
+                    </div>
+                  </div>
+                  <small className="text-muted">Remaining seats distributed by community reservation rules</small>
+                </div>
+
+                <hr />
+
+                {/* Example preview */}
+                <div className="bg-light rounded p-3 mb-3 small">
+                  <div className="fw-semibold mb-2">Example (for 100 total seats):</div>
+                  <div className="d-flex gap-4">
+                    <span>
+                      <span className="badge bg-primary me-1">Merit</span>
+                      {Math.round(100 * (parseFloat(meritConfig.merit_percentage) || 0) / 100)} seats
+                    </span>
+                    <span>
+                      <span className="badge bg-secondary me-1">Reservation</span>
+                      {Math.round(100 * (parseFloat(meritConfig.reservation_percentage) || 0) / 100)} seats
+                    </span>
+                  </div>
+                </div>
+
+                <div className="d-flex align-items-center justify-content-between">
+                  <div>
+                    <span className="fw-semibold">Total: </span>
+                    <span className={`fw-bold fs-5 ${Math.abs((parseFloat(meritConfig.merit_percentage) || 0) + (parseFloat(meritConfig.reservation_percentage) || 0) - 100) > 0.5 ? 'text-danger' : 'text-success'}`}>
+                      {((parseFloat(meritConfig.merit_percentage) || 0) + (parseFloat(meritConfig.reservation_percentage) || 0)).toFixed(0)}%
+                    </span>
+                    {Math.abs((parseFloat(meritConfig.merit_percentage) || 0) + (parseFloat(meritConfig.reservation_percentage) || 0) - 100) > 0.5 && (
+                      <span className="text-danger small ms-2"><AlertTriangle size={13} /> Must equal 100%</span>
+                    )}
+                  </div>
+                  <div className="d-flex gap-2">
+                    <button className="btn btn-sm btn-outline-secondary" onClick={loadMeritConfig}>
+                      <RefreshCw size={13} className="me-1" /> Reset
+                    </button>
+                    <button
+                      className="btn btn-sm btn-primary"
+                      onClick={handleSaveMeritConfig}
+                      disabled={meritSaving || Math.abs((parseFloat(meritConfig.merit_percentage) || 0) + (parseFloat(meritConfig.reservation_percentage) || 0) - 100) > 0.5}
+                    >
+                      {meritSaving ? <Loader2 size={13} className="spin me-1" /> : <CheckCircle size={13} className="me-1" />}
+                      Save Configuration
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

@@ -1,4 +1,4 @@
-﻿const { safeError } = require('../../../shared/security/safeError');
+const { safeError } = require('../../../shared/security/safeError');
 const { auditWrite } = require('../../../shared/security/writeAudit');
 const cache = require('../../../shared/security/appCache');
 
@@ -132,7 +132,8 @@ router.put('/update', verifyToken, isAdmin, async (req, res) => {
         'eligible_list_enabled',
         'about_us_title', 'about_us_link', 'about_us_open_mode', 'about_us_enabled', 'about_us_order',
         'policies_title', 'policies_link', 'policies_open_mode', 'policies_enabled', 'policies_order',
-        'contact_title', 'contact_link', 'contact_open_mode', 'contact_enabled', 'contact_order'
+        'contact_title', 'contact_link', 'contact_open_mode', 'contact_enabled', 'contact_order',
+        'application_registration_url', 'supervisor_registration_url', 'research_centre_registration_url'
     ]);
 
     const DATE_FIELDS = [

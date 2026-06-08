@@ -1,3 +1,4 @@
+﻿const { safeError } = require('../../../shared/security/safeError');
 const express = require('express');
 const router  = express.Router();
 const pool    = require('../config/db');
@@ -37,18 +38,18 @@ async function resolveSession(session_id) {
 
 const AttendanceXlsGenerationEngine = require('../services/AttendanceXlsGenerationEngine');
 
-// ─── GET /api/attendance/template?session_id=&venue_id=&department= ────────────────
+// â”€â”€â”€ GET /api/attendance/template?session_id=&venue_id=&department= â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.get('/template', verifyToken, isAdmin, async (req, res) => {
   try {
     const { session_id, venue_id, department } = req.query;
     const sid = await resolveSession(session_id);
     await AttendanceXlsGenerationEngine.generateDynamicAttendanceXls(sid, department, venue_id, res);
   } catch (err) {
-    if (!res.headersSent) res.status(500).json({ success: false, message: err.message });
+    if (!res.headersSent) res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
-// ─── POST /api/attendance/upload ──────────────────────────────────────────────
+// â”€â”€â”€ POST /api/attendance/upload â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.post('/upload', verifyToken, isAdmin, xlsUpload.single('file'), postUploadCheck(['.csv']), async (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
 
@@ -61,7 +62,7 @@ router.post('/upload', verifyToken, isAdmin, xlsUpload.single('file'), postUploa
     const result = await AttendanceXlsGenerationEngine.processAttendanceImport(filePath, sid, venue_id, adminEmail);
     res.json({ success: true, message: result.message, errors: result.errors });
   } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
+    res.status(400).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -74,7 +75,7 @@ router.get('/upload-logs', verifyToken, isAdmin, async (_req, res) => {
        ORDER BY aul.created_at DESC LIMIT 50`
     );
     res.json({ success: true, data: rows });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
 router.get('/venue-status', verifyToken, isAdmin, async (req, res) => {
@@ -122,7 +123,7 @@ router.get('/venue-status', verifyToken, isAdmin, async (req, res) => {
     });
 
     res.json({ success: true, data: { uploaded, pending } });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
 module.exports = router;

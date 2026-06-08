@@ -1,6 +1,7 @@
-'use strict';
+﻿'use strict';
 
 const express = require('express');
+const { safeError } = require('../../../shared/security/safeError');
 const router  = express.Router();
 const pool    = require('../config/db');
 const { verifyToken, isAdmin } = require('../middleware/auth');
@@ -9,7 +10,7 @@ const multer  = require('multer');
 const path    = require('path');
 const fs      = require('fs');
 
-// ── Multer Setup ───────────────────────────────────────────────────────────────
+// â”€â”€ Multer Setup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const sanitize = (name) => path.basename(name).replace(/[^a-zA-Z0-9._-]/g, '_');
 
 const storage = multer.diskStorage({
@@ -33,7 +34,7 @@ const upload = multer({
     },
 });
 
-// ── Auto-migration ─────────────────────────────────────────────────────────────
+// â”€â”€ Auto-migration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 (async () => {
     try {
         // 1. Create categories table
@@ -42,7 +43,7 @@ const upload = multer({
                 id           INT AUTO_INCREMENT PRIMARY KEY,
                 category_key VARCHAR(100) NOT NULL UNIQUE,
                 label        VARCHAR(100) NOT NULL,
-                icon         VARCHAR(50)  NOT NULL DEFAULT '📢',
+                icon         VARCHAR(50)  NOT NULL DEFAULT 'ðŸ“¢',
                 color        VARCHAR(50)  NOT NULL DEFAULT '#7c3aed',
                 bg           VARCHAR(50)  NOT NULL DEFAULT '#ede9fe',
                 is_active    TINYINT(1)   NOT NULL DEFAULT 1
@@ -52,12 +53,12 @@ const upload = multer({
         // 2. Seed standard default categories
         await pool.execute(`
             INSERT IGNORE INTO news_announcement_categories (category_key, label, icon, color, bg) VALUES 
-            ('news', 'News', '📰', '#0369a1', '#e0f2fe'),
-            ('announcement', 'Announcement', '📢', '#7c3aed', '#ede9fe'),
-            ('circular', 'Circular', '📋', '#0f766e', '#ccfbf1'),
-            ('alert', 'Alert', '🚨', '#dc2626', '#fee2e2'),
-            ('deadline', 'Deadline', '⏰', '#d97706', '#fef3c7'),
-            ('event', 'Event', '🎓', '#059669', '#d1fae5')
+            ('news', 'News', 'ðŸ“°', '#0369a1', '#e0f2fe'),
+            ('announcement', 'Announcement', 'ðŸ“¢', '#7c3aed', '#ede9fe'),
+            ('circular', 'Circular', 'ðŸ“‹', '#0f766e', '#ccfbf1'),
+            ('alert', 'Alert', 'ðŸš¨', '#dc2626', '#fee2e2'),
+            ('deadline', 'Deadline', 'â°', '#d97706', '#fef3c7'),
+            ('event', 'Event', 'ðŸŽ“', '#059669', '#d1fae5')
         `);
 
         // 3. Create news_announcements table with category as VARCHAR instead of ENUM
@@ -103,13 +104,13 @@ const upload = multer({
             `);
         } catch (e) { /* ignore if already exists */ }
 
-        console.log('✅ News & Announcements & Categories schema verified.');
+        console.log('âœ… News & Announcements & Categories schema verified.');
     } catch (err) {
         console.error('[news-announcements] Schema error:', err.message);
     }
 })();
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
+// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const PRIORITY_ORDER = "'urgent','high','medium','low'";
 
 // Shared function to build audience WHERE clause
@@ -118,9 +119,9 @@ function audienceWhere(audience) {
     return `(na.audience = 'all' OR na.audience = '${pool.escape(audience).replace(/'/g, '')}')`;
 }
 
-// ── ADMIN CRUD ─────────────────────────────────────────────────────────────────
+// â”€â”€ ADMIN CRUD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-// GET list — admin view with full filters
+// GET list â€” admin view with full filters
 router.get('/', verifyToken, isAdmin, async (req, res) => {
     try {
         const {
@@ -159,7 +160,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
 
         res.json({ success: true, data: rows, total, page: parseInt(page), limit: safeLimit });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -172,7 +173,7 @@ router.get('/:id', verifyToken, isAdmin, async (req, res) => {
         if (!rows[0]) return res.status(404).json({ success: false, message: 'Not found' });
         res.json({ success: true, data: rows[0] });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -209,7 +210,7 @@ router.post('/', verifyToken, isAdmin, upload.single('attachment'), postUploadCh
         res.status(201).json({ success: true, message: 'Announcement created', id: result.insertId });
     } catch (err) {
         if (req.file) fs.unlink(req.file.path, () => {});
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -264,7 +265,7 @@ router.put('/:id', verifyToken, isAdmin, upload.single('attachment'), postUpload
         res.json({ success: true, message: 'Updated successfully' });
     } catch (err) {
         if (req.file) fs.unlink(req.file.path, () => {});
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -276,7 +277,7 @@ router.patch('/:id/publish', verifyToken, isAdmin, async (req, res) => {
             ['published', req.user.id, req.user.email, req.params.id]
         );
         res.json({ success: true, message: 'Published' });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
 // PATCH unpublish
@@ -287,7 +288,7 @@ router.patch('/:id/unpublish', verifyToken, isAdmin, async (req, res) => {
             ['draft', req.user.id, req.user.email, req.params.id]
         );
         res.json({ success: true, message: 'Unpublished' });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
 // PATCH archive
@@ -298,7 +299,7 @@ router.patch('/:id/archive', verifyToken, isAdmin, async (req, res) => {
             ['archived', req.user.id, req.user.email, req.params.id]
         );
         res.json({ success: true, message: 'Archived' });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
 // PATCH pin toggle
@@ -309,7 +310,7 @@ router.patch('/:id/pin', verifyToken, isAdmin, async (req, res) => {
             [req.user.id, req.user.email, req.params.id]
         );
         res.json({ success: true, message: 'Pin toggled' });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
 // DELETE soft-delete
@@ -322,10 +323,10 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
             [req.user.id, req.user.email, req.params.id]
         );
         res.json({ success: true, message: 'Deleted' });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
-// ── PORTAL READ ENDPOINTS (auth-protected, audience-filtered) ──────────────────
+// â”€â”€ PORTAL READ ENDPOINTS (auth-protected, audience-filtered) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // These are called by student/supervisor/center backends or directly from their frontends
 // via the admin API with portal-specific tokens. Since each portal has its own JWT,
 // we expose a public-within-auth endpoint per audience.
@@ -351,7 +352,7 @@ function makePortalEndpoint(audienceValue) {
             );
             res.json({ success: true, data: rows });
         } catch (err) {
-            res.status(500).json({ success: false, message: err.message });
+            res.status(500).json({ success: false, message: safeError(err) });
         }
     };
 }
@@ -361,7 +362,7 @@ router.get('/portal/supervisor', makePortalEndpoint('supervisor'));
 router.get('/portal/centre',     makePortalEndpoint('centre'));
 router.get('/portal/admin',      verifyToken, isAdmin, makePortalEndpoint('admin'));
 
-// ── Category CRUD Endpoints ──────────────────────────────────────────────────
+// â”€â”€ Category CRUD Endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // GET all active categories (Public access)
 router.get('/categories', async (req, res) => {
@@ -369,13 +370,13 @@ router.get('/categories', async (req, res) => {
         const [rows] = await pool.execute('SELECT * FROM news_announcement_categories WHERE is_active = 1 ORDER BY label ASC');
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
 // POST add new category (Admin only)
 router.post('/categories', verifyToken, isAdmin, async (req, res) => {
-    const { category_key, label, icon = '📢', color = '#7c3aed', bg = '#ede9fe' } = req.body;
+    const { category_key, label, icon = 'ðŸ“¢', color = '#7c3aed', bg = '#ede9fe' } = req.body;
     if (!category_key || !label) {
         return res.status(400).json({ success: false, message: 'category_key and label are required' });
     }
@@ -396,7 +397,7 @@ router.post('/categories', verifyToken, isAdmin, async (req, res) => {
         );
         res.status(201).json({ success: true, message: 'Category created successfully', data: { category_key: cleanKey, label, icon, color, bg } });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -420,7 +421,7 @@ router.put('/categories/:id', verifyToken, isAdmin, async (req, res) => {
         );
         res.json({ success: true, message: 'Category updated successfully' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -433,7 +434,7 @@ router.delete('/categories/:id', verifyToken, isAdmin, async (req, res) => {
         await pool.execute('DELETE FROM news_announcement_categories WHERE id = ?', [req.params.id]);
         res.json({ success: true, message: 'Category deleted successfully' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 

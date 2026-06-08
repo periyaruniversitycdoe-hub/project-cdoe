@@ -1,10 +1,11 @@
-
+﻿
 const express = require('express');
+const { safeError } = require('../../../shared/security/safeError');
 const router  = express.Router();
 const pool    = require('../config/db');
 const { verifyToken, isAdmin } = require('../middleware/auth');
 
-// ─── Direct-Pass Engine ───────────────────────────────────────────────────────
+// â”€â”€â”€ Direct-Pass Engine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Checks whether an application qualifies for direct pass under any active rule.
 // Called after payment confirmation and after admin approval.
 async function evaluateDirectPass(connection, applicationId) {
@@ -16,7 +17,7 @@ async function evaluateDirectPass(connection, applicationId) {
   );
   if (!app) return false;
 
-  // Already a direct pass — nothing to do
+  // Already a direct pass â€” nothing to do
   if (app.direct_pass_status === 'DirectPass') return true;
 
   // Payment must be completed
@@ -51,7 +52,7 @@ async function evaluateDirectPass(connection, applicationId) {
       if (!allowedDepts.includes(appDept)) continue;
     }
 
-    // All conditions met — mark direct pass
+    // All conditions met â€” mark direct pass
     await connection.execute(
       `UPDATE applications
        SET direct_pass_status = 'DirectPass',
@@ -70,8 +71,8 @@ async function evaluateDirectPass(connection, applicationId) {
       );
       if (appUser) {
         await notifyUser(connection, appUser.user_id,
-          'Direct Pass Granted ✓',
-          `Congratulations! You qualify for Direct Pass based on your ${rule.qualification_type} qualification. You may access the counselling form directly after approval — no entrance exam required.`,
+          'Direct Pass Granted âœ“',
+          `Congratulations! You qualify for Direct Pass based on your ${rule.qualification_type} qualification. You may access the counselling form directly after approval â€” no entrance exam required.`,
           'direct_pass'
         );
       }
@@ -85,7 +86,7 @@ async function evaluateDirectPass(connection, applicationId) {
 
 // evaluateDirectPass exported below after router is defined
 
-// ─── GET all rules ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ GET all rules â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.get('/', verifyToken, isAdmin, async (_req, res) => {
   try {
     const [rows] = await pool.execute(
@@ -93,11 +94,11 @@ router.get('/', verifyToken, isAdmin, async (_req, res) => {
     );
     res.json({ success: true, data: rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
-// ─── CREATE rule ───────────────────────────────────────────────────────────────
+// â”€â”€â”€ CREATE rule â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.post('/', verifyToken, isAdmin, async (req, res) => {
   const {
     rule_name, qualification_type, department,
@@ -127,11 +128,11 @@ router.post('/', verifyToken, isAdmin, async (req, res) => {
     );
     res.json({ success: true, message: 'Rule created', id: result.insertId });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
-// ─── UPDATE rule ───────────────────────────────────────────────────────────────
+// â”€â”€â”€ UPDATE rule â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.put('/:id', verifyToken, isAdmin, async (req, res) => {
   const {
     rule_name, qualification_type, department,
@@ -166,21 +167,21 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
     );
     res.json({ success: true, message: 'Rule updated' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
-// ─── DELETE rule ───────────────────────────────────────────────────────────────
+// â”€â”€â”€ DELETE rule â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
   try {
     await pool.execute('DELETE FROM qualification_rules WHERE id = ?', [req.params.id]);
     res.json({ success: true, message: 'Rule deleted' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
-// ─── POST /api/qualification-rules/evaluate/:applicationId ────────────────────
+// â”€â”€â”€ POST /api/qualification-rules/evaluate/:applicationId â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Manually trigger direct-pass evaluation for one application
 router.post('/evaluate/:applicationId', verifyToken, isAdmin, async (req, res) => {
   const connection = await pool.getConnection();
@@ -188,13 +189,13 @@ router.post('/evaluate/:applicationId', verifyToken, isAdmin, async (req, res) =
     const matched = await evaluateDirectPass(connection, req.params.applicationId);
     res.json({ success: true, directPass: matched, message: matched ? 'Direct pass granted' : 'No matching rule found' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   } finally {
     connection.release();
   }
 });
 
-// ─── POST /api/qualification-rules/evaluate-session ──────────────────────────
+// â”€â”€â”€ POST /api/qualification-rules/evaluate-session â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Bulk-evaluate all paid applications in a session
 router.post('/evaluate-session', verifyToken, isAdmin, async (req, res) => {
   const { session_id } = req.body;
@@ -223,7 +224,7 @@ router.post('/evaluate-session', verifyToken, isAdmin, async (req, res) => {
 
     res.json({ success: true, evaluated: apps.length, directPassGranted: granted });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   } finally {
     connection.release();
   }

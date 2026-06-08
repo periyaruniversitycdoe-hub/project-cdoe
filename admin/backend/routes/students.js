@@ -1,3 +1,4 @@
+﻿const { safeError } = require('../../../shared/security/safeError');
 
 const express = require('express');
 const router = express.Router();
@@ -132,7 +133,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
     });
   } catch (err) {
     console.error('Student tracking error:', err);
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -158,7 +159,7 @@ router.get('/stats', verifyToken, isAdmin, async (req, res) => {
     );
     res.json({ success: true, data: counts });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 

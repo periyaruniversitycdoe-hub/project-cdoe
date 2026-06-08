@@ -49,7 +49,8 @@ app.use(cors({
         const isDev = process.env.NODE_ENV !== 'production';
         const allowed = !origin ||
             allowedOrigins.includes(origin) ||
-            (isDev && (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1')));
+            (isDev && (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1'))) ||
+            origin.endsWith('.trycloudflare.com');
         if (allowed) cb(null, true);
         else cb(new Error('Not allowed by CORS'));
     },

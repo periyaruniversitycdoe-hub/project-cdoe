@@ -11,7 +11,14 @@ import {
 } from 'lucide-react';
 import { INDIAN_BANKS } from '../constants/banks';
 
-const API = (import.meta.env.VITE_SUPERVISOR_API_URL || 'http://localhost:5002') + '/api';
+const API       = (import.meta.env.VITE_SUPERVISOR_API_URL || 'http://localhost:5002') + '/api';
+const ADMIN_API = (import.meta.env.VITE_ADMIN_API_URL    || 'http://localhost:5001') + '/api';
+const adminToken = () => localStorage.getItem('adminToken') || '';
+const adminHeaders = (multipart = false) => {
+  const h = { Authorization: `Bearer ${adminToken()}` };
+  if (!multipart) h['Content-Type'] = 'application/json';
+  return h;
+};
 
 const STEPS = [
   { label: 'General Info', icon: User, desc: 'Personal & designation details' },
@@ -139,8 +146,8 @@ function validate(step, formData) {
   return errors;
 }
 
-export default function ApplicationForm() {
-  const { user, fetchMe } = useAuth();
+export default function ApplicationForm({ isAdminMode = false, adminSupervisorId = null, onAdminDone = null }) {
+  const { user, fetchMe } = useAuth() || {};
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -227,14 +234,55 @@ export default function ApplicationForm() {
       setDropdowns(data);
     }).catch(() => toast.error('Failed to load dropdown data.'));
 
+    // ── Admin mode: load profile from admin backend using supervisor master record ID ──
+    if (isAdminMode) {
+      if (adminSupervisorId) {
+        axios.get(`${ADMIN_API}/supervisors/${adminSupervisorId}`, { headers: adminHeaders() })
+          .then(res => {
+            const d = res.data?.data || res.data;
+            setAppStatus(d.status || 'Draft');
+            setFormData(prev => ({
+              ...prev, ...d,
+              status: d.status || 'Draft',
+              dob: d.dob ? d.dob.split('T')[0] : '',
+              date_of_joining: d.date_of_joining ? d.date_of_joining.split('T')[0] : '',
+              date_of_superannuation: d.date_of_superannuation ? d.date_of_superannuation.split('T')[0] : '',
+              eligibility_dept_id: d.eligibility_dept_id != null ? String(d.eligibility_dept_id) : '',
+              program_offered_id: d.program_offered_id != null ? String(d.program_offered_id) : '',
+              designation_id: d.designation_id != null ? String(d.designation_id) : '',
+              department_id: d.department_id != null ? String(d.department_id) : '',
+              serving_institute_id: d.serving_institute_id != null ? String(d.serving_institute_id) : '',
+              district_id: d.district_id != null ? String(d.district_id) : '',
+              home_district_id: d.home_district_id != null ? String(d.home_district_id) : '',
+            }));
+            if (d.bank_name) setBankSearch(d.bank_name);
+            if (d.ifsc_code && /^[A-Z]{4}0[A-Z0-9]{6}$/.test(d.ifsc_code)) setIsLockedByIFSC(true);
+            if (d.profile_image) setPreviews(p => ({ ...p, profile_image: `${ADMIN_API.replace('/api', '')}/${d.profile_image}` }));
+            // Load disciplines via admin backend
+            if (d.disciplines) {
+              setFormData(f => ({ ...f, disciplines: (Array.isArray(d.disciplines) ? d.disciplines : []).map(x => ({
+                discipline_id: String(x.discipline_id || ''),
+                center_id: String(x.center_id || ''),
+                type: x.type || 'Primary',
+                recognition_date: x.recognition_date ? x.recognition_date.split('T')[0] : '',
+              })) }));
+            }
+          })
+          .catch(() => {})
+          .finally(() => setLoading(false));
+      } else {
+        setLoading(false); // New supervisor — empty form
+      }
+      return;
+    }
+
+    // ── Portal mode: load profile from supervisor portal backend ──
     axios.get(`${API}/portal/me`).then(res => {
       const d = res.data;
       setAppStatus(d.supervisor_status || 'Draft');
       if (d.supervisor_id) {
         setFormData(prev => ({
           ...prev, ...d,
-          // CRITICAL: supervisor_status is the application status (Draft/Pending/Active/Rejected)
-          // d.status is the USER ACCOUNT status — must not overwrite the form's status field
           status: d.supervisor_status || 'Draft',
           dob: d.dob ? d.dob.split('T')[0] : '',
           date_of_joining: d.date_of_joining ? d.date_of_joining.split('T')[0] : '',
@@ -245,10 +293,7 @@ export default function ApplicationForm() {
         if (d.profile_image) setPreviews(p => ({ ...p, profile_image: `${import.meta.env.VITE_SUPERVISOR_API_URL || 'http://localhost:5002'}/${d.profile_image}` }));
         if (d.bank_name) setBankSearch(d.bank_name);
         if (d.ifsc_code && d.bank_name) {
-          const ifscRegex = /^[A-Z]{4}0[A-Z0-9]{6}$/;
-          if (ifscRegex.test(d.ifsc_code)) {
-            setIsLockedByIFSC(true);
-          }
+          if (/^[A-Z]{4}0[A-Z0-9]{6}$/.test(d.ifsc_code)) setIsLockedByIFSC(true);
         }
       } else {
         setFormData(prev => ({ ...prev, name: d.name || '', email: d.email || '', mobile: d.mobile || '' }));
@@ -267,13 +312,17 @@ export default function ApplicationForm() {
         }).catch(() => { });
       }
     }).catch(() => { }).finally(() => setLoading(false));
-  }, [user]);
+  }, [user, isAdminMode, adminSupervisorId]);
 
   // ENTERPRISE CAPACITY AUTOMATION ENGINE — fires when designation changes
   useEffect(() => {
     if (!formData.designation_id) return;
 
-    axios.get(`${API}/portal/capacity/${formData.designation_id}`).then(res => {
+    const capacityUrl = isAdminMode
+      ? `${ADMIN_API}/supervisors/capacity/${formData.designation_id}`
+      : `${API}/portal/capacity/${formData.designation_id}`;
+    const capacityConfig = isAdminMode ? { headers: adminHeaders() } : {};
+    axios.get(capacityUrl, capacityConfig).then(res => {
       if (res.data.success) {
         const {
           max_candidates,
@@ -454,9 +503,22 @@ export default function ApplicationForm() {
 
     const toastId = toast.loading(isFinal ? 'Submitting application...' : 'Saving progress...');
     try {
-      await axios.post(`${API}/portal/application`, postData, { headers: { 'Content-Type': 'multipart/form-data' } });
-      toast.success(isFinal ? '✅ Application submitted for review!' : '💾 Progress saved!', { id: toastId });
-      if (isFinal) { await fetchMe(); navigate('/dashboard'); }
+      if (isAdminMode) {
+        // Admin mode: call admin backend supervisor endpoints (same DB, admin JWT auth)
+        const url = adminSupervisorId
+          ? `${ADMIN_API}/supervisors/${adminSupervisorId}`
+          : `${ADMIN_API}/supervisors`;
+        const method = adminSupervisorId ? 'put' : 'post';
+        await axios[method](url, postData, {
+          headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${adminToken()}` }
+        });
+        toast.success(isFinal ? '✅ Supervisor profile saved!' : '💾 Progress saved!', { id: toastId });
+        if (isFinal && onAdminDone) onAdminDone();
+      } else {
+        await axios.post(`${API}/portal/application`, postData, { headers: { 'Content-Type': 'multipart/form-data' } });
+        toast.success(isFinal ? '✅ Application submitted for review!' : '💾 Progress saved!', { id: toastId });
+        if (isFinal) { await fetchMe(); navigate('/dashboard'); }
+      }
     } catch (err) {
       // Only show error toast for actual network/server failures, not internal validation throws
       if (err.message !== 'validation') {

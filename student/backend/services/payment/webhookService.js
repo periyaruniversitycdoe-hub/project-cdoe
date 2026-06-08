@@ -79,10 +79,23 @@ async function lockApplicationAndGenerateReceipt(conn, txn, gatewayTxnId) {
   await conn.query(
     `UPDATE applications
        SET status = 'SUBMITTED', payment_status = 'Paid', is_locked = 1,
-           final_submitted = 1, submitted_at = COALESCE(submitted_at, NOW()), updated_at = NOW()
+           final_submitted = 1, form_locked = 1,
+           application_generated_date = COALESCE(application_generated_date, NOW()),
+           submitted_at = COALESCE(submitted_at, NOW()), updated_at = NOW()
      WHERE user_id = ?`,
     [userId]
   );
+
+  // 5a. Audit trail — APPLICATION_ID_GENERATED & FORM_LOCKED
+  try {
+    await conn.query(
+      `INSERT INTO payment_audit_logs (order_id, application_id, user_id, action, new_status, details)
+       VALUES (?,?,?,'APPLICATION_ID_GENERATED','GENERATED',?),
+              (?,?,?,'FORM_LOCKED','LOCKED',?)`,
+      [txn.order_id, applicationId, userId, JSON.stringify({ application_id: applicationId, trigger: 'PAYMENT_SUCCESS' }),
+       txn.order_id, applicationId, userId, JSON.stringify({ trigger: 'PAYMENT_SUCCESS', timestamp: new Date().toISOString() })]
+    );
+  } catch (_) {}
 
   // 6. Insert into legacy payments table
   await conn.query(

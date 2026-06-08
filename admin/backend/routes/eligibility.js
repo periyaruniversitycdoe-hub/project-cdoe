@@ -1,11 +1,12 @@
-'use strict';
+﻿'use strict';
 
 const express = require('express');
+const { safeError } = require('../../../shared/security/safeError');
 const router  = express.Router();
 const pool    = require('../config/db');
 const { verifyToken, isAdmin } = require('../middleware/auth');
 
-// ── Audit helper ──────────────────────────────────────────────────────────────
+// â”€â”€ Audit helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function audit(conn, { adminId, action, entityType, entityId, oldValue, newValue, ip }) {
     try {
         await conn.execute(
@@ -25,11 +26,11 @@ async function audit(conn, { adminId, action, entityType, entityId, oldValue, ne
     } catch (_) { /* audit failures must never block the main flow */ }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // DEPARTMENTS
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-// GET /api/eligibility/departments  (public — students need this)
+// GET /api/eligibility/departments  (public â€” students need this)
 router.get('/departments', async (req, res) => {
     try {
         const [rows] = await pool.execute(
@@ -37,11 +38,11 @@ router.get('/departments', async (req, res) => {
         );
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// GET /api/eligibility/departments/all  (admin — includes inactive)
+// GET /api/eligibility/departments/all  (admin â€” includes inactive)
 router.get('/departments/all', verifyToken, isAdmin, async (req, res) => {
     try {
         const [rows] = await pool.execute(
@@ -49,7 +50,7 @@ router.get('/departments/all', verifyToken, isAdmin, async (req, res) => {
         );
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -68,7 +69,7 @@ router.post('/departments', verifyToken, isAdmin, async (req, res) => {
         res.json({ success: true, message: 'Department added', id: result.insertId });
     } catch (err) {
         if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ success: false, message: 'Department already exists' });
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -94,7 +95,7 @@ router.put('/departments/:id', verifyToken, isAdmin, async (req, res) => {
         res.json({ success: true, message: 'Department updated' });
     } catch (err) {
         if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ success: false, message: 'Department name already exists' });
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -111,13 +112,13 @@ router.delete('/departments/:id', verifyToken, isAdmin, async (req, res) => {
         });
         res.json({ success: true, message: 'Department deleted' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // PROGRAMS OFFERED
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 // GET /api/eligibility/programs?department_id=  (public)
 router.get('/programs', async (req, res) => {
@@ -137,11 +138,11 @@ router.get('/programs', async (req, res) => {
         const [rows] = await pool.execute(query, params);
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// GET /api/eligibility/programs/all  (admin — includes inactive)
+// GET /api/eligibility/programs/all  (admin â€” includes inactive)
 router.get('/programs/all', verifyToken, isAdmin, async (req, res) => {
     const { department_id } = req.query;
     try {
@@ -158,7 +159,7 @@ router.get('/programs/all', verifyToken, isAdmin, async (req, res) => {
         const [rows] = await pool.execute(query, params);
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -179,7 +180,7 @@ router.post('/programs', verifyToken, isAdmin, async (req, res) => {
         res.json({ success: true, message: 'Programme added', id: result.insertId });
     } catch (err) {
         if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ success: false, message: 'Programme already exists for this department' });
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -207,7 +208,7 @@ router.put('/programs/:id', verifyToken, isAdmin, async (req, res) => {
         res.json({ success: true, message: 'Programme updated' });
     } catch (err) {
         if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ success: false, message: 'Programme name already exists for this department' });
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -224,13 +225,13 @@ router.delete('/programs/:id', verifyToken, isAdmin, async (req, res) => {
         });
         res.json({ success: true, message: 'Programme deleted' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // PG ELIGIBILITY
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 // GET /api/eligibility/programs/:id/pg  (public)
 router.get('/programs/:id/pg', async (req, res) => {
@@ -241,7 +242,7 @@ router.get('/programs/:id/pg', async (req, res) => {
         );
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -262,7 +263,7 @@ router.post('/programs/:id/pg', verifyToken, isAdmin, async (req, res) => {
         res.json({ success: true, message: 'PG eligibility added', id: result.insertId });
     } catch (err) {
         if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ success: false, message: 'Course already mapped to this programme' });
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -282,13 +283,13 @@ router.delete('/programs/:id/pg/:courseId', verifyToken, isAdmin, async (req, re
         });
         res.json({ success: true, message: 'PG eligibility removed' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // M.PHIL ELIGIBILITY
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 // GET /api/eligibility/programs/:id/mphil  (public)
 router.get('/programs/:id/mphil', async (req, res) => {
@@ -299,7 +300,7 @@ router.get('/programs/:id/mphil', async (req, res) => {
         );
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -320,7 +321,7 @@ router.post('/programs/:id/mphil', verifyToken, isAdmin, async (req, res) => {
         res.json({ success: true, message: 'M.Phil eligibility added', id: result.insertId });
     } catch (err) {
         if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ success: false, message: 'Course already mapped to this programme' });
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -340,13 +341,13 @@ router.delete('/programs/:id/mphil/:courseId', verifyToken, isAdmin, async (req,
         });
         res.json({ success: true, message: 'M.Phil eligibility removed' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // INTEGRATED ELIGIBILITY
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 // GET /api/eligibility/programs/:id/integrated  (public)
 router.get('/programs/:id/integrated', async (req, res) => {
@@ -357,7 +358,7 @@ router.get('/programs/:id/integrated', async (req, res) => {
         );
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -378,7 +379,7 @@ router.post('/programs/:id/integrated', verifyToken, isAdmin, async (req, res) =
         res.json({ success: true, message: 'Integrated course eligibility added', id: result.insertId });
     } catch (err) {
         if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ success: false, message: 'Course already mapped to this programme' });
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -398,15 +399,15 @@ router.delete('/programs/:id/integrated/:courseId', verifyToken, isAdmin, async 
         });
         res.json({ success: true, message: 'Integrated eligibility removed' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// COMBINED HINTS  (public — called by student form on programme change)
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// COMBINED HINTS  (public â€” called by student form on programme change)
 // GET /api/eligibility/programs/:id/hints
 // Returns { pg: [...], mphil: [...], integrated: [...] }
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 router.get('/programs/:id/hints', async (req, res) => {
     const programId = req.params.id;
     try {
@@ -438,14 +439,14 @@ router.get('/programs/:id/hints', async (req, res) => {
             }
         });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // AUDIT LOG  (admin only)
 // GET /api/eligibility/audit?limit=50&offset=0
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 router.get('/audit', verifyToken, isAdmin, async (req, res) => {
     const limit  = Math.min(parseInt(req.query.limit  || '50'),  200);
     const offset = parseInt(req.query.offset || '0');
@@ -456,7 +457,7 @@ router.get('/audit', verifyToken, isAdmin, async (req, res) => {
         );
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 

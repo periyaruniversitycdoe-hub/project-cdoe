@@ -70,6 +70,13 @@ const signupSchema = Joi.object({
     mobile:   mobileField,
 }).unknown(false);
 
+const studentSignupSchema = Joi.object({
+    full_name: Joi.string().min(2).max(200).required()
+        .messages({ 'any.required': 'Full Name is required.' }),
+    email:    emailField,
+    password: passwordSignupField,
+}).unknown(false);
+
 const forgotPasswordSchema = Joi.object({
     email: emailField,
 }).unknown(false);
@@ -112,7 +119,7 @@ function validateBody(schema) {
 }
 
 module.exports = {
-    loginSchema, studentLoginSchema, signupSchema,
+    loginSchema, studentLoginSchema, signupSchema, studentSignupSchema,
     forgotPasswordSchema, verifyOtpSchema, resetPasswordSchema,
     mfaValidateSchema, mfaSetupVerifySchema,
     validateBody,

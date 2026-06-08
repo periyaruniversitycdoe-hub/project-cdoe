@@ -1,16 +1,17 @@
+﻿const { safeError } = require('../../../shared/security/safeError');
 const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
 const { verifyToken, isAdmin } = require('../middleware/auth');
 
-// GET all per-file-type upload settings (public — student frontend also reads this)
+// GET all per-file-type upload settings (public â€” student frontend also reads this)
 router.get('/file-settings', async (req, res) => {
     try {
         const [rows] = await pool.execute(
             'SELECT * FROM file_upload_settings ORDER BY file_type ASC'
         );
         res.json({ success: true, data: rows });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
 // UPDATE a single file-type setting
@@ -57,7 +58,7 @@ router.put('/file-settings/:id', verifyToken, isAdmin, async (req, res) => {
             ]
         );
         res.json({ success: true, message: 'Upload setting updated' });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
 // Legacy global settings (kept for backward compatibility)
@@ -65,7 +66,7 @@ router.get('/', async (req, res) => {
     try {
         const [rows] = await pool.execute('SELECT * FROM upload_settings LIMIT 1');
         res.json({ success: true, data: rows[0] || {} });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
 router.put('/update', verifyToken, isAdmin, async (req, res) => {
@@ -84,7 +85,7 @@ router.put('/update', verifyToken, isAdmin, async (req, res) => {
             );
         }
         res.json({ success: true, message: 'Upload settings updated' });
-    } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err) { res.status(500).json({ success: false, message: safeError(err) }); }
 });
 
 module.exports = router;

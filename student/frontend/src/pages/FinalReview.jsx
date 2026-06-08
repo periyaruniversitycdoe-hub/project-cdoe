@@ -93,9 +93,9 @@ const FinalReview = () => {
       });
       setData(res.data.data);
       setCompletion(res.data.completion);
-      if (res.data.data.final_submitted) {
+      if (res.data.data.final_submitted || res.data.data.form_locked || res.data.data.is_locked) {
         setSubmitted(true);
-        setSubmittedAt(res.data.data.final_submitted_at);
+        setSubmittedAt(res.data.data.final_submitted_at || res.data.data.application_generated_date);
       }
     } catch (err) {
       // ERR_CANCELED = AbortController fired on cleanup — not a real error.
@@ -524,7 +524,7 @@ ${expRows ? `<div class="section">
   if (!data) return null;
 
   const isPaid = ['Paid', 'Verified', 'Approved', 'Success'].includes(data.payment_status);
-  const isLocked = !!data.final_submitted || submitted;
+  const isLocked = !!data.final_submitted || !!data.form_locked || !!data.is_locked || submitted;
   const showPrintFeatures = isLocked && isPaid;
   const pct = completion?.percentage ?? 0;
 

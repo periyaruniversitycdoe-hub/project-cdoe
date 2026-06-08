@@ -7,7 +7,8 @@ import { useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
 import { Save, Send, ChevronRight, ChevronLeft, CheckCircle, ArrowLeft, Eye, ChevronDown, ChevronUp } from 'lucide-react';
 
-const API = import.meta.env.VITE_API_URL || (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api';
+const API       = import.meta.env.VITE_API_URL || (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api';
+const ADMIN_API = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
 
 const STEPS = [
   'Personal Details',
@@ -175,8 +176,13 @@ const COUNTRY_CODES = [
   { code: '+91', name: 'India', flag: '🇮🇳' },
 ];
 
-const ApplicationForm = () => {
-  const { user, token, updateUser } = useAuthStore();
+const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdminDone = null, studentToken: propStudentToken = null, studentUser: propStudentUser = null }) => {
+  const { user: storeUser, token: storeToken, updateUser } = useAuthStore();
+  // When admin impersonates a student (propStudentToken provided), override user/token from Zustand
+  const isImpersonating = !!propStudentToken;
+  const user  = isImpersonating ? propStudentUser : storeUser;
+  const token = isImpersonating ? propStudentToken : storeToken;
+  const adminToken = isAdminMode ? (localStorage.getItem('adminToken') || '') : null;
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [partTimeMapping, setPartTimeMapping] = useState({});
@@ -703,15 +709,21 @@ const ApplicationForm = () => {
     });
   }, [fileSettings, setValue, watch]);
 
-  // Load existing application data — uses the /my endpoint so it works before
-  // the official Application ID is generated (pre-submission draft state).
+  // Load existing application data.
+  // Admin mode: load by applicationId from admin backend.
+  // Portal mode: load via /my endpoint (identifies user by JWT).
   useEffect(() => {
     const fetchAppData = async () => {
-      if (!token) return;
+      if (isAdminMode && !isImpersonating && !adminApplicationId) return;
+      if (!isAdminMode && !isImpersonating && !token) return;
       try {
-        const res = await axios.get(`${API}/applications/my`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const res = (isAdminMode && !isImpersonating)
+          ? await axios.get(`${ADMIN_API}/applications/${encodeURIComponent(adminApplicationId)}`, {
+              headers: { Authorization: `Bearer ${adminToken}` }
+            })
+          : await axios.get(`${API}/applications/my`, {
+              headers: { Authorization: `Bearer ${token}` }
+            });
         const data = res.data;
         setAppStatus(data.status);
 
@@ -1194,20 +1206,22 @@ const ApplicationForm = () => {
     const formData = buildFormData(status);
 
     try {
-      const res = await axios.post(`${API}/applications/save`, formData, {
+      const saveUrl = (isAdminMode && !isImpersonating) ? `${ADMIN_API}/applications/save-admin` : `${API}/applications/save`;
+      const saveToken = (isAdminMode && !isImpersonating) ? adminToken : token;
+      // save-admin requires application_id in body; portal mode gets it from user.application_id via getValues()
+      if (isAdminMode && !isImpersonating && adminApplicationId) formData.set('application_id', adminApplicationId);
+      const res = await axios.post(saveUrl, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${saveToken}`,
         }
       });
       if (status === 'Submitted') {
-        // Persist the newly assigned CETPHD Application ID into the auth store so
-        // the Dashboard and all other pages reflect it immediately.
-        if (res.data?.application_id) {
+        if (!isAdminMode && !isImpersonating && res.data?.application_id) {
           updateUser({ application_id: res.data.application_id });
         }
         toast.success('Application submitted successfully!');
-        navigate('/dashboard');
+        if ((isAdminMode || isImpersonating) && onAdminDone) { onAdminDone(); } else { navigate('/dashboard'); }
       } else {
         toast.success('Progress saved!');
       }
@@ -1226,9 +1240,12 @@ const ApplicationForm = () => {
   const handleSaveAndNext = async () => {
     setLoading(true);
     const formData = buildFormData('Draft');
+    if (isAdminMode && !isImpersonating && adminApplicationId) formData.set('application_id', adminApplicationId);
     try {
-      await axios.post(`${API}/applications/save`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${token}` }
+      const stepUrl = (isAdminMode && !isImpersonating) ? `${ADMIN_API}/applications/save-admin` : `${API}/applications/save`;
+      const stepToken = (isAdminMode && !isImpersonating) ? adminToken : token;
+      await axios.post(stepUrl, formData, {
+        headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${stepToken}` }
       });
       toast.success('Step saved!');
       setStep(s => s + 1);
@@ -2949,7 +2966,7 @@ const ApplicationForm = () => {
 
   return (
     <div className="bg-light min-vh-100 pb-5">
-      <Header />
+      {!isAdminMode && !isImpersonating && <Header />}
       <div className="container mt-4">
         <nav aria-label="breadcrumb" className="mb-3">
           <ol className="breadcrumb">

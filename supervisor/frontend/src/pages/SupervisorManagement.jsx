@@ -4,6 +4,7 @@ import DynamicDropdown from '@admin/components/DynamicDropdown';
 import FileUploadField from '@admin/components/FileUploadField';
 import DisciplineRepeater from '../components/DisciplineRepeater';
 import UnifiedImportWizard from '@admin/components/UnifiedImportWizard';
+import SupervisorApplicationForm from './ApplicationForm';
 
 const API = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
 
@@ -18,21 +19,154 @@ const STATUS_BADGE = {
 // ─── Main Page (list) ─────────────────────────────────────────────────────────
 export default function SupervisorManagement() {
     const navigate = useNavigate();
+
+    const handleAdd = async () => {
+        try {
+            const res = await fetch(`${API}/settings`, { headers: authHeaders() });
+            const json = await res.json();
+            const configUrl = json.data?.supervisor_registration_url;
+            if (configUrl && configUrl.trim()) {
+                window.location.href = configUrl;
+            } else {
+                alert('Registration link has not been configured by Administrator.');
+            }
+        } catch (err) {
+            alert('Failed to retrieve registration settings.');
+        }
+    };
+
     return (
         <SupervisorList
-            onAdd={()         => navigate('/supervisors/new')}
+            onAdd={handleAdd}
             onEdit={id        => navigate(`/supervisors/edit/${id}`)}
         />
     );
 }
 
-// ─── Add Page (no id) ─────────────────────────────────────────────────────────
+// ─── Add Page ─────────────────────────────────────────────────────────────────
+// Phase 1: Account creation (same as Supervisor Portal Signup.jsx)
+// Phase 2: Full supervisor profile form (same as SupervisorEditPage — SSoT)
 export function SupervisorAddPage() {
     const navigate = useNavigate();
-    return <SupervisorForm id={null} onDone={() => navigate('/supervisors')} />;
+    const [form, setForm] = useState({ name: '', email: '', mobile: '', password: '', confirm: '' });
+    const [error, setError]   = useState('');
+    const [phase, setPhase]   = useState('account'); // 'account' | 'profile'
+    const [registered, setRegistered] = useState(null);
+    const [loading, setLoading] = useState(false);
+
+    const set = key => e => setForm(f => ({ ...f, [key]: e.target.value }));
+
+    async function handleSubmit(e) {
+        e.preventDefault();
+        setError('');
+        if (form.password !== form.confirm) return setError('Passwords do not match');
+        if (form.password.length < 8)        return setError('Password must be at least 8 characters');
+        if (!/[A-Z]/.test(form.password))    return setError('Password must contain at least one uppercase letter');
+        if (!/[0-9]/.test(form.password))    return setError('Password must contain at least one number');
+        if (!/[^A-Za-z0-9]/.test(form.password)) return setError('Password must contain at least one special character');
+        setLoading(true);
+        try {
+            const res = await fetch(`${API}/admin/register-supervisor`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...authHeaders() },
+                body: JSON.stringify({ name: form.name, email: form.email, password: form.password, mobile: form.mobile }),
+            });
+            const data = await res.json();
+            if (!res.ok) return setError(data.message || 'Registration failed');
+            setRegistered(data);
+            setPhase('profile');
+        } catch {
+            setError('Network error. Please try again.');
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    // ── Phase 2: Full supervisor profile form — exact same component as SupervisorEditPage ──
+    if (phase === 'profile' && registered) {
+        return (
+            <div>
+                <div className="alert alert-success d-flex align-items-center gap-2 m-4 mb-0 py-2">
+                    <span style={{ fontSize: 20 }}>✓</span>
+                    <span>
+                        <strong>Account created.</strong> {registered.message}
+                        {registered.autoLinked && <span className="ms-2 badge bg-success">Auto-linked to supervisor #{registered.supervisorId}</span>}
+                        <span className="ms-2 text-muted small">Now fill the full supervisor profile — same form as Supervisor Portal.</span>
+                    </span>
+                </div>
+                {/* 100% clone of Supervisor Portal's ApplicationForm — isAdminMode routes all API calls via admin backend */}
+                <SupervisorApplicationForm
+                    isAdminMode={true}
+                    adminSupervisorId={registered.supervisorId || null}
+                    onAdminDone={() => navigate('/supervisors')}
+                />
+            </div>
+        );
+    }
+
+    // ── Phase 1: Account creation ──
+    return (
+        <div className="container-fluid px-4 py-4">
+            <div className="row justify-content-center">
+                <div className="col-md-6">
+                    <div className="d-flex align-items-center gap-2 mb-4">
+                        <button className="btn btn-sm btn-outline-secondary" onClick={() => navigate('/supervisors')}>←</button>
+                        <div>
+                            <h4 className="fw-bold mb-0">Register Supervisor Account</h4>
+                            <small className="text-muted">Same form and service as Supervisor Portal self-registration</small>
+                        </div>
+                    </div>
+
+                    <div className="card border-0 shadow-sm">
+                        <div className="card-header bg-white fw-semibold">Supervisor Registration Form</div>
+                        <div className="card-body">
+                            <div className="alert alert-info py-2 small mb-3">
+                                This form is identical to the Supervisor Portal registration form.
+                                If the email matches an existing approved supervisor record, the account will be auto-linked.
+                            </div>
+                            {error && <div className="alert alert-danger py-2 small">{error}</div>}
+                            <form onSubmit={handleSubmit}>
+                                <div className="mb-3">
+                                    <label className="form-label fw-semibold">Full Name</label>
+                                    <input className="form-control" placeholder="Dr. John Doe" value={form.name} onChange={set('name')} required />
+                                </div>
+                                <div className="mb-3">
+                                    <label className="form-label fw-semibold">Email Address</label>
+                                    <input className="form-control" type="email" placeholder="supervisor@university.edu" value={form.email} onChange={set('email')} required />
+                                </div>
+                                <div className="mb-3">
+                                    <label className="form-label fw-semibold">Mobile Number</label>
+                                    <input className="form-control" placeholder="9XXXXXXXXX" value={form.mobile} onChange={set('mobile')} />
+                                </div>
+                                <div className="row g-2 mb-4">
+                                    <div className="col-6">
+                                        <label className="form-label fw-semibold">Password</label>
+                                        <input className="form-control" type="password" placeholder="••••••••" value={form.password} onChange={set('password')} required />
+                                    </div>
+                                    <div className="col-6">
+                                        <label className="form-label fw-semibold">Confirm Password</label>
+                                        <input className="form-control" type="password" placeholder="••••••••" value={form.confirm} onChange={set('confirm')} required />
+                                    </div>
+                                    <div className="col-12">
+                                        <small className="text-muted">Min 8 chars · 1 uppercase · 1 number · 1 special character</small>
+                                    </div>
+                                </div>
+                                <div className="d-flex gap-2">
+                                    <button type="button" className="btn btn-outline-secondary" onClick={() => navigate('/supervisors')}>Cancel</button>
+                                    <button type="submit" className="btn btn-primary flex-grow-1" disabled={loading}>
+                                        {loading ? 'Creating Account...' : 'Create Supervisor Account'}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
 }
 
-// ─── Edit Page (with id) ──────────────────────────────────────────────────────
+// ─── Edit Page (with id) — unchanged, uses full SupervisorForm ─────────────────
 export function SupervisorEditPage() {
     const { id } = useParams();
     const navigate = useNavigate();

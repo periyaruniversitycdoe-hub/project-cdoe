@@ -1,3 +1,4 @@
+﻿const { safeError } = require('../../../shared/security/safeError');
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
@@ -28,7 +29,7 @@ const upload = multer({
     }
 });
 
-// ── Canonical Mappings Configuration ──────────────────────────────────────────
+// â”€â”€ Canonical Mappings Configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const DESTINATIONS = {
     supervisors: {
         table: 'supervisors',
@@ -90,11 +91,11 @@ const DESTINATIONS = {
     }
 };
 
-// ── Text Normalization Helpers ────────────────────────────────────────────────
+// â”€â”€ Text Normalization Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function cellStr(val) {
     if (val === null || val === undefined) return '';
     if (val instanceof Date) {
-        // ExcelJS returns date cells as JS Date objects — preserve as ISO date string
+        // ExcelJS returns date cells as JS Date objects â€” preserve as ISO date string
         return isNaN(val.getTime()) ? '' : val.toISOString().substring(0, 10);
     }
     if (typeof val === 'object') {
@@ -193,14 +194,14 @@ async function getOrInsertMaster(conn, table, nameValue, currentUserId) {
     }
 }
 
-// ── Endpoint: GET /api/imports/fields/:destination ──────────────────────────
+// â”€â”€ Endpoint: GET /api/imports/fields/:destination â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.get('/fields/:destination', verifyToken, isAdmin, (req, res) => {
     const config = DESTINATIONS[req.params.destination];
     if (!config) return res.status(404).json({ success: false, message: 'Invalid destination' });
     res.json({ success: true, fields: config.fields, label: config.label });
 });
 
-// ── Endpoint: GET /api/imports/history ──────────────────────────────────────
+// â”€â”€ Endpoint: GET /api/imports/history â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.get('/history', verifyToken, isAdmin, async (req, res) => {
     try {
         const [rows] = await pool.execute('SELECT * FROM excel_import_history ORDER BY upload_date DESC LIMIT 50');
@@ -210,7 +211,7 @@ router.get('/history', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-// ── Endpoint: GET /api/imports/template/:destination ─────────────────────────
+// â”€â”€ Endpoint: GET /api/imports/template/:destination â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.get('/template/:destination', verifyToken, isAdmin, async (req, res) => {
     const config = DESTINATIONS[req.params.destination];
     if (!config) return res.status(404).json({ success: false, message: 'Invalid destination' });
@@ -277,7 +278,7 @@ router.get('/template/:destination', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-// ── Endpoint: POST /api/imports/preview/:destination ────────────────────────
+// â”€â”€ Endpoint: POST /api/imports/preview/:destination â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.post('/preview/:destination', verifyToken, isAdmin, upload.single('file'), postUploadCheckMemory(['.csv']), async (req, res) => {
     const config = DESTINATIONS[req.params.destination];
     if (!config) return res.status(404).json({ success: false, message: 'Invalid destination' });
@@ -412,7 +413,7 @@ router.post('/preview/:destination', verifyToken, isAdmin, upload.single('file')
                 ...rowExtract
             };
 
-            // Track seen codes/emails but do NOT skip — insert all including file-level duplicates
+            // Track seen codes/emails but do NOT skip â€” insert all including file-level duplicates
             if (cleanCode) seenInFileCodes.add(cleanCode);
             if (cleanEmail) seenInFileEmails.add(cleanEmail);
 
@@ -454,7 +455,7 @@ router.post('/preview/:destination', verifyToken, isAdmin, upload.single('file')
                 if (changes.length > 0) {
                     previewData.modified.push({ ...cleanRow, existing_id: matchedDbRow.id, changes, action: 'update' });
                 } else {
-                    // Identical DB record — still insert (user wants all rows inserted)
+                    // Identical DB record â€” still insert (user wants all rows inserted)
                     previewData.new.push(cleanRow);
                 }
             } else {
@@ -486,7 +487,7 @@ router.post('/preview/:destination', verifyToken, isAdmin, upload.single('file')
     }
 });
 
-// ── Endpoint: POST /api/imports/confirm/:destination ───────────────────────
+// â”€â”€ Endpoint: POST /api/imports/confirm/:destination â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.post('/confirm/:destination', verifyToken, isAdmin, async (req, res) => {
     const config = DESTINATIONS[req.params.destination];
     if (!config) return res.status(404).json({ success: false, message: 'Invalid destination' });
@@ -541,7 +542,7 @@ router.post('/confirm/:destination', verifyToken, isAdmin, async (req, res) => {
             let affected = await doInsert(dataToInsert);
 
             if (affected === 0 && dataToInsert.supervisor_no != null) {
-                // supervisor_no unique conflict — retry with supervisor_no = null
+                // supervisor_no unique conflict â€” retry with supervisor_no = null
                 // MySQL allows multiple NULLs in a UNIQUE column
                 dataToInsert.supervisor_no = null;
                 affected = await doInsert(dataToInsert);
@@ -588,7 +589,7 @@ router.post('/confirm/:destination', verifyToken, isAdmin, async (req, res) => {
             results.updated++;
         };
 
-        // ── 1. Process New Rows ───────────────────────────────────────────────
+        // â”€â”€ 1. Process New Rows â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         for (const row of new_rows) {
             try {
                 if (import_mode === 'skip_existing' || import_mode === 'insert_new') {
@@ -620,7 +621,7 @@ router.post('/confirm/:destination', verifyToken, isAdmin, async (req, res) => {
             }
         }
 
-        // ── 2. Process Modified Rows ──────────────────────────────────────────
+        // â”€â”€ 2. Process Modified Rows â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         for (const row of modified_rows) {
             const action = row.action || 'update'; // default from mapping preview
             if (action === 'ignore') {
@@ -647,7 +648,7 @@ router.post('/confirm/:destination', verifyToken, isAdmin, async (req, res) => {
 
         await conn.commit();
 
-        // ── 3. Write Detailed Excel Import Log (Auditing) ─────────────────────
+        // â”€â”€ 3. Write Detailed Excel Import Log (Auditing) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         await conn.execute(
             `INSERT INTO excel_import_history 
              (uploaded_by, file_name, record_count, success_count, failed_count, import_destination, import_mode, details)
@@ -674,7 +675,7 @@ router.post('/confirm/:destination', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-// ── Endpoint: POST /api/imports/export/:destination ──────────────────────────
+// â”€â”€ Endpoint: POST /api/imports/export/:destination â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.post('/export/:destination', verifyToken, isAdmin, async (req, res) => {
     const config = DESTINATIONS[req.params.destination];
     if (!config) return res.status(404).json({ success: false, message: 'Invalid destination' });
@@ -766,11 +767,11 @@ router.post('/export/:destination', verifyToken, isAdmin, async (req, res) => {
 
                 // Lookups mapping
                 if (['designation_name', 'department_name', 'serving_institute_name', 'district_name'].includes(f.key)) {
-                    extract[f.key] = row[f.key] || '—';
+                    extract[f.key] = row[f.key] || 'â€”';
                 } else if (f.type === 'date' && row[dbCol]) {
-                    extract[f.key] = normalizeDate(row[dbCol]) || '—';
+                    extract[f.key] = normalizeDate(row[dbCol]) || 'â€”';
                 } else {
-                    extract[f.key] = row[dbCol] !== null && row[dbCol] !== undefined ? row[dbCol] : '—';
+                    extract[f.key] = row[dbCol] !== null && row[dbCol] !== undefined ? row[dbCol] : 'â€”';
                 }
             });
 

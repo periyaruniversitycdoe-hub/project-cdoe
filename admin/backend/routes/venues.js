@@ -1,5 +1,6 @@
-
+﻿
 const express = require('express');
+const { safeError } = require('../../../shared/security/safeError');
 const router  = express.Router();
 const pool    = require('../config/db');
 const { verifyToken, isAdmin } = require('../middleware/auth');
@@ -13,12 +14,12 @@ const { getActiveSessionId }   = require('../services/sessionCache');
       await conn.query('ALTER TABLE venues MODIFY COLUMN exam_date DATE NULL');
       await conn.query('ALTER TABLE venues MODIFY COLUMN from_time TIME NULL');
       await conn.query('ALTER TABLE venues MODIFY COLUMN to_time   TIME NULL');
-    } catch (_) { /* columns already nullable or table not yet created — safe */ }
+    } catch (_) { /* columns already nullable or table not yet created â€” safe */ }
     finally { conn.release(); }
   } catch (_) {}
 })();
 
-// ── GET /api/venues?session_id=active|all|<id>&department= ─────────────────────
+// â”€â”€ GET /api/venues?session_id=active|all|<id>&department= â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.get('/', verifyToken, isAdmin, async (req, res) => {
   try {
     const { session_id, department } = req.query;
@@ -57,11 +58,11 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
 
     res.json({ success: true, data: rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
-// ── GET /api/venues/:id ────────────────────────────────────────────────────────
+// â”€â”€ GET /api/venues/:id â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.get('/:id', verifyToken, isAdmin, async (req, res) => {
   try {
     const [rows] = await pool.execute(`
@@ -81,11 +82,11 @@ router.get('/:id', verifyToken, isAdmin, async (req, res) => {
       return res.status(404).json({ success: false, message: 'Venue not found' });
     res.json({ success: true, data: rows[0] });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
-// ── POST /api/venues ───────────────────────────────────────────────────────────
+// â”€â”€ POST /api/venues â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Venue master: Session, Department, Hall Name, Capacity only.
 // Exam scheduling (date/time) is captured at hall ticket generation time.
 router.post('/', verifyToken, isAdmin, async (req, res) => {
@@ -106,11 +107,11 @@ router.post('/', verifyToken, isAdmin, async (req, res) => {
     );
     res.json({ success: true, message: 'Venue created successfully', id: result.insertId });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
-// ── PUT /api/venues/:id ────────────────────────────────────────────────────────
+// â”€â”€ PUT /api/venues/:id â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.put('/:id', verifyToken, isAdmin, async (req, res) => {
   const { session_id, department, hall_name, capacity } = req.body;
   const { id } = req.params;
@@ -149,11 +150,11 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
 
     res.json({ success: true, message: 'Venue updated successfully' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
-// ── DELETE /api/venues/:id ─────────────────────────────────────────────────────
+// â”€â”€ DELETE /api/venues/:id â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
   try {
     const [[{ allocated }]] = await pool.execute(
@@ -168,7 +169,7 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
     await pool.execute('DELETE FROM venues WHERE id = ?', [req.params.id]);
     res.json({ success: true, message: 'Venue deleted' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 

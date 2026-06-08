@@ -1,3 +1,4 @@
+﻿const { safeError } = require('../../../shared/security/safeError');
 
 const express = require('express');
 const router  = express.Router();
@@ -6,7 +7,7 @@ const { verifyToken, isAdmin } = require('../middleware/auth');
 const { getActiveSessionId }   = require('../services/sessionCache');
 const DependencyEngine = require('../services/EntranceFlowDependencyEngine');
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function fmtTime(t) {
   if (!t) return '';
@@ -28,7 +29,7 @@ function seatLabel(index) {
   return `${letter}${String(num).padStart(2, '0')}`;
 }
 
-// ─── EXISTING ROUTES (preserved exactly) ─────────────────────────────────────
+// â”€â”€â”€ EXISTING ROUTES (preserved exactly) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * GET /api/hall-tickets/eligible
@@ -44,7 +45,7 @@ router.get('/eligible', verifyToken, isAdmin, async (_req, res) => {
     `);
     res.json({ success: true, data: rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -93,7 +94,7 @@ router.get('/issued', verifyToken, isAdmin, async (req, res) => {
       if (dept && hall) {
         venue = hall.includes(dept) ? hall : `${dept} - ${hall}`;
       } else {
-        venue = hall || dept || '—';
+        venue = hall || dept || 'â€”';
       }
       return {
         ...r,
@@ -104,7 +105,7 @@ router.get('/issued', verifyToken, isAdmin, async (req, res) => {
 
     res.json({ success: true, data: formatted });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -151,7 +152,7 @@ router.post('/generate', verifyToken, isAdmin, async (req, res) => {
     if (appUser) {
       const { notifyUser } = require('../services/notifyUser');
       await notifyUser(pool, appUser.user_id,
-        'Hall Ticket Generated ✓',
+        'Hall Ticket Generated âœ“',
         `Your hall ticket (${htNumber}) has been generated. Exam: ${exam_date} at ${exam_time}, Venue: ${exam_venue}. Download it from your dashboard.`,
         'hall_ticket'
       );
@@ -159,7 +160,7 @@ router.post('/generate', verifyToken, isAdmin, async (req, res) => {
 
     res.json({ success: true, message: 'Hall Ticket generated successfully', hall_ticket_number: htNumber });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -199,14 +200,14 @@ router.get('/print/:id', verifyToken, isAdmin, async (req, res) => {
         ticket.exam_venue = `${dept} - ${hall}`;
       }
     } else {
-      const val = hall || dept || '—';
+      const val = hall || dept || 'â€”';
       ticket.venue_hall_name = val;
       ticket.exam_venue = val;
     }
 
     res.json({ success: true, data: ticket });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -235,7 +236,7 @@ router.post('/send/:id', verifyToken, isAdmin, async (req, res) => {
     if (ticket.user_id) {
       const { notifyUser } = require('../services/notifyUser');
       await notifyUser(pool, ticket.user_id,
-        'Hall Ticket Dispatched ✓',
+        'Hall Ticket Dispatched âœ“',
         `Your hall ticket (${ticket.hall_ticket_number}) has been sent. Exam: ${ticket.exam_date} at ${ticket.exam_time}, Venue: ${ticket.exam_venue}. You can download/print it from your dashboard.`,
         'hall_ticket'
       );
@@ -243,7 +244,7 @@ router.post('/send/:id', verifyToken, isAdmin, async (req, res) => {
 
     res.json({ success: true, message: 'Hall Ticket sent to student dashboard and email enqueued.' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -276,7 +277,7 @@ router.post('/send-bulk', verifyToken, isAdmin, async (req, res) => {
       if (!ticket.user_id) continue;
       const { notifyUser } = require('../services/notifyUser');
       await notifyUser(pool, ticket.user_id,
-        'Hall Ticket Dispatched ✓',
+        'Hall Ticket Dispatched âœ“',
         `Your hall ticket (${ticket.hall_ticket_number}) has been sent. Exam: ${ticket.exam_date} at ${ticket.exam_time}, Venue: ${ticket.exam_venue}. You can download/print it from your dashboard.`,
         'hall_ticket'
       );
@@ -284,7 +285,7 @@ router.post('/send-bulk', verifyToken, isAdmin, async (req, res) => {
 
     res.json({ success: true, message: `${unsentTickets.length} ticket(s) sent to student dashboards and emails.` });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -322,7 +323,7 @@ router.post('/send-all', verifyToken, isAdmin, async (req, res) => {
       if (!ticket.user_id) continue;
       const { notifyUser } = require('../services/notifyUser');
       await notifyUser(pool, ticket.user_id,
-        'Hall Ticket Dispatched ✓',
+        'Hall Ticket Dispatched âœ“',
         `Your hall ticket (${ticket.hall_ticket_number}) has been sent. Exam: ${ticket.exam_date} at ${ticket.exam_time}, Venue: ${ticket.exam_venue}. You can download/print it from your dashboard.`,
         'hall_ticket'
       );
@@ -330,7 +331,7 @@ router.post('/send-all', verifyToken, isAdmin, async (req, res) => {
 
     res.json({ success: true, message: `Successfully sent/re-sent ${tickets.length} hall ticket(s) to student dashboards and emails.` });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -347,15 +348,15 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
     await pool.execute('DELETE FROM hall_tickets WHERE id = ?', [req.params.id]);
     res.json({ success: true, message: 'Hall Ticket revoked and workflows synchronized' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
-// ─── RESTRUCTURED ROUTES ──────────────────────────────────────────────────────
+// â”€â”€â”€ RESTRUCTURED ROUTES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * GET /api/hall-tickets/offered-courses
- * Kept for backward compatibility — no longer called by the new UI.
+ * Kept for backward compatibility â€” no longer called by the new UI.
  */
 router.get('/offered-courses', verifyToken, isAdmin, async (req, res) => {
   try {
@@ -367,7 +368,7 @@ router.get('/offered-courses', verifyToken, isAdmin, async (req, res) => {
     `);
     res.json({ success: true, data: rows.map(r => r.program_offered_name) });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -432,7 +433,7 @@ router.get('/students', verifyToken, isAdmin, async (req, res) => {
 
     res.json({ success: true, data: rows, deptCounts, resolvedSessionId });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -531,7 +532,7 @@ router.post('/preview', verifyToken, isAdmin, async (req, res) => {
       preview
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -656,7 +657,7 @@ router.post('/bulk-generate', verifyToken, isAdmin, async (req, res) => {
           const { notifyBulk } = require('../services/notifyUser');
           const userIds = userRows.map(r => r.user_id);
           await notifyBulk(connection, userIds,
-            'Hall Ticket Generated ✓',
+            'Hall Ticket Generated âœ“',
             `Your hall ticket has been generated. Exam: ${exam_date} at ${examTimeStr}, Venue: ${venue.hall_name}. Download it from your dashboard.`,
             'hall_ticket'
           );
@@ -671,7 +672,7 @@ router.post('/bulk-generate', verifyToken, isAdmin, async (req, res) => {
     });
   } catch (err) {
     await connection.rollback();
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   } finally {
     connection.release();
   }
@@ -766,7 +767,7 @@ router.post('/auto-allocate', verifyToken, isAdmin, async (req, res) => {
     res.json({ success: true, message: `Auto-allocated ${totalGenerated} hall ticket(s)`, totalGenerated });
   } catch (err) {
     await connection.rollback();
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   } finally {
     connection.release();
   }

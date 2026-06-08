@@ -83,12 +83,12 @@ router.get('/:type', async (req, res) => {
             const [rows] = await pool.execute(`
                 SELECT id, community_name AS name
                 FROM community_fees
-                WHERE status = 'active'
-                ORDER BY community_name ASC
+                ORDER BY sort_order ASC, community_name ASC
             `);
             return res.json({ success: true, data: rows });
-        } catch (err) {
-            return res.status(500).json({ success: false, message: safeError(err) });
+        } catch (_err) {
+            // Table may not exist yet — return empty and let frontend use its fallback data
+            return res.json({ success: true, data: [] });
         }
     }
 

@@ -170,9 +170,20 @@ const Applications = () => {
     try {
       await axios.put(`${API_URL}/applications/${id}/status`, { status }, { headers });
       toast.success(`Status updated to "${status}"`);
-      fetchApplications();
+      fetchApplications(page);
     } catch { toast.error('Status update failed'); }
     finally { setStatusUpdating(null); }
+  };
+
+  const handleMarkAsPaid = async (id, name) => {
+    if (!window.confirm(`Are you sure you want to mark the application of "${name}" as Paid? This will generate their official Application ID.`)) return;
+    try {
+      await axios.put(`${API_URL}/applications/${id}/payment-status`, { payment_status: 'Paid' }, { headers });
+      toast.success('Payment status marked as Paid successfully!');
+      fetchApplications(page);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update payment status');
+    }
   };
 
   const handleAdmission = async (id, approved) => {
@@ -207,7 +218,19 @@ const Applications = () => {
     } catch { toast.error('Export failed'); }
   };
 
-  const handleAddNew = () => navigate('/applications/new');
+  const handleAddNew = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/settings`, { headers });
+      const configUrl = res.data.data?.application_registration_url;
+      if (configUrl && configUrl.trim()) {
+        window.location.href = configUrl;
+      } else {
+        toast.error('Registration link has not been configured by Administrator.');
+      }
+    } catch (err) {
+      toast.error('Failed to retrieve registration settings.');
+    }
+  };
 
   const sortToggle = (col) => {
     if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -406,9 +429,24 @@ const Applications = () => {
 
                     {/* Application ID */}
                     <td>
-                      <div className="fw-bold text-primary" style={{ fontSize: 12 }}>{app.application_id}</div>
-                      {app.session_name && (
-                        <div className="text-muted" style={{ fontSize: 10 }}>{app.session_name}</div>
+                      <div className="fw-bold text-primary" style={{ fontSize: 12 }}>
+                        {app.application_id || (
+                          <span className="text-muted font-monospace" style={{ fontSize: '11px', fontWeight: 'normal' }}>
+                            {app.email}
+                          </span>
+                        )}
+                      </div>
+                      {app.application_id ? (
+                        app.session_name && (
+                          <div className="text-muted" style={{ fontSize: 10 }}>{app.session_name}</div>
+                        )
+                      ) : (
+                        <div className="d-flex align-items-center gap-1 mt-1">
+                          <span className="badge bg-warning-subtle text-warning border border-warning-subtle" style={{ fontSize: '9px', padding: '1px 4px' }}>Draft</span>
+                          {app.session_name && (
+                            <span className="text-muted" style={{ fontSize: 10 }}>({app.session_name})</span>
+                          )}
+                        </div>
                       )}
                     </td>
 
@@ -478,6 +516,15 @@ const Applications = () => {
                           onClick={() => handleStatusChange(app.id, 'Submitted')}
                           disabled={statusUpdating === app.id}
                         >{statusUpdating === app.id ? 'Submitting...' : 'Submit'}</button>
+                        {!['Paid', 'Verified', 'Approved'].includes(app.payment_status) && (
+                          <button
+                            className="btn btn-sm btn-outline-success fw-semibold"
+                            style={{ fontSize: 11, padding: '3px 10px' }}
+                            onClick={() => handleMarkAsPaid(app.id, app.full_name)}
+                          >
+                            Paid
+                          </button>
+                        )}
                         <button
                           className="btn btn-sm btn-outline-danger fw-semibold"
                           style={{ fontSize: 11, padding: '3px 10px' }}

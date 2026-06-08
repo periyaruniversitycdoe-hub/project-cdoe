@@ -1,3 +1,4 @@
+const { safeError } = require('../../../shared/security/safeError');
 
 const express = require('express');
 const router = express.Router();
@@ -11,7 +12,7 @@ const path = require('path');
 const fs = require('fs');
 const { generateCETPHDApplicationId } = require('../../../student/backend/services/applicationIdEngine');
 
-// ─── Multer for admin application saves ──────────────────────────────────────
+// â”€â”€â”€ Multer for admin application saves â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const uploadDir = path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
@@ -24,7 +25,7 @@ const adminStorage = multer.diskStorage({
 });
 const adminUpload = multer({ storage: adminStorage, limits: { fileSize: 5 * 1024 * 1024 } });
 
-// ─── Allowed columns for application saves ────────────────────────────────────
+// â”€â”€â”€ Allowed columns for application saves â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const APP_ALLOWED_COLUMNS = new Set([
   'user_id','applicant_name','applicant_initial','applicant_name_tamil',
   'exam_center_1','exam_center_2','subject','subject_2','category','working_district',
@@ -49,10 +50,10 @@ const SAVE_COLUMNS = {
 
 const { recomputeFinalResult } = require('../services/eligibilityEngine');
 
-// ─── Helpers ─────────────────────────────────────────────────
+// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function computeQualification(connection, appId, entrance_mark, attendance_status) {
-  // Exempted students skip entrance — always Direct Qualified
+  // Exempted students skip entrance â€” always Direct Qualified
   const [[appRow]] = await connection.execute(
     'SELECT entrance_exam_status FROM applications WHERE id = ?', [appId]
   );
@@ -68,7 +69,7 @@ async function computeQualification(connection, appId, entrance_mark, attendance
   return parseFloat(entrance_mark) >= passingMark ? 'Qualified' : 'Failed';
 }
 
-// ─── Stats ────────────────────────────────────────────────────
+// â”€â”€â”€ Stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * GET /api/applications/stats?session_id=
@@ -77,7 +78,7 @@ router.get('/stats', verifyToken, isAdmin, async (req, res) => {
   try {
     const { session_id } = req.query;
 
-    // Resolve session: 'all' → no filter, 'active'/absent → active session, numeric → that session
+    // Resolve session: 'all' â†’ no filter, 'active'/absent â†’ active session, numeric â†’ that session
     let activeSessionId = null;
     if (!session_id || session_id === 'active') {
       activeSessionId = await getActiveSessionId();
@@ -162,7 +163,7 @@ router.get('/stats', verifyToken, isAdmin, async (req, res) => {
       }
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -174,7 +175,7 @@ router.get('/entrance-settings/config', verifyToken, isAdmin, async (_req, res) 
     const [rows] = await pool.execute('SELECT * FROM entrance_settings WHERE id = 1');
     res.json({ success: true, data: rows[0] || { passing_mark: 50, total_mark: 100 } });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -190,11 +191,11 @@ router.put('/entrance-settings/config', verifyToken, isAdmin, async (req, res) =
     );
     res.json({ success: true, message: 'Entrance criteria updated' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
-// ─── Export Excel ─────────────────────────────────────────────
+// â”€â”€â”€ Export Excel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * GET /api/applications/export/excel
@@ -208,7 +209,7 @@ router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
       report_type = 'applications', ignore_filters
     } = req.query;
 
-    // ── 1. Resolve session ────────────────────────────────────
+    // â”€â”€ 1. Resolve session â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     let resolvedSessionId = null;
     let sessionLabel      = 'All Sessions';
     const sid = session_id;
@@ -241,7 +242,7 @@ router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
       }
     }
 
-    // ── 2. University settings ────────────────────────────────
+    // â”€â”€ 2. University settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     let uniNameEn = 'Periyar University';
     let uniNameTa = '';
     let uniSub    = 'Salem - 636 011, Tamil Nadu, India';
@@ -264,7 +265,7 @@ router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
     const [[pubSettings]] = await pool.execute('SELECT entrance_result_publish FROM university_settings LIMIT 1');
     const publishedStatus = pubSettings && pubSettings.entrance_result_publish ? 'Published' : 'Not Published';
 
-    // ── 3. Build SQL query ────────────────────────────────────
+    // â”€â”€ 3. Build SQL query â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const conditions = [];
     const params     = [];
     const isIgnore   = ignore_filters === 'true';
@@ -361,10 +362,10 @@ router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
     const finalParams = [passMarkUsed, ...params];
     const [rows] = await pool.execute(query, finalParams);
 
-    // ── 4. Column definitions per report type ─────────────────
+    // â”€â”€ 4. Column definitions per report type â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const REPORT_CONFIGS = {
       applications: {
-        title:       'Ph.D. Admission — Application Report',
+        title:       'Ph.D. Admission â€” Application Report',
         sheetName:   'Applications',
         filename:    'application_report',
         columns: [
@@ -388,21 +389,21 @@ router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
           application_id:       r.application_id,
           full_name:            r.full_name,
           email:                r.email,
-          mobile:               r.mobile || '—',
-          subject:              r.subject || '—',
-          session_name:         r.session_name || '—',
+          mobile:               r.mobile || 'â€”',
+          subject:              r.subject || 'â€”',
+          session_name:         r.session_name || 'â€”',
           status:               r.status || 'Draft',
           payment_status:       r.payment_status || 'Unpaid',
           attendance_status:    r.attendance_status || 'Not Set',
-          entrance_mark:        r.entrance_mark != null ? r.entrance_mark : '—',
-          interview_mark:       r.interview_mark != null ? r.interview_mark : '—',
+          entrance_mark:        r.entrance_mark != null ? r.entrance_mark : 'â€”',
+          interview_mark:       r.interview_mark != null ? r.interview_mark : 'â€”',
           qualification_status: r.qualification_status || 'Pending',
           admission_approved:   r.admission_approved ? 'Approved' : (r.admission_approved === 0 ? 'Rejected' : 'Pending'),
-          created_at:           r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN') : '—',
+          created_at:           r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN') : 'â€”',
         }),
       },
       payment: {
-        title:       'Ph.D. Admission — Payment Report',
+        title:       'Ph.D. Admission â€” Payment Report',
         sheetName:   'Payment Report',
         filename:    'payment_report',
         columns: [
@@ -422,16 +423,16 @@ router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
           application_id: r.application_id,
           full_name:      r.full_name,
           email:          r.email,
-          mobile:         r.mobile || '—',
-          subject:        r.subject || '—',
-          session_name:   r.session_name || '—',
+          mobile:         r.mobile || 'â€”',
+          subject:        r.subject || 'â€”',
+          session_name:   r.session_name || 'â€”',
           status:         r.status || 'Draft',
           payment_status: r.payment_status || 'Unpaid',
-          created_at:     r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN') : '—',
+          created_at:     r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN') : 'â€”',
         }),
       },
       attendance: {
-        title:       'Ph.D. Admission — Attendance Report',
+        title:       'Ph.D. Admission â€” Attendance Report',
         sheetName:   'Attendance Report',
         filename:    'attendance_report',
         columns: [
@@ -449,14 +450,14 @@ router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
           application_id:   r.application_id,
           full_name:        r.full_name,
           email:            r.email,
-          mobile:           r.mobile || '—',
-          subject:          r.subject || '—',
-          session_name:     r.session_name || '—',
+          mobile:           r.mobile || 'â€”',
+          subject:          r.subject || 'â€”',
+          session_name:     r.session_name || 'â€”',
           attendance_status:r.attendance_status || 'Not Set',
         }),
       },
       entrance: {
-        title:       'Ph.D. Admission — Entrance Mark Report',
+        title:       'Ph.D. Admission â€” Entrance Mark Report',
         sheetName:   'Entrance Marks',
         filename:    'entrance_mark_report',
         columns: [
@@ -476,15 +477,15 @@ router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
           { header: 'Generated Date',       key: 'generated_date',       width: 18 },
         ],
         mapRow: (r) => ({
-          session_year:         r.session_year || '—',
-          session_month:        r.session_month || '—',
+          session_year:         r.session_year || 'â€”',
+          session_month:        r.session_month || 'â€”',
           application_id:       r.application_id,
           full_name:            r.full_name,
           email:                r.email,
-          subject:              r.subject || '—',
-          applied_course:       r.applied_course || '—',
+          subject:              r.subject || 'â€”',
+          applied_course:       r.applied_course || 'â€”',
           attendance_status:    r.attendance_status || 'Not Set',
-          entrance_mark:        r.entrance_mark != null ? r.entrance_mark : '—',
+          entrance_mark:        r.entrance_mark != null ? r.entrance_mark : 'â€”',
           pass_mark_used:       passMarkUsed,
           result_status:        r.result_status || 'PENDING',
           qualification_status: r.qualification_status || 'Pending',
@@ -493,7 +494,7 @@ router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
         }),
       },
       interview: {
-        title:       'Ph.D. Admission — Interview Mark Report',
+        title:       'Ph.D. Admission â€” Interview Mark Report',
         sheetName:   'Interview Marks',
         filename:    'interview_mark_report',
         columns: [
@@ -512,11 +513,11 @@ router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
           application_id:       r.application_id,
           full_name:            r.full_name,
           email:                r.email,
-          mobile:               r.mobile || '—',
-          subject:              r.subject || '—',
-          session_name:         r.session_name || '—',
+          mobile:               r.mobile || 'â€”',
+          subject:              r.subject || 'â€”',
+          session_name:         r.session_name || 'â€”',
           qualification_status: r.qualification_status || 'Pending',
-          interview_mark:       r.interview_mark != null ? r.interview_mark : '—',
+          interview_mark:       r.interview_mark != null ? r.interview_mark : 'â€”',
         }),
       },
     };
@@ -524,7 +525,7 @@ router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
     const config   = REPORT_CONFIGS[report_type] || REPORT_CONFIGS.applications;
     const C        = config.columns.length; // column count
 
-    // ── 5. Build workbook ─────────────────────────────────────
+    // â”€â”€ 5. Build workbook â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'Periyar University ERP';
     workbook.created = new Date();
@@ -534,7 +535,7 @@ router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
       views:     [{ state: 'frozen', ySplit: 6 }],
     });
 
-    // Column widths & key mapping (no header: — we add title rows manually)
+    // Column widths & key mapping (no header: â€” we add title rows manually)
     ws.columns = config.columns.map(col => ({ key: col.key, width: col.width }));
 
     const TEAL   = 'FF32C5D2';
@@ -544,7 +545,7 @@ router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
 
     const styleCell = (cell, opts) => Object.assign(cell, opts);
 
-    // ── Row 1: University name ────────────────────────────────
+    // â”€â”€ Row 1: University name â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     ws.addRow([uniNameEn]);
     ws.mergeCells(1, 1, 1, C);
     ws.getRow(1).height = 30;
@@ -554,7 +555,7 @@ router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
       alignment: { horizontal: 'center', vertical: 'middle' },
     });
 
-    // ── Row 2: Subtitle / Tamil name ─────────────────────────
+    // â”€â”€ Row 2: Subtitle / Tamil name â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     ws.addRow([uniNameTa ? `${uniNameTa}  |  ${uniSub}` : uniSub]);
     ws.mergeCells(2, 1, 2, C);
     ws.getRow(2).height = 20;
@@ -564,7 +565,7 @@ router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
       alignment: { horizontal: 'center', vertical: 'middle' },
     });
 
-    // ── Row 3: Report title ───────────────────────────────────
+    // â”€â”€ Row 3: Report title â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     ws.addRow([config.title]);
     ws.mergeCells(3, 1, 3, C);
     ws.getRow(3).height = 22;
@@ -575,7 +576,7 @@ router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
       border:    { bottom: { style: 'medium', color: { argb: TEAL } } },
     });
 
-    // ── Row 4: Metadata ───────────────────────────────────────
+    // â”€â”€ Row 4: Metadata â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const genDate = new Date().toLocaleString('en-IN', { dateStyle: 'long', timeStyle: 'short' });
     ws.addRow([`Session: ${sessionLabel}     Generated: ${genDate}     Total Records: ${rows.length}`]);
     ws.mergeCells(4, 1, 4, C);
@@ -586,11 +587,11 @@ router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
       alignment: { horizontal: 'center', vertical: 'middle' },
     });
 
-    // ── Row 5: Spacer ─────────────────────────────────────────
+    // â”€â”€ Row 5: Spacer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     ws.addRow([]);
     ws.getRow(5).height = 6;
 
-    // ── Row 6: Column headers ─────────────────────────────────
+    // â”€â”€ Row 6: Column headers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     ws.addRow(config.columns.map(col => col.header));
     ws.getRow(6).height = 22;
     ws.getRow(6).eachCell({ includeEmpty: true }, (cell) => {
@@ -605,7 +606,7 @@ router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
       };
     });
 
-    // ── Rows 7+: Data ─────────────────────────────────────────
+    // â”€â”€ Rows 7+: Data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     rows.forEach((r, i) => {
       const dr = ws.addRow(config.mapRow(r, i));
       dr.height  = 18;
@@ -625,7 +626,7 @@ router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
       });
     });
 
-    // ── Summary block ─────────────────────────────────────────
+    // â”€â”€ Summary block â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     ws.addRow([]);
 
     const addSummary = (label, count) => {
@@ -659,7 +660,7 @@ router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
     // Auto-filter on header row (row 6)
     ws.autoFilter = { from: { row: 6, column: 1 }, to: { row: 6, column: C } };
 
-    // ── 6. Send ───────────────────────────────────────────────
+    // â”€â”€ 6. Send â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const filename = `${config.filename}_${new Date().toISOString().slice(0, 10)}.xlsx`;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -667,11 +668,11 @@ router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
     res.end();
   } catch (err) {
     console.error('Export error:', err.message);
-    if (!res.headersSent) res.status(500).json({ success: false, message: err.message });
+    if (!res.headersSent) res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
-// ─── Filters ──────────────────────────────────────────────────
+// â”€â”€â”€ Filters â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * GET /api/applications/filters
@@ -776,11 +777,11 @@ router.get('/filters', verifyToken, isAdmin, async (req, res) => {
       data: { years, months, departments, courses }
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
-// ─── List ─────────────────────────────────────────────────────
+// â”€â”€â”€ List â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * GET /api/applications
@@ -797,7 +798,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
       page: pageParam, limit: limitParam
     } = req.query;
 
-    // ── Resolve session (cached) ──────────────────────────────────
+    // â”€â”€ Resolve session (cached) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     let resolvedSessionId = session_id;
     if (year || month) {
       if (!resolvedSessionId || resolvedSessionId === 'active') {
@@ -812,7 +813,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
       resolvedSessionId = null;
     }
 
-    // ── Build WHERE conditions array ──────────────────────────────
+    // â”€â”€ Build WHERE conditions array â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const conditions = [];
     const params     = [];
 
@@ -879,7 +880,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
 
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : 'WHERE 1=1';
 
-    // ── Sorting ───────────────────────────────────────────────────
+    // â”€â”€ Sorting â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const allowedSorts = [
       'created_at','entrance_mark',
       'attendance_status','payment_status','qualification_status',
@@ -914,7 +915,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
         ELSE 'FAIL'
       END) AS result_status`;
 
-    // ── Dynamic overall counts for summary cards ───────────────────
+    // â”€â”€ Dynamic overall counts for summary cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const summaryQuery = `
       SELECT 
         COUNT(*) as total,
@@ -928,7 +929,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
     `;
     const [[summary]] = await pool.execute(summaryQuery, params);
 
-    // ── Pagination (opt-in — backward compatible when page absent) ─
+    // â”€â”€ Pagination (opt-in â€” backward compatible when page absent) â”€
     const page  = parseInt(pageParam,  10);
     const limit = parseInt(limitParam, 10);
 
@@ -961,18 +962,18 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
       });
     }
 
-    // No pagination — return full result set (existing behaviour preserved)
+    // No pagination â€” return full result set (existing behaviour preserved)
     const [rows] = await pool.execute(
       `SELECT ${selectCols} ${baseJoin} ORDER BY ${sortCol} ${sortDirection}`, params
     );
     res.json({ success: true, data: rows, total: rows.length, summary, activeSessionId: resolvedSessionId });
 
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
-// ─── Single application ───────────────────────────────────────
+// â”€â”€â”€ Single application â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * GET /api/applications/:id
@@ -994,10 +995,10 @@ router.get('/:id', verifyToken, isAdmin, async (req, res) => {
     const application = rows[0];
     const appId = application.application_id;
 
-    const [school]     = await pool.execute('SELECT * FROM school_education WHERE application_id = ?', [appId]);
-    const [higher]     = await pool.execute('SELECT * FROM higher_education WHERE application_id = ?', [appId]);
-    const [experience] = await pool.execute('SELECT * FROM experience_details WHERE application_id = ?', [appId]);
-    const [documents]  = await pool.execute('SELECT * FROM application_documents WHERE application_id = ? OR user_id = ?', [appId, application.user_id]);
+    const [school]     = await pool.execute('SELECT * FROM school_education WHERE user_id = ?' + (appId ? ' OR application_id = ?' : ''), appId ? [application.user_id, appId] : [application.user_id]);
+    const [higher]     = await pool.execute('SELECT * FROM higher_education WHERE user_id = ?' + (appId ? ' OR application_id = ?' : ''), appId ? [application.user_id, appId] : [application.user_id]);
+    const [experience] = await pool.execute('SELECT * FROM experience_details WHERE user_id = ?' + (appId ? ' OR application_id = ?' : ''), appId ? [application.user_id, appId] : [application.user_id]);
+    const [documents]  = await pool.execute('SELECT * FROM application_documents WHERE user_id = ?' + (appId ? ' OR application_id = ?' : ''), appId ? [application.user_id, appId] : [application.user_id]);
 
     application.school_education  = school;
     application.higher_education  = higher.filter(h => h.level === 'UG' || h.level === 'PG');
@@ -1008,11 +1009,11 @@ router.get('/:id', verifyToken, isAdmin, async (req, res) => {
 
     res.json({ success: true, data: application, documents });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
-// ─── Create ───────────────────────────────────────────────────
+// â”€â”€â”€ Create â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * POST /api/applications/add
@@ -1035,37 +1036,28 @@ router.post('/add', verifyToken, isAdmin, async (req, res) => {
       return res.status(400).json({ success: false, message: 'No active session found. Please activate a session before creating applications.' });
     }
 
-    // Generate official CETPHD Application ID (same engine used by student portal)
-    let applicationId;
-    try {
-      applicationId = await generateCETPHDApplicationId(pool, sessionId);
-    } catch (idErr) {
-      await connection.rollback();
-      return res.status(500).json({ success: false, message: 'Failed to generate Application ID: ' + idErr.message });
-    }
-
     const [userResult] = await connection.execute(
       'INSERT INTO users (application_id, full_name, email, password, session_id) VALUES (?, ?, ?, ?, ?)',
-      [applicationId, full_name, email, hashedPassword, sessionId]
+      [null, full_name, email, hashedPassword, sessionId]
     );
     const userId = userResult.insertId;
 
     await connection.execute(
-      'INSERT INTO applications (application_id, user_id, session_id, status, application_submitted, application_id_generated_at) VALUES (?, ?, ?, "Submitted", 1, NOW())',
-      [applicationId, userId, sessionId]
+      'INSERT INTO applications (application_id, user_id, session_id, status, application_submitted, application_id_generated_at) VALUES (?, ?, ?, "Draft", 0, NULL)',
+      [null, userId, sessionId]
     );
 
     await connection.commit();
-    res.json({ success: true, message: 'Application created', applicationId });
+    res.json({ success: true, message: 'Application created', applicationId: null });
   } catch (err) {
     await connection.rollback();
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   } finally {
     connection.release();
   }
 });
 
-// ─── Admin Save (replaces student-side /save for admin-created apps) ──────────
+// â”€â”€â”€ Admin Save (replaces student-side /save for admin-created apps) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 /**
  * POST /api/applications/save-admin
  * Accepts the same multipart form as the student /save endpoint but uses admin auth.
@@ -1075,7 +1067,28 @@ router.post('/save-admin', verifyToken, isAdmin, adminUpload.any(), async (req, 
     const raw = { ...req.body };
     const files = req.files || [];
     const appId = raw.application_id;
-    if (!appId) return res.status(400).json({ success: false, message: 'Missing application_id' });
+    const userId = raw.user_id;
+
+    if (!appId && !userId) {
+      return res.status(400).json({ success: false, message: 'Missing application_id or user_id' });
+    }
+
+    let applicationRow;
+    if (userId) {
+      const [rows] = await pool.execute('SELECT id, application_id, user_id FROM applications WHERE user_id = ?', [userId]);
+      if (rows.length > 0) applicationRow = rows[0];
+    }
+    if (!applicationRow && appId) {
+      const [rows] = await pool.execute('SELECT id, application_id, user_id FROM applications WHERE application_id = ?', [appId]);
+      if (rows.length > 0) applicationRow = rows[0];
+    }
+
+    if (!applicationRow) {
+      return res.status(404).json({ success: false, message: 'Application not found' });
+    }
+
+    const resolvedUserId = applicationRow.user_id;
+    const resolvedAppId = applicationRow.application_id;
 
     if (raw.qualified_exams && typeof raw.qualified_exams !== 'string') {
       raw.qualified_exams = JSON.stringify(raw.qualified_exams);
@@ -1092,36 +1105,19 @@ router.post('/save-admin', verifyToken, isAdmin, adminUpload.any(), async (req, 
       }
     }
 
-    const [existing] = await pool.execute('SELECT id FROM applications WHERE application_id = ?', [appId]);
-    if (existing.length > 0) {
-      if (Object.keys(data).length > 0) {
-        const sets = Object.keys(data).map(k => {
-          if (k === 'qualified_exams') return `\`${k}\` = CAST(? AS JSON)`;
-          return `\`${k}\` = ?`;
-        }).join(', ');
-        await pool.execute(`UPDATE applications SET ${sets} WHERE application_id = ?`, [...Object.values(data), appId]);
-      }
-    } else {
-      const cols = ['application_id', ...Object.keys(data)];
-      const vals = [appId, ...Object.values(data)];
-      const placeholders = cols.map(c => {
-        if (c === 'qualified_exams') return 'CAST(? AS JSON)';
-        return '?';
+    if (Object.keys(data).length > 0) {
+      const sets = Object.keys(data).map(k => {
+        if (k === 'qualified_exams') return `\`${k}\` = CAST(? AS JSON)`;
+        return `\`${k}\` = ?`;
       }).join(', ');
-      await pool.execute(
-        `INSERT INTO applications (${cols.map(c => `\`${c}\``).join(', ')}) VALUES (${placeholders})`,
-        vals
-      );
+      await pool.execute(`UPDATE applications SET ${sets} WHERE id = ?`, [...Object.values(data), applicationRow.id]);
     }
 
     // Synchronize parent user's full name with applicant_name + applicant_initial
     if (data.applicant_name !== undefined) {
       const initial = data.applicant_initial || '';
       const fullNameConcatenated = `${data.applicant_name}${initial ? ' ' + initial : ''}`.trim().toUpperCase();
-      const [appRow] = await pool.execute('SELECT user_id FROM applications WHERE application_id = ?', [appId]);
-      if (appRow.length > 0) {
-        await pool.execute('UPDATE users SET full_name = ? WHERE id = ?', [fullNameConcatenated, appRow[0].user_id]);
-      }
+      await pool.execute('UPDATE users SET full_name = ? WHERE id = ?', [fullNameConcatenated, resolvedUserId]);
     }
 
     // 2. School education
@@ -1135,15 +1131,18 @@ router.post('/save-admin', verifyToken, isAdmin, adminUpload.any(), async (req, 
         });
         let existingId = id;
         if (!existingId && fields.level) {
-          const [ex] = await pool.execute('SELECT id FROM school_education WHERE application_id = ? AND level = ?', [appId, fields.level]);
+          const [ex] = await pool.execute(
+            'SELECT id FROM school_education WHERE (user_id = ?' + (resolvedAppId ? ' OR application_id = ?' : '') + ') AND level = ?',
+            resolvedAppId ? [resolvedUserId, resolvedAppId, fields.level] : [resolvedUserId, fields.level]
+          );
           if (ex.length > 0) existingId = ex[0].id;
         }
         if (existingId) {
           const sets = Object.keys(fields).map(k => `\`${k}\` = ?`).join(', ');
           if (sets) await pool.execute(`UPDATE school_education SET ${sets} WHERE id = ?`, [...Object.values(fields), existingId]);
         } else {
-          const cols = ['application_id', ...Object.keys(fields)];
-          const vals = [appId, ...Object.values(fields)];
+          const cols = ['user_id', 'application_id', ...Object.keys(fields)];
+          const vals = [resolvedUserId, resolvedAppId, ...Object.values(fields)];
           await pool.execute(`INSERT INTO school_education (${cols.map(c => `\`${c}\``).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`, vals);
         }
       }
@@ -1160,15 +1159,18 @@ router.post('/save-admin', verifyToken, isAdmin, adminUpload.any(), async (req, 
         });
         let existingId = id;
         if (!existingId && fields.level) {
-          const [ex] = await pool.execute('SELECT id FROM higher_education WHERE application_id = ? AND level = ?', [appId, fields.level]);
+          const [ex] = await pool.execute(
+            'SELECT id FROM higher_education WHERE (user_id = ?' + (resolvedAppId ? ' OR application_id = ?' : '') + ') AND level = ?',
+            resolvedAppId ? [resolvedUserId, resolvedAppId, fields.level] : [resolvedUserId, fields.level]
+          );
           if (ex.length > 0) existingId = ex[0].id;
         }
         if (existingId) {
           const sets = Object.keys(fields).map(k => `\`${k}\` = ?`).join(', ');
           if (sets) await pool.execute(`UPDATE higher_education SET ${sets} WHERE id = ?`, [...Object.values(fields), existingId]);
         } else {
-          const cols = ['application_id', ...Object.keys(fields)];
-          const vals = [appId, ...Object.values(fields)];
+          const cols = ['user_id', 'application_id', ...Object.keys(fields)];
+          const vals = [resolvedUserId, resolvedAppId, ...Object.values(fields)];
           await pool.execute(`INSERT INTO higher_education (${cols.map(c => `\`${c}\``).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`, vals);
         }
       }
@@ -1182,13 +1184,16 @@ router.post('/save-admin', verifyToken, isAdmin, adminUpload.any(), async (req, 
         if (diploma[c] !== undefined) fields[c] = (diploma[c] === '' || diploma[c] === 'null') ? null : diploma[c];
       });
       if (!fields.level) fields.level = 'Diploma';
-      const [ex] = await pool.execute('SELECT id FROM higher_education WHERE application_id = ? AND level = "Diploma"', [appId]);
+      const [ex] = await pool.execute(
+        'SELECT id FROM higher_education WHERE (user_id = ?' + (resolvedAppId ? ' OR application_id = ?' : '') + ') AND level = "Diploma"',
+        resolvedAppId ? [resolvedUserId, resolvedAppId] : [resolvedUserId]
+      );
       if (ex.length > 0) {
         const sets = Object.keys(fields).map(k => `\`${k}\` = ?`).join(', ');
         if (sets) await pool.execute(`UPDATE higher_education SET ${sets} WHERE id = ?`, [...Object.values(fields), ex[0].id]);
       } else {
-        const cols = ['application_id', ...Object.keys(fields)];
-        const vals = [appId, ...Object.values(fields)];
+        const cols = ['user_id', 'application_id', ...Object.keys(fields)];
+        const vals = [resolvedUserId, resolvedAppId, ...Object.values(fields)];
         await pool.execute(`INSERT INTO higher_education (${cols.map(c => `\`${c}\``).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`, vals);
       }
     }
@@ -1201,13 +1206,16 @@ router.post('/save-admin', verifyToken, isAdmin, adminUpload.any(), async (req, 
         if (mphil[c] !== undefined) fields[c] = (mphil[c] === '' || mphil[c] === 'null') ? null : mphil[c];
       });
       if (!fields.level) fields.level = 'M.Phil';
-      const [ex] = await pool.execute('SELECT id FROM higher_education WHERE application_id = ? AND level = "M.Phil"', [appId]);
+      const [ex] = await pool.execute(
+        'SELECT id FROM higher_education WHERE (user_id = ?' + (resolvedAppId ? ' OR application_id = ?' : '') + ') AND level = "M.Phil"',
+        resolvedAppId ? [resolvedUserId, resolvedAppId] : [resolvedUserId]
+      );
       if (ex.length > 0) {
         const sets = Object.keys(fields).map(k => `\`${k}\` = ?`).join(', ');
         if (sets) await pool.execute(`UPDATE higher_education SET ${sets} WHERE id = ?`, [...Object.values(fields), ex[0].id]);
       } else {
-        const cols = ['application_id', ...Object.keys(fields)];
-        const vals = [appId, ...Object.values(fields)];
+        const cols = ['user_id', 'application_id', ...Object.keys(fields)];
+        const vals = [resolvedUserId, resolvedAppId, ...Object.values(fields)];
         await pool.execute(`INSERT INTO higher_education (${cols.map(c => `\`${c}\``).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`, vals);
       }
     }
@@ -1220,13 +1228,16 @@ router.post('/save-admin', verifyToken, isAdmin, adminUpload.any(), async (req, 
         if (integrated[c] !== undefined) fields[c] = (integrated[c] === '' || integrated[c] === 'null') ? null : integrated[c];
       });
       if (!fields.level) fields.level = 'Integrated';
-      const [ex] = await pool.execute('SELECT id FROM higher_education WHERE application_id = ? AND level = "Integrated"', [appId]);
+      const [ex] = await pool.execute(
+        'SELECT id FROM higher_education WHERE (user_id = ?' + (resolvedAppId ? ' OR application_id = ?' : '') + ') AND level = "Integrated"',
+        resolvedAppId ? [resolvedUserId, resolvedAppId] : [resolvedUserId]
+      );
       if (ex.length > 0) {
         const sets = Object.keys(fields).map(k => `\`${k}\` = ?`).join(', ');
         if (sets) await pool.execute(`UPDATE higher_education SET ${sets} WHERE id = ?`, [...Object.values(fields), ex[0].id]);
       } else {
-        const cols = ['application_id', ...Object.keys(fields)];
-        const vals = [appId, ...Object.values(fields)];
+        const cols = ['user_id', 'application_id', ...Object.keys(fields)];
+        const vals = [resolvedUserId, resolvedAppId, ...Object.values(fields)];
         await pool.execute(`INSERT INTO higher_education (${cols.map(c => `\`${c}\``).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`, vals);
       }
     }
@@ -1242,10 +1253,15 @@ router.post('/save-admin', verifyToken, isAdmin, adminUpload.any(), async (req, 
         });
         if (id) {
           const sets = Object.keys(fields).map(k => `\`${k}\` = ?`).join(', ');
-          if (sets) await pool.execute(`UPDATE experience_details SET ${sets} WHERE id = ? AND application_id = ?`, [...Object.values(fields), id, appId]);
+          if (sets) {
+            await pool.execute(
+              `UPDATE experience_details SET ${sets} WHERE id = ? AND (user_id = ?` + (resolvedAppId ? ' OR application_id = ?' : '') + `)`,
+              resolvedAppId ? [...Object.values(fields), id, resolvedUserId, resolvedAppId] : [...Object.values(fields), id, resolvedUserId]
+            );
+          }
         } else {
-          const cols = ['application_id', ...Object.keys(fields)];
-          const vals = [appId, ...Object.values(fields)];
+          const cols = ['user_id', 'application_id', ...Object.keys(fields)];
+          const vals = [resolvedUserId, resolvedAppId, ...Object.values(fields)];
           await pool.execute(`INSERT INTO experience_details (${cols.map(c => `\`${c}\``).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`, vals);
         }
       }
@@ -1254,25 +1270,68 @@ router.post('/save-admin', verifyToken, isAdmin, adminUpload.any(), async (req, 
     // 7. File uploads
     for (const file of files) {
       const filePath = file.path.replace(/\\/g, '/');
-      await pool.execute('DELETE FROM application_documents WHERE application_id = ? AND document_type = ?', [appId, file.fieldname]);
-      await pool.execute('INSERT INTO application_documents (application_id, document_type, file_path) VALUES (?, ?, ?)', [appId, file.fieldname, filePath]);
-      if (file.fieldname === 'sslc_marksheet') await pool.execute('UPDATE school_education SET marksheet_path = ? WHERE application_id = ? AND level = "SSLC"', [filePath, appId]);
-      if (file.fieldname === 'hsc_marksheet')  await pool.execute('UPDATE school_education SET marksheet_path = ? WHERE application_id = ? AND level = "HSC"',  [filePath, appId]);
-      if (file.fieldname === 'ug_marksheet' || file.fieldname === 'ug_consolidated' || file.fieldname.startsWith('ug_sem_'))   await pool.execute('UPDATE higher_education SET marksheet_path = ? WHERE application_id = ? AND level = "UG"',   [filePath, appId]);
-      if (file.fieldname === 'pg_marksheet' || file.fieldname === 'pg_consolidated' || file.fieldname.startsWith('pg_sem_'))   await pool.execute('UPDATE higher_education SET marksheet_path = ? WHERE application_id = ? AND level = "PG"',   [filePath, appId]);
-      if (file.fieldname === 'diploma_marksheet' || file.fieldname === 'diploma_consolidated' || file.fieldname.startsWith('diploma_sem_')) await pool.execute('UPDATE higher_education SET marksheet_path = ? WHERE application_id = ? AND level = "Diploma"', [filePath, appId]);
-      if (file.fieldname === 'mphil_marksheet' || file.fieldname === 'mphil_consolidated' || file.fieldname.startsWith('mphil_sem_')) await pool.execute('UPDATE higher_education SET marksheet_path = ? WHERE application_id = ? AND level = "M.Phil"', [filePath, appId]);
-      if (file.fieldname === 'integrated_marksheet' || file.fieldname === 'integrated_consolidated' || file.fieldname.startsWith('integrated_sem_')) await pool.execute('UPDATE higher_education SET marksheet_path = ? WHERE application_id = ? AND level = "Integrated"', [filePath, appId]);
+      await pool.execute(
+        `DELETE FROM application_documents WHERE document_type = ? AND (user_id = ?` + (resolvedAppId ? ' OR application_id = ?' : '') + `)`,
+        resolvedAppId ? [file.fieldname, resolvedUserId, resolvedAppId] : [file.fieldname, resolvedUserId]
+      );
+      await pool.execute(
+        'INSERT INTO application_documents (user_id, application_id, document_type, file_path) VALUES (?, ?, ?, ?)',
+        [resolvedUserId, resolvedAppId, file.fieldname, filePath]
+      );
+      if (file.fieldname === 'sslc_marksheet') {
+        await pool.execute(
+          `UPDATE school_education SET marksheet_path = ? WHERE level = "SSLC" AND (user_id = ?` + (resolvedAppId ? ' OR application_id = ?' : '') + `)`,
+          resolvedAppId ? [filePath, resolvedUserId, resolvedAppId] : [filePath, resolvedUserId]
+        );
+      }
+      if (file.fieldname === 'hsc_marksheet') {
+        await pool.execute(
+          `UPDATE school_education SET marksheet_path = ? WHERE level = "HSC" AND (user_id = ?` + (resolvedAppId ? ' OR application_id = ?' : '') + `)`,
+          resolvedAppId ? [filePath, resolvedUserId, resolvedAppId] : [filePath, resolvedUserId]
+        );
+      }
+      if (file.fieldname === 'ug_marksheet' || file.fieldname === 'ug_consolidated' || file.fieldname.startsWith('ug_sem_')) {
+        await pool.execute(
+          `UPDATE higher_education SET marksheet_path = ? WHERE level = "UG" AND (user_id = ?` + (resolvedAppId ? ' OR application_id = ?' : '') + `)`,
+          resolvedAppId ? [filePath, resolvedUserId, resolvedAppId] : [filePath, resolvedUserId]
+        );
+      }
+      if (file.fieldname === 'pg_marksheet' || file.fieldname === 'pg_consolidated' || file.fieldname.startsWith('pg_sem_')) {
+        await pool.execute(
+          `UPDATE higher_education SET marksheet_path = ? WHERE level = "PG" AND (user_id = ?` + (resolvedAppId ? ' OR application_id = ?' : '') + `)`,
+          resolvedAppId ? [filePath, resolvedUserId, resolvedAppId] : [filePath, resolvedUserId]
+        );
+      }
+      if (file.fieldname === 'diploma_marksheet' || file.fieldname === 'diploma_consolidated' || file.fieldname.startsWith('diploma_sem_')) {
+        await pool.execute(
+          `UPDATE higher_education SET marksheet_path = ? WHERE level = "Diploma" AND (user_id = ?` + (resolvedAppId ? ' OR application_id = ?' : '') + `)`,
+          resolvedAppId ? [filePath, resolvedUserId, resolvedAppId] : [filePath, resolvedUserId]
+        );
+      }
+      if (file.fieldname === 'mphil_marksheet' || file.fieldname === 'mphil_consolidated' || file.fieldname.startsWith('mphil_sem_')) {
+        await pool.execute(
+          `UPDATE higher_education SET marksheet_path = ? WHERE level = "M.Phil" AND (user_id = ?` + (resolvedAppId ? ' OR application_id = ?' : '') + `)`,
+          resolvedAppId ? [filePath, resolvedUserId, resolvedAppId] : [filePath, resolvedUserId]
+        );
+      }
+      if (file.fieldname === 'integrated_marksheet' || file.fieldname === 'integrated_consolidated' || file.fieldname.startsWith('integrated_sem_')) {
+        await pool.execute(
+          `UPDATE higher_education SET marksheet_path = ? WHERE level = "Integrated" AND (user_id = ?` + (resolvedAppId ? ' OR application_id = ?' : '') + `)`,
+          resolvedAppId ? [filePath, resolvedUserId, resolvedAppId] : [filePath, resolvedUserId]
+        );
+      }
     }
 
     res.json({ success: true, message: 'Application saved successfully' });
+
+
   } catch (err) {
     console.error('Admin save error:', err);
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
-// ─── Update ───────────────────────────────────────────────────
+// â”€â”€â”€ Update â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * PUT /api/applications/:id
@@ -1301,7 +1360,7 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
     }
     res.json({ success: true, message: 'Application updated' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -1353,7 +1412,7 @@ router.put('/:id/status', verifyToken, isAdmin, async (req, res) => {
       const { enqueueEmail } = require('../../../shared/utils/notification');
 
       if (status === 'Rejected') {
-        // ── Rich rejection notification ───────────────────────────────
+        // â”€â”€ Rich rejection notification â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if (notify_dashboard) {
           await notifyUser(connection, appRow.user_id,
             'Application Rejected',
@@ -1378,7 +1437,7 @@ router.put('/:id/status', verifyToken, isAdmin, async (req, res) => {
                   <tr style="background:#fef2f2"><td style="padding:10px 14px;font-weight:600;border:1px solid #fca5a5">Detailed Reason</td><td style="padding:10px 14px;border:1px solid #fca5a5">${rejection_reason.trim()}</td></tr>
                 </table>
                 <p style="color:#64748b;font-size:13px">For further clarification, please contact the university admissions office.</p>
-                <p style="color:#64748b;font-size:13px">Regards,<br><strong>Periyar University – PhD Admissions Cell</strong></p>
+                <p style="color:#64748b;font-size:13px">Regards,<br><strong>Periyar University â€“ PhD Admissions Cell</strong></p>
               </div>
             </div>`;
           await enqueueEmail(pool, {
@@ -1418,7 +1477,7 @@ router.put('/:id/status', verifyToken, isAdmin, async (req, res) => {
       } else {
         // Non-rejection status notifications (existing logic preserved)
         const STATUS_NOTIF = {
-          'Approved':     { title: 'Application Approved ✓',    message: 'Your PhD admission application has been approved. Please proceed with the application fee payment.', type: 'success' },
+          'Approved':     { title: 'Application Approved âœ“',    message: 'Your PhD admission application has been approved. Please proceed with the application fee payment.', type: 'success' },
           'Under Review': { title: 'Application Under Review',  message: 'Your application is currently being reviewed by the admissions committee.', type: 'info' },
           'Submitted':    { title: 'Application Received',      message: 'Your application has been received and is awaiting review.', type: 'info' },
         };
@@ -1437,14 +1496,14 @@ router.put('/:id/status', verifyToken, isAdmin, async (req, res) => {
     res.json({ success: true, message: `Application status updated to ${status}`, final_result: finalResult });
   } catch (err) {
     await connection.rollback();
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   } finally {
     connection.release();
   }
 });
 
 /**
- * GET /api/applications/:id/rejection  — fetch stored rejection details (admin)
+ * GET /api/applications/:id/rejection  â€” fetch stored rejection details (admin)
  */
 router.get('/:id/rejection', verifyToken, isAdmin, async (req, res) => {
   try {
@@ -1460,7 +1519,7 @@ router.get('/:id/rejection', verifyToken, isAdmin, async (req, res) => {
     if (!row) return res.status(404).json({ success: false, message: 'Application not found' });
     res.json({ success: true, data: row });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -1491,7 +1550,7 @@ router.put('/:id/attendance', verifyToken, isAdmin, async (req, res) => {
     const finalResult = await recomputeFinalResult(connection, req.params.id);
     res.json({ success: true, message: 'Attendance updated', qualification_status: qualificationStatus, final_result_status: finalResult });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   } finally {
     connection.release();
   }
@@ -1527,7 +1586,7 @@ router.put('/:id/entrance-mark', verifyToken, isAdmin, async (req, res) => {
       final_result_status: automationResult.final_result_status 
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   } finally {
     connection.release();
   }
@@ -1555,7 +1614,7 @@ router.put('/:id/admission', verifyToken, isAdmin, async (req, res) => {
     );
     res.json({ success: true, message: approved ? 'Admission approved' : 'Admission rejected' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 
@@ -1589,11 +1648,43 @@ router.put('/:id/payment-status', verifyToken, isAdmin, async (req, res) => {
     );
 
     const [[appRow]] = await connection.execute(
-      'SELECT user_id, application_id FROM applications WHERE id = ?', [req.params.id]
+      'SELECT user_id, application_id, community, is_physically_challenged FROM applications WHERE id = ?', [req.params.id]
     );
 
+    let applicationId = appRow ? appRow.application_id : null;
+
+    if (['Paid', 'Approved'].includes(payment_status) && appRow) {
+      if (!applicationId) {
+        // Find session_id from user
+        const [[userRow]] = await connection.execute('SELECT session_id FROM users WHERE id = ?', [appRow.user_id]);
+        if (!userRow || !userRow.session_id) {
+          throw new Error('User has no session_id — cannot generate Application ID');
+        }
+
+        // Generate the ID concurrency-safely
+        applicationId = await generateCETPHDApplicationId(pool, userRow.session_id);
+
+        // Propagate Application ID to all related tables
+        await connection.execute('UPDATE users SET application_id = ? WHERE id = ?', [applicationId, appRow.user_id]);
+        await connection.execute(
+          `UPDATE applications
+           SET application_id = ?, application_submitted = 1, application_id_generated_at = NOW()
+           WHERE id = ?`,
+          [applicationId, req.params.id]
+        );
+        await connection.execute('UPDATE school_education SET application_id = ? WHERE user_id = ?', [applicationId, appRow.user_id]);
+        await connection.execute('UPDATE higher_education SET application_id = ? WHERE user_id = ?', [applicationId, appRow.user_id]);
+        await connection.execute('UPDATE experience_details SET application_id = ? WHERE user_id = ?', [applicationId, appRow.user_id]);
+        await connection.execute('UPDATE application_documents SET application_id = ? WHERE user_id = ?', [applicationId, appRow.user_id]);
+        await connection.execute('UPDATE student_qualifications SET application_id = ? WHERE user_id = ?', [applicationId, appRow.user_id]);
+      }
+
+      // Update appRow property for downstream logic
+      appRow.application_id = applicationId;
+    }
+
     let wasPaidRevoked = false;
-    
+
     // Enterprise downstream dependency check
     if (['Failed', 'Unpaid', 'Rejected'].includes(payment_status) && appRow) {
       const DependencyEngine = require('../services/EntranceFlowDependencyEngine');
@@ -1610,6 +1701,40 @@ router.put('/:id/payment-status', verifyToken, isAdmin, async (req, res) => {
         [appRow.application_id, payment_reference || null, req.user?.email || 'admin']
       );
 
+      // Create or update a corresponding record in payment_transactions so they show up in Payment Management
+      const [[existingTxn]] = await connection.execute(
+        'SELECT order_id FROM payment_transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1',
+        [appRow.user_id]
+      );
+
+      const CommunityFeeCalculationService = require('../../../student/backend/services/CommunityFeeCalculationService');
+      const feeAmount = await CommunityFeeCalculationService.calculateFee(appRow.community, appRow.is_physically_challenged, connection).catch(() => 500.00);
+
+      if (existingTxn) {
+        await connection.execute(
+          `UPDATE payment_transactions 
+           SET payment_status = 'SUCCESS', application_id = ?, gateway_transaction_id = ?, completed_at = NOW(), verified_at = NOW(), updated_at = NOW()
+           WHERE order_id = ?`,
+          [appRow.application_id, payment_reference || 'Manual Confirmation', existingTxn.order_id]
+        );
+      } else {
+        const crypto = require('crypto');
+        const orderId = `MANUAL-${appRow.user_id}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+        await connection.execute(
+          `INSERT INTO payment_transactions 
+             (order_id, application_id, user_id, amount, currency, payment_method, payment_sub_method, provider_name, gateway_transaction_id, payment_status, initiated_at, completed_at, verified_at, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'INR', 'card', ?, 'Manual', ?, 'SUCCESS', NOW(), NOW(), NOW(), NOW(), NOW())`,
+          [
+            orderId,
+            appRow.application_id,
+            appRow.user_id,
+            feeAmount,
+            payment_reference ? payment_reference.substring(0, 80) : 'Manual',
+            payment_reference || 'Manual Confirmation'
+          ]
+        );
+      }
+
       // Evaluate direct pass
       const { evaluateDirectPass } = require('./qualification-rules');
       await evaluateDirectPass(connection, appRow.application_id);
@@ -1617,7 +1742,7 @@ router.put('/:id/payment-status', verifyToken, isAdmin, async (req, res) => {
       // Notify student
       const { notifyUser } = require('../services/notifyUser');
       await notifyUser(connection, appRow.user_id,
-        'Payment Confirmed ✓',
+        'Payment Confirmed âœ“',
         'Your application fee payment has been recorded successfully. Your application is now being processed.',
         'payment'
       );
@@ -1634,13 +1759,13 @@ router.put('/:id/payment-status', verifyToken, isAdmin, async (req, res) => {
     res.json({ success: true, message: 'Payment status updated' });
   } catch (err) {
     await connection.rollback();
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   } finally {
     connection.release();
   }
 });
 
-// ─── Delete ───────────────────────────────────────────────────
+// â”€â”€â”€ Delete â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * DELETE /api/applications/:id
@@ -1660,7 +1785,7 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
 
     res.json({ success: true, message: 'Application deleted' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: safeError(err) });
   }
 });
 

@@ -78,7 +78,8 @@ app.use(cors({
             !origin ||
             (isDev && origin.startsWith('http://localhost')) ||
             (isDev && origin.startsWith('http://127.0.0.1')) ||
-            productionOrigins.includes(origin);
+            productionOrigins.includes(origin) ||
+            origin.endsWith('.trycloudflare.com');
 
         if (allowed) callback(null, true);
         else callback(new Error('Not allowed by CORS'));
@@ -531,6 +532,9 @@ const initDB = async () => {
             { name: 'payment_open',      type: 'VARCHAR(32) NULL' },
             { name: 'payment_close',     type: 'VARCHAR(32) NULL' },
             { name: 'payment_due_days',  type: 'INT NOT NULL DEFAULT 7' },
+            { name: 'application_registration_url', type: 'VARCHAR(255) DEFAULT NULL' },
+            { name: 'supervisor_registration_url', type: 'VARCHAR(255) DEFAULT NULL' },
+            { name: 'research_centre_registration_url', type: 'VARCHAR(255) DEFAULT NULL' },
         ];
         for (const col of settingsCols) {
             try {
@@ -651,10 +655,12 @@ const initDB = async () => {
             } catch (_) {}
         }
 
-        // application_submitted and application_id_generated_at flags on applications
+        // application_submitted, application_id_generated_at, form_locked, application_generated_date
         const appIdCols = [
-            { name: 'application_submitted',      type: 'TINYINT(1) NOT NULL DEFAULT 0' },
+            { name: 'application_submitted',       type: 'TINYINT(1) NOT NULL DEFAULT 0' },
             { name: 'application_id_generated_at', type: 'TIMESTAMP NULL DEFAULT NULL' },
+            { name: 'form_locked',                 type: 'TINYINT(1) NOT NULL DEFAULT 0' },
+            { name: 'application_generated_date',  type: 'TIMESTAMP NULL DEFAULT NULL' },
         ];
         for (const col of appIdCols) {
             try {
@@ -665,6 +671,10 @@ const initDB = async () => {
                 }
             }
         }
+        // Backfill: sync form_locked from is_locked for existing locked rows
+        try {
+            await db.query(`UPDATE applications SET form_locked = 1, application_generated_date = application_id_generated_at WHERE (is_locked = 1 OR final_submitted = 1) AND form_locked = 0`);
+        } catch (_) {}
 
         // user_id-based unique key for student_qualifications (required for ON DUPLICATE KEY)
         try {
@@ -844,7 +854,7 @@ app.use(auditMw.middleware(db, 'student'));
 // --- AUTH ROUTES ---
 const authRouter = express.Router();
 
-const { studentLoginSchema, signupSchema: studentSignupSchema, validateBody } = require('../../shared/security/inputSchemas');
+const { studentLoginSchema, studentSignupSchema, validateBody } = require('../../shared/security/inputSchemas');
 authRouter.post('/register', validateBody(studentSignupSchema), async (req, res) => {
     const { email, password, full_name } = req.body;
     try {
@@ -888,14 +898,6 @@ authRouter.post('/register', validateBody(studentSignupSchema), async (req, res)
         res.status(201).json({ message: 'User registered successfully' });
 
         const loginUrl = process.env.STUDENT_PORTAL_URL || 'http://localhost:5173';
-
-        // Send welcome email (non-blocking)
-        emailService.sendWelcomeEmail({
-            to: email,
-            studentName: full_name,
-            applicationId: null,
-            loginUrl,
-        }).catch(() => {});
 
         // Credential notification + admin log (non-blocking)
         const credSvc = require('../../shared/credential/credentialNotificationService');
@@ -1352,14 +1354,13 @@ Object.keys(dropdownConfig).forEach(key => {
 app.get('/api/dropdowns/communities', async (req, res) => {
     try {
         const [results] = await db.query(
-            `SELECT id, community_name AS name, pg_min_mark, general_fee, differently_abled_fee, status 
-             FROM community_fees 
-             WHERE status = 'active' 
-             ORDER BY community_name ASC`
+            `SELECT id, community_name AS name, pg_min_mark, general_fee, differently_abled_fee, status
+             FROM community_fees
+             ORDER BY sort_order ASC, community_name ASC`
         );
         res.json(results);
-    } catch (err) {
-        res.status(500).json(err);
+    } catch (_err) {
+        res.json([]); // table may not exist yet — return empty, let frontend use fallback
     }
 });
 
@@ -1584,12 +1585,12 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
         // avoid depending on the old APP2026-XXXXXX format.
         const userId = req.user.id;
 
-        // Prevent any edits after final submission
+        // Prevent any edits after payment confirmation (form_locked is set after payment success)
         const [lockCheck] = await db.query(
-            'SELECT final_submitted, is_locked FROM applications WHERE user_id = ?', [userId]
+            'SELECT final_submitted, is_locked, form_locked FROM applications WHERE user_id = ?', [userId]
         );
-        if (lockCheck.length > 0 && (lockCheck[0].final_submitted || lockCheck[0].is_locked)) {
-            return res.status(403).json({ success: false, message: 'Application is locked. Editing is not allowed.' });
+        if (lockCheck.length > 0 && (lockCheck[0].final_submitted || lockCheck[0].is_locked || lockCheck[0].form_locked)) {
+            return res.status(403).json({ success: false, message: 'Application has been locked after payment confirmation and can no longer be modified.' });
         }
 
         // Keep qualified_exams as a valid JSON string for the MySQL JSON column.
@@ -2216,6 +2217,8 @@ app.get('/api/student/eligibility', authenticateToken, async (req, res) => {
                     session_id,
                     payment_decision, payment_due_date, payment_expired_at, payment_resume_count,
                     rejection_category, rejection_reason, rejection_datetime,
+                    form_locked, application_generated_date, application_id_generated_at,
+                    final_submitted, is_locked, submitted_at,
                     (SELECT full_name FROM users WHERE id = a.rejected_by LIMIT 1) AS rejected_by_name
              FROM applications a WHERE a.user_id = ? LIMIT 1`,
             [req.user.id]
@@ -3524,12 +3527,11 @@ app.get('/api/dropdowns/:table', async (req, res) => {
             const [rows] = await db.query(`
                 SELECT id, community_name AS name
                 FROM community_fees
-                WHERE status = 'active'
-                ORDER BY community_name ASC
+                ORDER BY sort_order ASC, community_name ASC
             `);
             return res.json(rows);
-        } catch (err) {
-            return res.status(500).json(err);
+        } catch (_err) {
+            return res.json([]); // table may not exist yet — return empty
         }
     }
 
@@ -4250,8 +4252,8 @@ app.post('/api/application/final-submit', authenticateToken, async (req, res) =>
         const application = apps[0];
 
         // Already fully submitted & locked after payment — cannot re-submit
-        if (application.final_submitted || application.is_locked) {
-            return res.status(400).json({ success: false, message: 'Application has already been submitted and locked after payment.' });
+        if (application.final_submitted || application.is_locked || application.form_locked) {
+            return res.status(400).json({ success: false, message: 'Application has been locked after payment confirmation and can no longer be modified.' });
         }
 
         // Already awaiting payment — idempotent: just update decision if needed

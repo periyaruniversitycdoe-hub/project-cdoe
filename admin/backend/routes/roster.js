@@ -1,11 +1,15 @@
+﻿const { safeError } = require('../../../shared/security/safeError');
 'use strict';
 
 /**
- * PhD Admission Roster Management — Complete Rebuild
+ * PhD Admission Roster Management
  *
- * Merit Score = Entrance Mark (/70) + Qualification Score (/30)
- * Qualification Score = (percentage / 100) × 30
- * Total Maximum = 100
+ * Final Roster Score = Entrance Mark (/70) + Qualification Score (/20)
+ * Qualification Score = (percentage / 100) × 20
+ * Total Maximum = 90
+ *
+ * Merit/Reservation split configured per session via roster_merit_config.
+ * Default: Merit 30%, Reservation 70%.
  *
  * Reservation: OC 31%, BC 26.5%, BCM 3.5%, MBC/DNC 20%, SC 15%, SCA 3%, ST 1%
  * Conversion:  BC→OC | BCM→BC | MBC/DNC→BC | SC→MBC/DNC | ST→SC
@@ -19,7 +23,7 @@ const ExcelJS  = require('exceljs');
 const multer   = require('multer');
 const path     = require('path');
 
-// ── CONSTANTS ──────────────────────────────────────────────────────────────────
+// â”€â”€ CONSTANTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const DEFAULT_CATEGORY_PERCENTAGES = {
     'OC':       31.0,
     'BC':       26.5,
@@ -40,7 +44,7 @@ const CONVERSION_CHAIN = {
 
 const CATEGORY_ORDER = ['OC', 'BC', 'BCM', 'MBC/DNC', 'SC', 'SCA', 'ST'];
 
-// ── DB SCHEMA (auto-create on startup) ─────────────────────────────────────────
+// â”€â”€ DB SCHEMA (auto-create on startup) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 (async () => {
     try {
         await pool.query(`
@@ -125,16 +129,33 @@ const CATEGORY_ORDER = ['OC', 'BC', 'BCM', 'MBC/DNC', 'SC', 'SCA', 'ST'];
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         `);
 
-        console.log('✅ Roster Management tables verified/created.');
+
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS roster_merit_config (
+                id                     INT AUTO_INCREMENT PRIMARY KEY,
+                session_id             INT DEFAULT NULL,
+                merit_percentage       DECIMAL(5,2) NOT NULL DEFAULT 30.00,
+                reservation_percentage DECIMAL(5,2) NOT NULL DEFAULT 70.00,
+                created_at             TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at             TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_session (session_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+
+        // Add allocation_type column to roster_entries if it does not already exist
+        await pool.query(
+            `ALTER TABLE roster_entries ADD COLUMN allocation_type ENUM('MERIT','RESERVATION') NULL DEFAULT NULL`
+        ).catch(e => { if (!e.message.toLowerCase().includes('duplicate column')) throw e; });
+        console.log('âœ… Roster Management tables verified/created.');
     } catch (err) {
-        console.error('❌ Roster Management DB setup error:', err.message);
+        console.error('âŒ Roster Management DB setup error:', err.message);
     }
 })();
 
-// ── HELPERS ────────────────────────────────────────────────────────────────────
+// â”€â”€ HELPERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function calcQualScore(pct) {
-    return Math.round((parseFloat(pct) / 100) * 30 * 100) / 100;
+    return Math.round((parseFloat(pct) / 100) * 20 * 100) / 100;
 }
 
 function calcMeritScore(entranceMark, qualScore) {
@@ -221,22 +242,22 @@ const importUpload = multer({
     },
 });
 
-// ══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //  ROUTES
-// ══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 // GET /api/roster/sessions
 router.get('/sessions', verifyToken, isAdmin, async (_req, res) => {
     try {
         const [rows] = await pool.query(
             `SELECT id,
-                    CONCAT(year, ' — ', month) AS session_name,
+                    CONCAT(year, ' â€” ', month) AS session_name,
                     year, month, is_active
              FROM sessions ORDER BY id DESC`
         );
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -280,7 +301,7 @@ router.get('/dashboard/:session_id', verifyToken, isAdmin, async (req, res) => {
             },
         });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -307,7 +328,7 @@ router.get('/category-config', verifyToken, isAdmin, async (req, res) => {
         rows.sort((a, b) => CATEGORY_ORDER.indexOf(a.category_name) - CATEGORY_ORDER.indexOf(b.category_name));
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -341,12 +362,69 @@ router.put('/category-config', verifyToken, isAdmin, async (req, res) => {
         res.json({ success: true, message: 'Category configuration saved' });
     } catch (err) {
         await conn.rollback();
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     } finally {
         conn.release();
     }
 });
 
+// GET /api/roster/merit-config
+router.get('/merit-config', verifyToken, isAdmin, async (req, res) => {
+    const { session_id } = req.query;
+    try {
+        let rows = [];
+        if (session_id) {
+            [rows] = await pool.query(
+                'SELECT * FROM roster_merit_config WHERE session_id = ? LIMIT 1', [session_id]
+            );
+        }
+        if (!rows.length) {
+            [rows] = await pool.query(
+                'SELECT * FROM roster_merit_config WHERE session_id IS NULL LIMIT 1'
+            );
+        }
+        if (rows.length) {
+            return res.json({ success: true, data: rows[0] });
+        }
+        res.json({
+            success: true,
+            data: { merit_percentage: 30, reservation_percentage: 70, session_id: session_id || null },
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, message: safeError(err) });
+    }
+});
+
+// PUT /api/roster/merit-config
+router.put('/merit-config', verifyToken, isAdmin, async (req, res) => {
+    const { session_id, merit_percentage, reservation_percentage } = req.body;
+    const mp = parseFloat(merit_percentage);
+    const rp = parseFloat(reservation_percentage);
+    if (isNaN(mp) || isNaN(rp) || mp < 0 || rp < 0) {
+        return res.status(400).json({ success: false, message: 'merit_percentage and reservation_percentage must be non-negative numbers' });
+    }
+    if (Math.abs(mp + rp - 100) > 0.5) {
+        return res.status(400).json({ success: false, message: `Merit % + Reservation % must equal 100 (got ${(mp + rp).toFixed(2)})` });
+    }
+    try {
+        await pool.execute(
+            `INSERT INTO roster_merit_config (session_id, merit_percentage, reservation_percentage)
+             VALUES (?, ?, ?)
+             ON DUPLICATE KEY UPDATE merit_percentage = VALUES(merit_percentage),
+                                     reservation_percentage = VALUES(reservation_percentage),
+                                     updated_at = NOW()`,
+            [session_id || null, mp, rp]
+        );
+        await writeAuditLog(pool, {
+            sessionId: session_id, userId: req.user?.id, userEmail: req.user?.email,
+            action: 'MERIT_CONFIG_UPDATED', entityType: 'roster_merit_config', entityId: session_id,
+            newValue: { merit_percentage: mp, reservation_percentage: rp }, ip: req.ip,
+        });
+        res.json({ success: true, message: 'Merit configuration saved' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: safeError(err) });
+    }
+});
 // POST /api/roster/merit-list/generate
 router.post('/merit-list/generate', verifyToken, isAdmin, async (req, res) => {
     const { session_id } = req.body;
@@ -424,7 +502,7 @@ router.post('/merit-list/generate', verifyToken, isAdmin, async (req, res) => {
             };
         });
 
-        // Tie-break: merit DESC → entrance DESC → qual% DESC → date ASC → id ASC
+        // Tie-break: merit DESC â†’ entrance DESC â†’ qual% DESC â†’ date ASC â†’ id ASC
         meritRows.sort((a, b) => {
             if (b.final_merit_score       !== a.final_merit_score)       return b.final_merit_score - a.final_merit_score;
             if (b.entrance_mark           !== a.entrance_mark)            return b.entrance_mark - a.entrance_mark;
@@ -463,13 +541,13 @@ router.post('/merit-list/generate', verifyToken, isAdmin, async (req, res) => {
 
         res.json({
             success: true,
-            message: `Merit list generated — ${meritRows.length} candidates ranked`,
+            message: `Merit list generated â€” ${meritRows.length} candidates ranked`,
             count:   meritRows.length,
         });
     } catch (err) {
         await conn.rollback();
         console.error('[Roster] Merit generation error:', err);
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     } finally {
         conn.release();
     }
@@ -495,7 +573,7 @@ router.get('/merit-list', verifyToken, isAdmin, async (req, res) => {
         );
         res.json({ success: true, data: rows, total, page: parseInt(page), limit: parseInt(limit) });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -509,8 +587,8 @@ router.put('/merit-list/:id', verifyToken, isAdmin, async (req, res) => {
 
         const em  = parseFloat(entrance_mark           ?? ex.entrance_mark);
         const qp  = parseFloat(qualification_percentage ?? ex.qualification_percentage);
-        if (em < 0 || em > 70)  return res.status(400).json({ success: false, message: 'entrance_mark must be 0–70' });
-        if (qp < 0 || qp > 100) return res.status(400).json({ success: false, message: 'qualification_percentage must be 0–100' });
+        if (em < 0 || em > 70)  return res.status(400).json({ success: false, message: 'entrance_mark must be 0â€“70' });
+        if (qp < 0 || qp > 100) return res.status(400).json({ success: false, message: 'qualification_percentage must be 0â€“100' });
 
         const qs  = calcQualScore(qp);
         const ms  = calcMeritScore(em, qs);
@@ -543,7 +621,7 @@ router.put('/merit-list/:id', verifyToken, isAdmin, async (req, res) => {
         });
         res.json({ success: true, message: 'Merit entry updated and ranks recalculated' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -587,25 +665,68 @@ router.post('/allocations/generate', verifyToken, isAdmin, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Generate the merit list first before allocating roster' });
         }
 
-        const vacancies         = getCategoryVacancies(categoryConfig, seats);
-        const originalVacancies = { ...vacancies };
-        const conversionLog     = [];
+        // Fetch merit/reservation split config
+        const [meritCfgRows] = await conn.execute(
+            `SELECT merit_percentage, reservation_percentage FROM roster_merit_config
+             WHERE session_id = ? OR session_id IS NULL ORDER BY session_id DESC LIMIT 1`,
+            [session_id || null]
+        );
+        const meritPct       = meritCfgRows.length ? parseFloat(meritCfgRows[0].merit_percentage)       : 30;
+        const reservationPct = meritCfgRows.length ? parseFloat(meritCfgRows[0].reservation_percentage) : 70;
+        const meritSeats     = Math.round(seats * (meritPct / 100));
+        const reservationSeats = seats - meritSeats;
 
-        const entries = meritList.map(candidate => {
+        // ── Phase 1: Merit seats (top-N candidates regardless of community) ──
+        const entries    = [];
+        let   rNum       = 1;
+        const conversionLog = [];
+
+        for (let i = 0; i < Math.min(meritSeats, meritList.length); i++) {
+            const candidate = meritList[i];
+            entries.push({
+                ...candidate,
+                allocated_category: normalizeCategory(candidate.community),
+                allocation_status:  'ALLOCATED',
+                allocation_type:    'MERIT',
+                roster_number:      rNum++,
+                is_converted:       0,
+                conversion_from:    null,
+                conversion_to:      null,
+            });
+        }
+
+        // ── Phase 2: Reservation seats (remaining candidates by community) ──
+        const vacancies         = getCategoryVacancies(categoryConfig, reservationSeats);
+        const originalVacancies = { ...vacancies };
+
+        for (let i = meritSeats; i < meritList.length; i++) {
+            const candidate = meritList[i];
             const { allocatedCat, converted, from, to } = getAllocatedCategory(candidate.community, vacancies);
             if (allocatedCat) {
                 vacancies[allocatedCat]--;
                 if (converted) conversionLog.push({ application_id: candidate.application_id, from, to });
-                return { ...candidate, allocated_category: allocatedCat, allocation_status: 'ALLOCATED',
-                         is_converted: converted ? 1 : 0, conversion_from: from || null, conversion_to: to || null };
+                entries.push({
+                    ...candidate,
+                    allocated_category: allocatedCat,
+                    allocation_status:  'ALLOCATED',
+                    allocation_type:    'RESERVATION',
+                    roster_number:      rNum++,
+                    is_converted:       converted ? 1 : 0,
+                    conversion_from:    from || null,
+                    conversion_to:      to   || null,
+                });
+            } else {
+                entries.push({
+                    ...candidate,
+                    allocated_category: null,
+                    allocation_status:  'WAITING',
+                    allocation_type:    null,
+                    roster_number:      null,
+                    is_converted:       0,
+                    conversion_from:    null,
+                    conversion_to:      null,
+                });
             }
-            return { ...candidate, allocated_category: null, allocation_status: 'WAITING',
-                     is_converted: 0, conversion_from: null, conversion_to: null };
-        });
-
-        let rNum = 1;
-        for (const e of entries) {
-            e.roster_number = e.allocation_status === 'ALLOCATED' ? rNum++ : null;
         }
 
         if (session_id) {
@@ -619,39 +740,45 @@ router.post('/allocations/generate', verifyToken, isAdmin, async (req, res) => {
                 `INSERT INTO roster_entries
                  (session_id, roster_number, application_id, applicant_name, original_category,
                   allocated_category, entrance_mark, qualification_percentage, qualification_score,
-                  final_merit_score, merit_rank, allocation_status, is_converted,
+                  final_merit_score, merit_rank, allocation_status, allocation_type, is_converted,
                   conversion_from, conversion_to, created_by)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [session_id || null, e.roster_number || null,
                  e.application_id, e.applicant_name, e.community,
                  e.allocated_category, e.entrance_mark, e.qualification_percentage,
                  e.qualification_score, e.final_merit_score, e.merit_rank,
-                 e.allocation_status, e.is_converted,
+                 e.allocation_status, e.allocation_type || null, e.is_converted,
                  e.conversion_from, e.conversion_to, req.user?.id || null]
             );
         }
 
         await conn.commit();
 
-        const allocated = entries.filter(e => e.allocation_status === 'ALLOCATED').length;
-        const waiting   = entries.filter(e => e.allocation_status === 'WAITING').length;
+        const allocated    = entries.filter(e => e.allocation_status === 'ALLOCATED').length;
+        const waiting      = entries.filter(e => e.allocation_status === 'WAITING').length;
+        const meritAlloc   = entries.filter(e => e.allocation_type  === 'MERIT').length;
+        const reserveAlloc = entries.filter(e => e.allocation_type  === 'RESERVATION').length;
 
         await writeAuditLog(conn, {
             sessionId: session_id, userId: req.user?.id, userEmail: req.user?.email,
             action: 'ROSTER_GENERATED', entityType: 'roster_entries', entityId: session_id,
-            newValue: { total: entries.length, allocated, waiting, conversions: conversionLog.length, total_seats: seats, vacancies: originalVacancies },
+            newValue: { total: entries.length, allocated, waiting, merit_allocated: meritAlloc, reserve_allocated: reserveAlloc,
+                        conversions: conversionLog.length, total_seats: seats, merit_seats: meritSeats,
+                        reservation_seats: reservationSeats, vacancies: originalVacancies },
             ip: req.ip,
         });
 
         res.json({
             success: true,
-            message: `Roster generated — ${allocated} allocated, ${waiting} on waiting list`,
-            data:    { total: entries.length, allocated, waiting, conversions: conversionLog.length, vacancies: originalVacancies },
+            message: `Roster generated — ${allocated} allocated (${meritAlloc} merit, ${reserveAlloc} reservation), ${waiting} on waiting list`,
+            data:    { total: entries.length, allocated, waiting, merit_allocated: meritAlloc,
+                       reserve_allocated: reserveAlloc, conversions: conversionLog.length,
+                       merit_seats: meritSeats, reservation_seats: reservationSeats, vacancies: originalVacancies },
         });
     } catch (err) {
         await conn.rollback();
         console.error('[Roster] Allocation error:', err);
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     } finally {
         conn.release();
     }
@@ -678,7 +805,7 @@ router.get('/allocations', verifyToken, isAdmin, async (req, res) => {
         );
         res.json({ success: true, data: rows, total, page: parseInt(page), limit: parseInt(limit) });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -704,7 +831,7 @@ router.put('/allocations/:id', verifyToken, isAdmin, async (req, res) => {
         });
         res.json({ success: true, message: 'Roster entry updated' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -751,8 +878,8 @@ router.post('/import/preview', verifyToken, isAdmin, importUpload.single('file')
             const name       = get(row, 'applicant_name') || get(row, 'name');
 
             const errs = [];
-            if (isNaN(entrance) || entrance < 0 || entrance > 70) errs.push('entrance_mark must be 0–70');
-            if (isNaN(qualPct)  || qualPct  < 0 || qualPct  > 100) errs.push('qualification_percentage must be 0–100');
+            if (isNaN(entrance) || entrance < 0 || entrance > 70) errs.push('entrance_mark must be 0â€“70');
+            if (isNaN(qualPct)  || qualPct  < 0 || qualPct  > 100) errs.push('qualification_percentage must be 0â€“100');
             if (seen.has(appId)) errs.push('Duplicate application_id in file');
             seen.add(appId);
 
@@ -841,10 +968,10 @@ router.post('/import/confirm', verifyToken, isAdmin, async (req, res) => {
             newValue: { imported, updated, total: valid.length }, ip: req.ip,
         });
 
-        res.json({ success: true, message: `Import complete — ${imported} new, ${updated} updated`, imported, updated });
+        res.json({ success: true, message: `Import complete â€” ${imported} new, ${updated} updated`, imported, updated });
     } catch (err) {
         await conn.rollback();
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     } finally {
         conn.release();
     }
@@ -868,10 +995,10 @@ router.get('/export', verifyToken, isAdmin, async (req, res) => {
                 merit_rank:'Merit Rank', application_id:'Application ID', applicant_name:'Candidate Name',
                 community:'Category', entrance_mark:'Entrance Mark (/70)',
                 qualification_source:'Qual. Source', qualification_percentage:'Qual. %',
-                qualification_score:'Qual. Score (/30)', final_merit_score:'Final Merit (/100)',
+                qualification_score:'Qual. Score (/20)', final_merit_score:'Final Roster Score (/90)',
             };
         } else {
-            sheetTitle = category ? `Roster — ${category}` : 'Full Roster';
+            sheetTitle = category ? `Roster â€” ${category}` : 'Full Roster';
             const where = [], params = [];
             if (session_id) { where.push('session_id = ?');        params.push(session_id); }
             if (category)   { where.push('original_category = ?'); params.push(category); }
@@ -885,8 +1012,8 @@ router.get('/export', verifyToken, isAdmin, async (req, res) => {
                 roster_number:'Roster #', merit_rank:'Merit Rank', application_id:'Application ID',
                 applicant_name:'Candidate Name', original_category:'Original Category',
                 allocated_category:'Allocated Category', entrance_mark:'Entrance (/70)',
-                qualification_percentage:'Qual. %', qualification_score:'Qual. Score (/30)',
-                final_merit_score:'Final Merit (/100)', allocation_status:'Status',
+                qualification_percentage:'Qual. %', qualification_score:'Qual. Score (/20)',
+                final_merit_score:'Final Roster Score (/90)', allocation_status:'Status',
                 is_converted:'Converted?', conversion_from:'Conv. From', conversion_to:'Conv. To',
             };
         }
@@ -908,13 +1035,13 @@ router.get('/export', verifyToken, isAdmin, async (req, res) => {
         }
 
         const wb = new ExcelJS.Workbook();
-        wb.creator = 'PhD ERP — Periyar University';
+        wb.creator = 'PhD ERP â€” Periyar University';
         wb.created = new Date();
         const wsSheet = wb.addWorksheet(sheetTitle);
 
         wsSheet.mergeCells(1, 1, 1, columns.length);
         const tc = wsSheet.getCell('A1');
-        tc.value     = `Periyar University PhD Admissions — ${sheetTitle}`;
+        tc.value     = `Periyar University PhD Admissions â€” ${sheetTitle}`;
         tc.font      = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } };
         tc.alignment = { horizontal: 'center', vertical: 'middle' };
         tc.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F3864' } };
@@ -973,7 +1100,7 @@ router.get('/export', verifyToken, isAdmin, async (req, res) => {
         res.end();
     } catch (err) {
         console.error('[Roster] Export error:', err);
-        if (!res.headersSent) res.status(500).json({ success: false, message: err.message });
+        if (!res.headersSent) res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -996,7 +1123,7 @@ router.get('/audit-logs', verifyToken, isAdmin, async (req, res) => {
         );
         res.json({ success: true, data: rows, total, page: parseInt(page), limit: parseInt(limit) });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 

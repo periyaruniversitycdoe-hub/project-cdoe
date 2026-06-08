@@ -1,15 +1,16 @@
-/**
- * Qualification Types — Admin CRUD
- * Manages dynamic qualification options (NET, SET, JRF, SLET, GATE, M.Phil, Other…)
- * is_exemption = 1 → student bypasses entrance exam and goes direct to interview
+﻿/**
+ * Qualification Types â€” Admin CRUD
+ * Manages dynamic qualification options (NET, SET, JRF, SLET, GATE, M.Phil, Otherâ€¦)
+ * is_exemption = 1 â†’ student bypasses entrance exam and goes direct to interview
  */
 
 const express = require('express');
+const { safeError } = require('../../../shared/security/safeError');
 const router  = express.Router();
 const pool    = require('../config/db');
 const { verifyToken, isAdmin } = require('../middleware/auth');
 
-// ─── GET /api/qualifications — list all (public read for student form) ────────
+// â”€â”€â”€ GET /api/qualifications â€” list all (public read for student form) â”€â”€â”€â”€â”€â”€â”€â”€
 router.get('/', async (req, res) => {
     try {
         const activeOnly = req.query.active === '1';
@@ -35,11 +36,11 @@ router.get('/', async (req, res) => {
         res.json({ success: true, data: rows });
     } catch (err) {
         console.error('GET qualifications error:', err);
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ─── POST /api/qualifications — create new qualification type ─────────────────
+// â”€â”€â”€ POST /api/qualifications â€” create new qualification type â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.post('/', verifyToken, isAdmin, async (req, res) => {
     const { qualification_name, is_exemption, is_active, display_order } = req.body;
 
@@ -72,11 +73,11 @@ router.post('/', verifyToken, isAdmin, async (req, res) => {
             });
         }
         console.error('POST qualification error:', err);
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ─── PUT /api/qualifications/:id — full update ────────────────────────────────
+// â”€â”€â”€ PUT /api/qualifications/:id â€” full update â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.put('/:id', verifyToken, isAdmin, async (req, res) => {
     const { id } = req.params;
     const { qualification_name, is_exemption, is_active, display_order } = req.body;
@@ -121,11 +122,11 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
             return res.status(409).json({ success: false, message: 'Name already exists' });
         }
         console.error('PUT qualification error:', err);
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ─── PUT /api/qualifications/:id/toggle — toggle active/inactive ──────────────
+// â”€â”€â”€ PUT /api/qualifications/:id/toggle â€” toggle active/inactive â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.put('/:id/toggle', verifyToken, isAdmin, async (req, res) => {
     try {
         const [result] = await pool.execute(
@@ -137,11 +138,11 @@ router.put('/:id/toggle', verifyToken, isAdmin, async (req, res) => {
         }
         res.json({ success: true, message: 'Status toggled successfully' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ─── DELETE /api/qualifications/:id — safe delete ────────────────────────────
+// â”€â”€â”€ DELETE /api/qualifications/:id â€” safe delete â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
     try {
         // Block deletion if any student has actively selected this qualification
@@ -166,11 +167,11 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
         res.json({ success: true, message: 'Qualification deleted successfully' });
     } catch (err) {
         console.error('DELETE qualification error:', err);
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ─── GET /api/qualifications/stats — usage stats per qualification ────────────
+// â”€â”€â”€ GET /api/qualifications/stats â€” usage stats per qualification â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.get('/stats', verifyToken, isAdmin, async (req, res) => {
     try {
         const [rows] = await pool.execute(
@@ -185,7 +186,7 @@ router.get('/stats', verifyToken, isAdmin, async (req, res) => {
         );
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 

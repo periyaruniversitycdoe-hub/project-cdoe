@@ -1,6 +1,7 @@
+﻿const { safeError } = require('../../../shared/security/safeError');
 'use strict';
 /**
- * Institute Master — Enterprise CRUD + Excel Import/Export + Smart Duplicate Engine
+ * Institute Master â€” Enterprise CRUD + Excel Import/Export + Smart Duplicate Engine
  * Mounted at: /api/institutes  (admin/backend/server.js)
  */
 const express  = require('express');
@@ -11,7 +12,7 @@ const pool     = require('../config/db');
 const { verifyToken, isAdmin } = require('../middleware/auth');
 const { postUploadCheckMemory } = require('../../../shared/security/fileValidator');
 
-// ── File Upload (memory storage — Excel parse only) ──────────────────────────
+// â”€â”€ File Upload (memory storage â€” Excel parse only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const upload = multer({
     storage: multer.memoryStorage(),
     limits:  { fileSize: 10 * 1024 * 1024 },  // 10 MB
@@ -22,13 +23,13 @@ const upload = multer({
     },
 });
 
-// ── Normalizers ──────────────────────────────────────────────────────────────
+// â”€â”€ Normalizers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const normalizeCode  = v => (v || '').toString().trim().toUpperCase();
 const normalizeEmail = v => (v || '').toString().trim().toLowerCase();
 const normalizeName  = v => (v || '').toString().trim();
 const cellStr        = v => (v === null || v === undefined ? '' : v.toString().trim());
 
-// Extract first phone-length digit sequence — handles "9876543210, 9123456789" or
+// Extract first phone-length digit sequence â€” handles "9876543210, 9123456789" or
 // "9786345875 4272-270545" style cells (multiple numbers in one field)
 function normalizeMobile(v) {
     if (!v) return '';
@@ -43,7 +44,7 @@ function normalizeMobile(v) {
 }
 
 
-// ── Audit Logger ──────────────────────────────────────────────────────────────
+// â”€â”€ Audit Logger â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function audit (conn, action, institId, adminId, ip, oldVal, newVal, extra) {
     try {
         await conn.execute(
@@ -65,7 +66,7 @@ async function audit (conn, action, institId, adminId, ip, oldVal, newVal, extra
     }
 }
 
-// ── SELECT helper ─────────────────────────────────────────────────────────────
+// â”€â”€ SELECT helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Returns rows with serial_no injected as pagination-aware counter
 function attachSerial (rows, page, limit) {
     const offset = (page - 1) * limit;
@@ -118,7 +119,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
 });
 
 // ============================================================================
-// GET /api/institutes/dropdown  — public, active only, for supervisor form
+// GET /api/institutes/dropdown  â€” public, active only, for supervisor form
 // ============================================================================
 router.get('/dropdown', async (req, res) => {
     try {
@@ -135,7 +136,7 @@ router.get('/dropdown', async (req, res) => {
 });
 
 // ============================================================================
-// GET /api/institutes/template  — downloadable Excel template
+// GET /api/institutes/template  â€” downloadable Excel template
 // ============================================================================
 router.get('/template', verifyToken, isAdmin, async (req, res) => {
     try {
@@ -276,7 +277,7 @@ router.get('/export', verifyToken, isAdmin, async (req, res) => {
 });
 
 // ============================================================================
-// POST /api/institutes  — create single institute
+// POST /api/institutes  â€” create single institute
 // ============================================================================
 router.post('/', verifyToken, isAdmin, async (req, res) => {
     const conn = await pool.getConnection();
@@ -296,7 +297,7 @@ router.post('/', verifyToken, isAdmin, async (req, res) => {
         if (normEmail  && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normEmail))
             return res.status(400).json({ success: false, message: 'Invalid email format' });
         if (normMobile && (normMobile.length < 10 || normMobile.length > 15))
-            return res.status(400).json({ success: false, message: 'Principal Mobile must be 10–15 digits' });
+            return res.status(400).json({ success: false, message: 'Principal Mobile must be 10â€“15 digits' });
 
         // Duplicate checks
         const [[dupCode]] = await conn.execute(
@@ -357,7 +358,7 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
         if (normEmail  && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normEmail))
             return res.status(400).json({ success: false, message: 'Invalid email format' });
         if (normMobile && (normMobile.length < 10 || normMobile.length > 15))
-            return res.status(400).json({ success: false, message: 'Principal Mobile must be 10–15 digits' });
+            return res.status(400).json({ success: false, message: 'Principal Mobile must be 10â€“15 digits' });
 
         const [[dupCode]] = await conn.execute(
             'SELECT id FROM master_institutes WHERE college_code = ? AND id != ?', [normCode, id]);
@@ -469,9 +470,9 @@ router.post('/import/preview', verifyToken, isAdmin, upload.single('file'), post
         const ws = wb.worksheets[0];
         if (!ws) return res.status(400).json({ success: false, message: 'Excel file has no worksheets' });
 
-        // ── Header key normaliser ─────────────────────────────────────────────
-        // Strip punctuation, collapse spaces → underscores, lowercase.
-        // e.g. "Name of the College *" → "name_of_the_college"
+        // â”€â”€ Header key normaliser â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // Strip punctuation, collapse spaces â†’ underscores, lowercase.
+        // e.g. "Name of the College *" â†’ "name_of_the_college"
         const cleanHeaderKey = raw =>
             (raw || '').toString().toLowerCase()
                 .replace(/[:\*\.\(\)\[\]#!?]/g, '')
@@ -479,28 +480,28 @@ router.post('/import/preview', verifyToken, isAdmin, upload.single('file'), post
                 .replace(/_+/g, '_')
                 .trim();
 
-        // ── Known header → canonical DB field aliases ─────────────────────────
+        // â”€â”€ Known header â†’ canonical DB field aliases â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // Covers: Periyar Excel headers, our template headers, PDF export headers.
         const HEADER_ALIASES = {
-            // college_code ────────────────────────────────────────────────────
+            // college_code â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             'college_code':                    'college_code',
             'collegecode':                     'college_code',
             'code':                            'college_code',
             'college_code_':                   'college_code',
-            // college_name ────────────────────────────────────────────────────
+            // college_name â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             'college_name':                    'college_name',
             'name_of_the_college':             'college_name',
             'name_of_college':                 'college_name',
             'name_of_the_college_':            'college_name',
             'college':                         'college_name',
-            // principal_name ──────────────────────────────────────────────────
+            // principal_name â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             'principal_name':                  'principal_name',
             'name_of_the_principal':           'principal_name',
             'name_of_principal':               'principal_name',
             'name_of_the_principal_':          'principal_name',
             'principal':                       'principal_name',
             'name_of_the_head_of_institution': 'principal_name',
-            // principal_mobile ────────────────────────────────────────────────
+            // principal_mobile â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             'principal_mobile':                'principal_mobile',
             'phone_number_of_the_principal':   'principal_mobile',
             'phone_number_of_principal':       'principal_mobile',
@@ -509,7 +510,7 @@ router.post('/import/preview', verifyToken, isAdmin, upload.single('file'), post
             'principal_phone_number':          'principal_mobile',
             'mobile_of_the_principal':         'principal_mobile',
             'mobile':                          'principal_mobile',
-            // college_email ───────────────────────────────────────────────────
+            // college_email â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             'college_email':                   'college_email',
             'college_mail_id':                 'college_email',
             'college_mail_id_':                'college_email',
@@ -517,14 +518,14 @@ router.post('/import/preview', verifyToken, isAdmin, upload.single('file'), post
             'mail_id':                         'college_email',
             'email_id':                        'college_email',
             'email':                           'college_email',
-            // college_phone ───────────────────────────────────────────────────
+            // college_phone â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             'college_phone_number':            'college_phone',
             'college_phone':                   'college_phone',
             'college_phone_number_':           'college_phone',
             'phone_number':                    'college_phone',
         };
 
-        // Serial-column key variants — ignored during data extraction
+        // Serial-column key variants â€” ignored during data extraction
         const SERIAL_KEYS = new Set([
             's_no', 'sno', 'serial_no', 'serial', 's_no_', 'sl_no', 'sl_no_', 'no',
         ]);
@@ -534,17 +535,17 @@ router.post('/import/preview', verifyToken, isAdmin, upload.single('file'), post
             'principal_mobile', 'college_email', 'college_phone',
         ];
 
-        // ── Parse optional manual column_map from request body ────────────────
+        // â”€â”€ Parse optional manual column_map from request body â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // Sent as multipart field: column_map = JSON string { "excel_key": "db_field" }
         let manualMap = {};
         try { manualMap = JSON.parse(req.body.column_map || '{}'); } catch { manualMap = {}; }
 
-        // ── Smart header row detection ────────────────────────────────────────
+        // â”€â”€ Smart header row detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // Scan up to the first 30 rows (skips Tamil banner text, university logo
-        // rows, merged heading rows, etc.).  The first row where ≥ 2 cells match
+        // rows, merged heading rows, etc.).  The first row where â‰¥ 2 cells match
         // a known alias is treated as the column-header row.
         let headerRowIdx   = 1;          // detected header row index (1-based)
-        let fieldCols      = {};         // canonical field → column index
+        let fieldCols      = {};         // canonical field â†’ column index
         let hasSerialCol   = false;
         let allExcelHeaders = [];        // { col, raw, key } for every non-empty cell in header row
 
@@ -566,7 +567,7 @@ router.post('/import/preview', verifyToken, isAdmin, upload.single('file'), post
                 if (SERIAL_KEYS.has(key)) hasSerial = true;
             });
 
-            // ≥ 2 recognised headers → this is the column-header row
+            // â‰¥ 2 recognised headers â†’ this is the column-header row
             if (matched >= 2) {
                 headerRowIdx    = si;
                 fieldCols       = tempCols;
@@ -576,20 +577,20 @@ router.post('/import/preview', verifyToken, isAdmin, upload.single('file'), post
             }
         }
 
-        // ── Apply manual mapping overrides on top of auto-detected ────────────
+        // â”€â”€ Apply manual mapping overrides on top of auto-detected â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         for (const [excelKey, dbField] of Object.entries(manualMap)) {
             if (!ALL_DB_FIELDS.includes(dbField)) continue;
             const hdr = allExcelHeaders.find(h => h.key === excelKey || h.raw === excelKey);
             if (hdr) fieldCols[dbField] = hdr.col;
         }
 
-        // ── Identify unresolved / unmapped Excel headers ──────────────────────
+        // â”€â”€ Identify unresolved / unmapped Excel headers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const unmappedHeaders   = allExcelHeaders.filter(
             h => !HEADER_ALIASES[h.key] && !SERIAL_KEYS.has(h.key)
         );
         const missingRequired   = ['college_code', 'college_name'].filter(f => !fieldCols[f]);
 
-        // ── Fallback column positions (if still undetected) ───────────────────
+        // â”€â”€ Fallback column positions (if still undetected) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const base = hasSerialCol ? 1 : 0;
         const C = {
             college_code:     fieldCols['college_code']     ?? (base + 1),
@@ -600,7 +601,7 @@ router.post('/import/preview', verifyToken, isAdmin, upload.single('file'), post
             college_phone:    fieldCols['college_phone']    ?? (base + 6),
         };
 
-        // ── If headers completely undetectable: early-return needs_mapping ─────
+        // â”€â”€ If headers completely undetectable: early-return needs_mapping â”€â”€â”€â”€â”€
         if (allExcelHeaders.length === 0) {
             return res.json({
                 success:       true,
@@ -614,17 +615,17 @@ router.post('/import/preview', verifyToken, isAdmin, upload.single('file'), post
             });
         }
 
-        // ── Load existing institutes for duplicate detection ───────────────────
+        // â”€â”€ Load existing institutes for duplicate detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const [existing] = await pool.execute('SELECT * FROM master_institutes');
         const byCode   = new Map(existing.map(r => [normalizeCode(r.college_code || r.abbreviation), r]));
         const byName   = new Map(existing.map(r => [r.name.trim().toLowerCase(), r]));
-        // email / mobile are NOT used for duplicate detection — only code and name are checked
+        // email / mobile are NOT used for duplicate detection â€” only code and name are checked
 
         const preview      = { new: [], duplicate: [], modified: [] };
         const seenCodes    = new Set();
         let   ignoredCount = 0;
 
-        // ── Iterate data rows (skip everything up to and including headerRowIdx) ─
+        // â”€â”€ Iterate data rows (skip everything up to and including headerRowIdx) â”€
         ws.eachRow((row, rowIdx) => {
             if (rowIdx <= headerRowIdx) return;   // skip banner rows + header row
 
@@ -639,7 +640,7 @@ router.post('/import/preview', verifyToken, isAdmin, upload.single('file'), post
             const pname  = normalizeName(cv(C.principal_name));
             const phone  = cv(C.college_phone).trim();
 
-            // ── Soft warnings — non-blocking, shown for information only ──────
+            // â”€â”€ Soft warnings â€” non-blocking, shown for information only â”€â”€â”€â”€â”€â”€
             const softWarnings = [];
             if (!code) softWarnings.push('College Code is missing');
             if (!name) softWarnings.push('College Name is missing');
@@ -651,7 +652,7 @@ router.post('/import/preview', verifyToken, isAdmin, upload.single('file'), post
                 ...(softWarnings.length ? { warnings: softWarnings } : {}),
             };
 
-            // ── Hard duplicate: same code already seen in THIS FILE ───────────
+            // â”€â”€ Hard duplicate: same code already seen in THIS FILE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             // Only tracked when college_code is non-empty
             if (code) {
                 if (seenCodes.has(code)) {
@@ -665,7 +666,7 @@ router.post('/import/preview', verifyToken, isAdmin, upload.single('file'), post
             const existByName = name ? byName.get(name.trim().toLowerCase()) : null;
             const matchedExisting = existByCode || existByName;
 
-            // ── Hard duplicate: same college_code or college_name already in DB ──
+            // â”€â”€ Hard duplicate: same college_code or college_name already in DB â”€â”€
             if (matchedExisting) {
                 const e = matchedExisting;
                 const changes = [];
@@ -716,7 +717,7 @@ router.post('/import/preview', verifyToken, isAdmin, upload.single('file'), post
                 ignored:   ignoredCount,
                 warnings:  warningRowCount,
             },
-            // ── Column-mapping metadata returned to frontend ──────────────────
+            // â”€â”€ Column-mapping metadata returned to frontend â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             detected_info: {
                 header_row:       headerRowIdx,
                 auto_mapped:      fieldCols,            // { db_field: colIdx }
@@ -741,13 +742,13 @@ router.post('/import/confirm', verifyToken, isAdmin, async (req, res) => {
     const conn = await pool.getConnection();
     await conn.beginTransaction();
 
-    // warnings replaces errors — raw SQL messages are never exposed to the UI
+    // warnings replaces errors â€” raw SQL messages are never exposed to the UI
     const results = { inserted: 0, updated: 0, skipped: 0, ignored: 0, warnings: [] };
 
     try {
-        // ── Insert new rows ───────────────────────────────────────────────────
+        // â”€â”€ Insert new rows â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         for (const row of new_rows) {
-            // Empty college_code → NULL (MySQL UNIQUE index allows multiple NULLs)
+            // Empty college_code â†’ NULL (MySQL UNIQUE index allows multiple NULLs)
             const normCode = normalizeCode(row.college_code) || null;
             try {
                 // Pre-check: skip only when a non-null code already exists in DB
@@ -773,18 +774,18 @@ router.post('/import/confirm', verifyToken, isAdmin, async (req, res) => {
                 results.inserted++;
             } catch (e) {
                 if (e.code === 'ER_DUP_ENTRY') {
-                    // Duplicate college_code — silent skip, no warning shown to user
+                    // Duplicate college_code â€” silent skip, no warning shown to user
                     results.skipped++;
                 } else {
-                    // Unexpected DB error — soft warning only
+                    // Unexpected DB error â€” soft warning only
                     const label = normCode || `row ${row.row_number || '?'}`;
-                    results.warnings.push({ row: label, note: 'Row could not be saved — skipped automatically' });
+                    results.warnings.push({ row: label, note: 'Row could not be saved â€” skipped automatically' });
                     results.skipped++;
                 }
             }
         }
 
-        // ── Handle modified rows ──────────────────────────────────────────────
+        // â”€â”€ Handle modified rows â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         for (const row of modified_rows) {
             if (row.action === 'ignore') { results.ignored++; continue; }
             if (row.action !== 'update') { results.skipped++; continue; }
@@ -792,7 +793,7 @@ router.post('/import/confirm', verifyToken, isAdmin, async (req, res) => {
                 const [[exist]] = await conn.execute(
                     'SELECT * FROM master_institutes WHERE id = ?', [row.existing_id]);
                 if (!exist) {
-                    results.warnings.push({ row: row.college_code || '?', note: 'Record not found — skipped' });
+                    results.warnings.push({ row: row.college_code || '?', note: 'Record not found â€” skipped' });
                     results.skipped++;
                     continue;
                 }
@@ -818,7 +819,7 @@ router.post('/import/confirm', verifyToken, isAdmin, async (req, res) => {
                 results.updated++;
             } catch (e) {
                 const label = row.college_code || `row ${row.row_number || '?'}`;
-                results.warnings.push({ row: label, note: 'Update could not be applied — skipped' });
+                results.warnings.push({ row: label, note: 'Update could not be applied â€” skipped' });
                 results.skipped++;
             }
         }

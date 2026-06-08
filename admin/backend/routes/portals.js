@@ -1,3 +1,4 @@
+﻿const { safeError } = require('../../../shared/security/safeError');
 'use strict';
 
 const express = require('express');
@@ -9,7 +10,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// ── DB Schema Auto-Migration & Seeding ────────────────────────────────────────
+// â”€â”€ DB Schema Auto-Migration & Seeding â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 (async () => {
     try {
         await pool.query(`
@@ -31,7 +32,7 @@ const fs = require('fs');
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         `);
-        console.log('✅ portal_management table verified/created.');
+        console.log('âœ… portal_management table verified/created.');
 
         // Seed default portals if table is empty
         const [rows] = await pool.query('SELECT COUNT(*) as count FROM portal_management');
@@ -83,14 +84,14 @@ const fs = require('fs');
                     [p.name, p.slug, p.description, p.banner_image, p.icon, p.login_route, p.button_label, p.display_order, p.is_active, p.theme_color]
                 );
             }
-            console.log('✅ Default portal cards seeded successfully.');
+            console.log('âœ… Default portal cards seeded successfully.');
         }
     } catch (err) {
         console.error('Error in portal_management auto-migration:', err);
     }
 })();
 
-// ── Audit Logger ─────────────────────────────────────────────────────────────
+// â”€â”€ Audit Logger â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function auditLog(adminId, action, portalId, oldValue, newValue, ip) {
     try {
         await pool.execute(
@@ -110,7 +111,7 @@ async function auditLog(adminId, action, portalId, oldValue, newValue, ip) {
     }
 }
 
-// ── Multer Storage Configuration (Secure Uplods) ──────────────────────────────
+// â”€â”€ Multer Storage Configuration (Secure Uplods) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const sanitizeFilename = (name) => path.basename(name).replace(/[^a-zA-Z0-9._-]/g, '_');
 
 const storage = multer.diskStorage({
@@ -147,14 +148,14 @@ function copyToStudentUploads(filename) {
         }
         const studentDest = path.join(studentDestFolder, filename);
         fs.copyFileSync(adminSrc, studentDest);
-        console.log(`✅ Symmetric local uploads copy succeeded: ${filename}`);
+        console.log(`âœ… Symmetric local uploads copy succeeded: ${filename}`);
     } catch (e) {
-        // Soft fail on symlink/copy issues — non-critical for staging/prod
+        // Soft fail on symlink/copy issues â€” non-critical for staging/prod
         console.log(`Symmetric local uploads copy warning: ${e.message}`);
     }
 }
 
-// ── CRUD ROUTES ──────────────────────────────────────────────────────────────
+// â”€â”€ CRUD ROUTES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // GET /api/portals - Fetch all portals (Admin List)
 router.get('/', verifyToken, isAdmin, async (req, res) => {
@@ -162,7 +163,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
         const [rows] = await pool.query('SELECT * FROM portal_management ORDER BY display_order ASC');
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -172,7 +173,7 @@ router.get('/active', async (req, res) => {
         const [rows] = await pool.query('SELECT * FROM portal_management WHERE is_active = 1 ORDER BY display_order ASC');
         res.json({ success: true, data: rows });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -183,7 +184,7 @@ router.get('/:id', verifyToken, isAdmin, async (req, res) => {
         if (!rows.length) return res.status(404).json({ success: false, message: 'Portal not found' });
         res.json({ success: true, data: rows[0] });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -224,7 +225,7 @@ router.post('/', verifyToken, isAdmin, async (req, res) => {
 
         res.status(201).json({ success: true, message: 'Portal card created successfully.', id: result.insertId });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -269,7 +270,7 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
 
         res.json({ success: true, message: 'Portal card updated successfully.' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -290,7 +291,7 @@ router.patch('/:id/status', verifyToken, isAdmin, async (req, res) => {
 
         res.json({ success: true, message: 'Portal status toggled successfully.' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
@@ -312,7 +313,7 @@ router.put('/reorder', verifyToken, isAdmin, async (req, res) => {
         res.json({ success: true, message: 'Portals reordered successfully.' });
     } catch (err) {
         await conn.rollback();
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     } finally {
         conn.release();
     }
@@ -330,7 +331,7 @@ router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
 
         res.json({ success: true, message: 'Portal card deleted successfully.' });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 

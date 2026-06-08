@@ -1,6 +1,7 @@
-'use strict';
+﻿'use strict';
 
 const express = require('express');
+const { safeError } = require('../../../shared/security/safeError');
 const router  = express.Router();
 const pool    = require('../config/db');
 const { verifyToken, isAdmin } = require('../middleware/auth');
@@ -32,7 +33,7 @@ pool.execute(`
  'ALTER TABLE credential_logs ADD COLUMN password_change_ip VARCHAR(45) NULL DEFAULT NULL',
 ].forEach(sql => pool.execute(sql).catch(() => {}));
 
-// ── GET /api/credential-logs — list with search, filter, pagination ───────────
+// â”€â”€ GET /api/credential-logs â€” list with search, filter, pagination â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.get('/', verifyToken, isAdmin, async (req, res) => {
     try {
         const page      = Math.max(1, parseInt(req.query.page)  || 1);
@@ -93,7 +94,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
                ${baseQuery}
                ORDER BY cl.created_at DESC`;
 
-        // pool.execute (prepared stmts) misfires on LIMIT/OFFSET — embed as integers and use pool.query
+        // pool.execute (prepared stmts) misfires on LIMIT/OFFSET â€” embed as integers and use pool.query
         const finalQuery = isAll
             ? selectQuery
             : `${selectQuery} LIMIT ${limit} OFFSET ${offset}`;
@@ -116,11 +117,11 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
             summary,
         });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ── GET /api/credential-logs/:id — single credential detail ──────────────────
+// â”€â”€ GET /api/credential-logs/:id â€” single credential detail â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.get('/:id', verifyToken, isAdmin, async (req, res) => {
     try {
         const [rows] = await pool.execute(
@@ -133,17 +134,17 @@ router.get('/:id', verifyToken, isAdmin, async (req, res) => {
             return res.status(404).json({ success: false, message: 'Credential log not found' });
         res.json({ success: true, data: rows[0] });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 
-// ── DELETE /api/credential-logs/:id — remove a single log ────────────────────
+// â”€â”€ DELETE /api/credential-logs/:id â€” remove a single log â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
     try {
         await pool.execute('DELETE FROM credential_logs WHERE id = ?', [req.params.id]);
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: safeError(err) });
     }
 });
 

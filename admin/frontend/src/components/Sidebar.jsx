@@ -6,7 +6,7 @@ import {
   ChevronRight, Ticket, CalendarRange, MapPin, GraduationCap,
   IndianRupee, CreditCard, UserCheck, BookOpen, X, Award, Users,
   BarChart3, ShieldCheck, UserSquare2, Building2, Database, History, Layers, KeyRound,
-  Home, Megaphone, ClipboardList, MessageCircle, GitFork
+  Home, ClipboardList, MessageCircle, GitFork
 } from 'lucide-react';
 import { useSession } from '../contexts/SessionContext';
 
@@ -61,7 +61,6 @@ const menuStructure = [
     group: 'COMMUNICATION',
     items: [
       { icon: MessageCircle,   label: 'Chatbot & Knowledge Base', path: '/chatbot-management' },
-      { icon: Megaphone,       label: 'Announcement Mgmt',     path: '/announcements' },
       { icon: BookOpen,        label: 'News & Announcements',  path: '/news-announcements' },
       { icon: Layers,          label: 'Email Categories',       path: '/email-templates' },
       { icon: Database,        label: 'Email Services',        path: '/email-services' },
