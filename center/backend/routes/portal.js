@@ -47,15 +47,15 @@ router.get('/me', verifyToken, async (req, res) => {
                     rc.address_1, rc.address_2, rc.address_3, rc.pincode,
                     rc.contact_number, rc.email AS centre_email, rc.hod_email,
                     rc.recognition_date, rc.status AS centre_status, rc.recognition_certificate,
+                    -- Institute Details — sourced directly from the registration form
+                    rc.college_code,   rc.college_name,
+                    rc.principal_name, rc.principal_mobile, rc.college_phone,
                     ct.name  AS centre_type_name,
-                    d.name   AS district_name,
-                    mi.college_code AS college_code,
-                    mi.name         AS college_name
+                    d.name   AS district_name
              FROM center_users cu
              LEFT JOIN research_centres rc ON cu.center_id = rc.id
              LEFT JOIN master_centre_types ct ON rc.centre_type_id = ct.id
              LEFT JOIN master_districts d    ON rc.district_id    = d.id
-             LEFT JOIN master_institutes mi  ON rc.institute_id   = mi.id
              WHERE cu.id = ?`,
             [req.user.id]
         );
@@ -211,23 +211,34 @@ router.post('/application', verifyToken, centerUpload, postUploadCheck(), async 
             if (instRows.length > 0) resolvedInstituteId = instRows[0].id;
         }
 
+        const str = v => (v != null ? String(v).trim() : null) || null;
+
         const centerData = {
-            name:           data.name,
-            // abbreviation stores the college_code string for reference / display
-            abbreviation:   submittedCode || data.abbreviation || null,
-            institute_id:   resolvedInstituteId,
-            centre_type_id: parseId(data.centre_type_id),
-            address_1:      data.address_1      || null,
-            address_2:      data.address_2      || null,
-            address_3:      data.address_3      || null,
-            district_id:    parseId(data.district_id),
-            pincode:        data.pincode        || null,
-            contact_number: data.contact_number || null,
-            email:          data.email          || null,
-            hod_email:      data.hod_email      || null,
+            name:             str(data.name),
+            // Step 1 — Institute Details: stored directly so Institute Master can
+            // be auto-synced on approval without any separate data entry.
+            college_code:     str(data.college_code)     || submittedCode || null,
+            college_name:     str(data.college_name)     || null,
+            principal_name:   str(data.principal_name)   || null,
+            principal_mobile: str(data.principal_mobile) || null,
+            hod_email:        str(data.hod_email)        || null,
+            college_phone:    str(data.college_phone)    || null,
+            // abbreviation kept for backward-compat display
+            abbreviation:     str(data.college_code) || submittedCode || str(data.abbreviation) || null,
+            institute_id:     resolvedInstituteId,
+            centre_type_id:   parseId(data.centre_type_id),
+            // Step 2 — Address & Contact
+            address_1:        str(data.address_1),
+            address_2:        str(data.address_2),
+            address_3:        str(data.address_3),
+            district_id:      parseId(data.district_id),
+            pincode:          str(data.pincode),
+            contact_number:   str(data.contact_number),
+            email:            str(data.email),
+            // Step 0
             recognition_date: data.recognition_date || null,
-            centre_ref_no:  data.centre_ref_no  || null,
-            status:         data.status         || 'Pending'
+            centre_ref_no:    str(data.centre_ref_no),
+            status:           data.status || 'Pending',
         };
 
         if (req.files && req.files['recognition_certificate']) {

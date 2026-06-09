@@ -1,18 +1,24 @@
 const pool = require('../../../admin/backend/config/db');
 
+// Registration form fields are the primary source of truth.
+// Joined fields from master_institutes are surfaced as fallbacks only
+// (for legacy rows that pre-date the architectural rebuild).
 const SELECT_JOINED = `
     SELECT
         rc.*,
-        ct.name  AS centre_type_name,
-        rs.name  AS subject_name,
-        rcat.name AS category_name,
-        inst.name AS institute_name,
-        inst.college_code AS institute_code,
-        inst.principal_name AS institute_principal,
-        inst.principal_mobile AS institute_principal_mobile,
-        inst.college_email AS institute_email,
-        inst.college_phone AS institute_phone,
+        -- Institute details: prefer direct rc columns (entered via registration form);
+        -- fall back to joined master_institutes for legacy rows.
+        COALESCE(rc.college_code,     inst.college_code,  rc.abbreviation) AS institute_code,
+        COALESCE(rc.college_name,     inst.name)                           AS institute_name,
+        COALESCE(rc.principal_name,   inst.principal_name)                 AS institute_principal,
+        COALESCE(rc.principal_mobile, inst.principal_mobile)               AS institute_principal_mobile,
+        COALESCE(rc.hod_email,        inst.college_email)                  AS institute_email,
+        COALESCE(rc.college_phone,    inst.college_phone)                  AS institute_phone,
         inst.is_active AS institute_active,
+        -- Lookup display names
+        ct.name   AS centre_type_name,
+        rs.name   AS subject_name,
+        rcat.name AS category_name,
         dist.name AS district_name
     FROM research_centres rc
     LEFT JOIN master_centre_types        ct   ON rc.centre_type_id = ct.id

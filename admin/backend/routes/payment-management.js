@@ -125,6 +125,71 @@ router.get('/receipt/:orderId', async (req, res) => {
   }
 });
 
+// ─── GET /api/payment-management/receipt-data/:orderId ─────────────────────────
+router.get('/receipt-data/:orderId', async (req, res) => {
+  try {
+    const [[receipt]] = await db.query(
+      `SELECT pr.*, pt.payment_method, pt.payment_sub_method, pt.provider_name, 
+              pt.gateway_transaction_id, pt.payment_status, pt.completed_at, pt.callback_payload
+       FROM payment_receipts pr
+       JOIN payment_transactions pt ON pr.order_id = pt.order_id
+       WHERE pr.order_id = ?`,
+      [req.params.orderId]
+    );
+
+    let data;
+    if (!receipt) {
+      const [[txn]] = await db.query(
+        `SELECT pt.*, a.applicant_name, a.email, a.mobile
+         FROM payment_transactions pt
+         JOIN applications a ON pt.application_id = a.application_id COLLATE utf8mb4_general_ci
+         WHERE pt.order_id = ? LIMIT 1`,
+        [req.params.orderId]
+      );
+      if (!txn) return res.status(404).json({ success: false, message: 'Transaction not found' });
+
+      let parsedPayload = {};
+      try { parsedPayload = txn.callback_payload ? JSON.parse(txn.callback_payload) : {}; } catch { /* ignore */ }
+
+      data = {
+        receipt_number: txn.order_id.replace('PU', 'RC'),
+        order_id: txn.order_id,
+        application_id: txn.application_id,
+        amount: txn.amount,
+        payment_method: txn.payment_method,
+        payment_sub_method: txn.payment_sub_method,
+        provider_name: txn.provider_name,
+        gateway_transaction_id: txn.gateway_transaction_id || parsedPayload.TXNID || txn.order_id,
+        applicant_name: txn.applicant_name || '',
+        applicant_email: txn.email || '',
+        applicant_mobile: txn.mobile || '',
+        issued_at: txn.completed_at || txn.updated_at || new Date(),
+        payment_status: txn.payment_status,
+        callback_payload: txn.callback_payload
+      };
+    } else {
+      data = receipt;
+    }
+
+    if (data) {
+      try {
+        const QRCode = require('qrcode');
+        const feBase = process.env.STUDENT_FRONTEND_URL || 'http://localhost:5173';
+        const qrContent = data.qr_verification_code
+          ? `${feBase}/verify-receipt?code=${encodeURIComponent(data.qr_verification_code)}`
+          : `${feBase}/receipt/${encodeURIComponent(data.order_id || data.application_id || 'N/A')}`;
+        data.qr_code_base64 = await QRCode.toDataURL(qrContent, { width: 120, margin: 1 });
+      } catch (qrErr) {
+        console.error('Failed to generate QR code:', qrErr);
+      }
+    }
+
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // ─── PUT /api/payment-management/transactions/:orderId/status ──────────────────
 // Admin manually updates payment status with reason + remarks.
 // Does NOT touch the automated gateway workflow.

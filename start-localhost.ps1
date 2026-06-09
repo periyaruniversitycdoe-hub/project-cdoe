@@ -15,7 +15,7 @@ foreach ($port in $ports) {
 
 # Also kill any leftover cloudflared process
 Get-Process -Name "cloudflared" -ErrorAction SilentlyContinue | Stop-Process -Force
-Start-Sleep -Seconds 2
+Start-Sleep -Seconds 4
 
 # Write localhost .env files
 Write-Host "Writing frontend .env files for localhost..." -ForegroundColor Cyan

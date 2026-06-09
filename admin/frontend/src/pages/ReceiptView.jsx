@@ -1,17 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import useAuthStore from '../store/authStore';
 import { Loader2, AlertCircle } from 'lucide-react';
 
-const API       = (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api';
-const ADMIN_API = (import.meta.env.VITE_ADMIN_API_URL   || 'http://localhost:5001');
+const ADMIN_API = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
 
 /* ── Date helpers ── */
 function fmtDate(iso) {
   if (!iso) return 'N/A';
   const s = String(iso).trim();
-  // "DD-MM-YYYY HH:MM:SS" already formatted by DB locale
   const m = s.match(/^(\d{2})-(\d{2})-(\d{4})\s+(\d{2}):(\d{2}):(\d{2})/);
   if (m) return `${m[3]}-${m[2]}-${m[1]} ${m[4]}:${m[5]}:${m[6]}.0`;
   const d = new Date(s);
@@ -19,6 +16,7 @@ function fmtDate(iso) {
   const p = n => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.0`;
 }
+
 function nowStamp() {
   const d = new Date();
   const p = n => String(n).padStart(2, '0');
@@ -29,12 +27,12 @@ function nowStamp() {
 function imgUrl(path, fallback) {
   if (!path) return fallback;
   if (path.startsWith('http')) return path;
-  return `${ADMIN_API}${path.startsWith('/') ? '' : '/'}${path}`;
+  const base = import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001';
+  return `${base}${path.startsWith('/') ? '' : '/'}${path}`;
 }
 
 export default function ReceiptView() {
-  const { orderId, appId } = useParams();
-  const { token } = useAuthStore();
+  const { orderId } = useParams();
   const navigate = useNavigate();
 
   const [loading,     setLoading]     = useState(true);
@@ -45,28 +43,25 @@ export default function ReceiptView() {
   const [downloadedAt] = useState(() => nowStamp());
 
   useEffect(() => {
+    const token = localStorage.getItem('adminToken');
     if (!token) { navigate('/login'); return; }
+
+    const headers = { Authorization: `Bearer ${token}` };
 
     const load = async () => {
       try {
         setLoading(true);
 
-        // Fetch settings (no auth needed) to get dynamic logos
-        axios.get(`${ADMIN_API}/api/settings`).then(r => {
+        // Fetch settings dynamically
+        axios.get(`${ADMIN_API}/settings`, { headers }).then(r => {
           const s = r.data?.data || {};
           if (s.logo)               setUniLogo(imgUrl(s.logo, '/images/pu_logo.png'));
           if (s.founder_image_url)  setFounderImg(imgUrl(s.founder_image_url, null));
         }).catch(() => {/* keep defaults */});
 
         // Fetch receipt data
-        const ep = orderId
-          ? `${API}/payment/receipt-data/${orderId}`
-          : appId
-          ? `${API}/payment/receipt-data-by-app/${appId}`
-          : null;
-        if (!ep) { setError('No valid transaction or application ID provided.'); setLoading(false); return; }
-
-        const res = await axios.get(ep, { headers: { Authorization: `Bearer ${token}` } });
+        const ep = `${ADMIN_API}/payment-management/receipt-data/${orderId}`;
+        const res = await axios.get(ep, { headers });
         if (res.data?.success && res.data?.data) setData(res.data.data);
         else setError('Could not retrieve payment receipt details.');
       } catch (err) {
@@ -75,7 +70,7 @@ export default function ReceiptView() {
     };
 
     load();
-  }, [orderId, appId, token, navigate]);
+  }, [orderId, navigate]);
 
   if (loading) return (
     <div style={{ minHeight:'100vh', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', background:'#fff', fontFamily:'Arial,sans-serif' }}>
@@ -296,7 +291,7 @@ export default function ReceiptView() {
             </svg>
             Print Receipt
           </button>
-          <button className="rp-btn" onClick={() => window.history.length > 1 ? navigate(-1) : window.close()}>
+          <button className="rp-btn" onClick={() => window.close()}>
             <span className="rp-close-circle">✕</span>
             Close
           </button>

@@ -242,6 +242,26 @@ router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
       }
     }
 
+    // Check if attendance is finished for the selected session
+    if (req.query.source === 'entrance_marks') {
+      let pendingQuery = `
+        SELECT COUNT(*) AS pendingCount
+        FROM applications a
+        JOIN users u ON a.user_id = u.id
+        WHERE EXISTS (SELECT 1 FROM hall_tickets ht WHERE ht.application_id = a.application_id)
+          AND a.attendance_status IS NULL
+      `;
+      const pendingParams = [];
+      if (resolvedSessionId) {
+        pendingQuery += ' AND COALESCE(a.session_id, u.session_id) = ?';
+        pendingParams.push(resolvedSessionId);
+      }
+      const [[pendingResult]] = await pool.execute(pendingQuery, pendingParams);
+      if (pendingResult && pendingResult.pendingCount > 0) {
+        return res.status(400).json({ success: false, message: 'Attendance is not finished yet for this session' });
+      }
+    }
+
     // â”€â”€ 2. University settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     let uniNameEn = 'Periyar University';
     let uniNameTa = '';
@@ -811,6 +831,49 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
     }
     if (resolvedSessionId === 'all') {
       resolvedSessionId = null;
+    }
+
+    // Check if attendance is finished for the selected session
+    let attendanceFinished = true;
+    if (req.query.source === 'entrance_marks') {
+      let pendingQuery = `
+        SELECT COUNT(*) AS pendingCount
+        FROM applications a
+        JOIN users u ON a.user_id = u.id
+        WHERE EXISTS (SELECT 1 FROM hall_tickets ht WHERE ht.application_id = a.application_id)
+          AND a.attendance_status IS NULL
+      `;
+      const pendingParams = [];
+      if (resolvedSessionId) {
+        pendingQuery += ' AND COALESCE(a.session_id, u.session_id) = ?';
+        pendingParams.push(resolvedSessionId);
+      }
+      const [[pendingResult]] = await pool.execute(pendingQuery, pendingParams);
+      if (pendingResult && pendingResult.pendingCount > 0) {
+        attendanceFinished = false;
+      }
+    }
+
+    if (!attendanceFinished) {
+      return res.json({
+        success: true,
+        data: [],
+        total: 0,
+        page: parseInt(pageParam, 10) || 1,
+        limit: limitParam === 'all' ? 'all' : (parseInt(limitParam, 10) || 20),
+        totalPages: 0,
+        summary: {
+          total: 0,
+          passed: 0,
+          failed: 0,
+          absent: 0,
+          pending: 0,
+          qualified: 0,
+          direct_qualified: 0
+        },
+        activeSessionId: resolvedSessionId,
+        attendanceFinished: false
+      });
     }
 
     // â”€â”€ Build WHERE conditions array â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

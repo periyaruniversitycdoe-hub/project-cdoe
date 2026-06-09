@@ -6,14 +6,14 @@ import { useNavigate } from 'react-router-dom';
 import {
   Building, MapPin, ChevronRight, ChevronLeft,
   Save, Send, CheckCircle, AlertCircle, Clock,
-  Lock, XCircle, FileText, Phone, Mail
+  Lock, XCircle, FileText, Phone, Mail, User
 } from 'lucide-react';
 
-const API = (import.meta.env.VITE_CENTER_API_URL || 'http://localhost:5003') + '/api';
-
+// Three steps — Registration Form is the master source of truth
 const STEPS = [
   { label: 'Centre Information', icon: Building, desc: 'Name, type & recognition details' },
-  { label: 'Address & Contact', icon: MapPin, desc: 'Location & communication details' },
+  { label: 'Institute Details',  icon: User,     desc: 'College info & principal contact' },
+  { label: 'Address & Contact',  icon: MapPin,   desc: 'Location & communication details' },
 ];
 
 const STATUS_COLORS = {
@@ -68,6 +68,7 @@ const S = {
   readonlyBadge: { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fef3c7', color: '#92400e', padding: '8px 16px', borderRadius: 10, fontSize: 13, fontWeight: 600, marginBottom: 20 },
   notice: { background: '#f0f9ff', border: '1.5px solid #bae6fd', borderRadius: 12, padding: '14px 18px', display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 13, color: '#0369a1', marginTop: 24 },
   skeleton: { background: 'linear-gradient(90deg, #f0f9ff 25%, #e0f2fe 50%, #f0f9ff 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.5s infinite', borderRadius: 10, height: 48 },
+  fieldHint: { fontSize: 11, color: '#6b7280', marginTop: 2 },
 };
 
 function validate(step, formData) {
@@ -75,14 +76,24 @@ function validate(step, formData) {
   if (step === 0) {
     if (!formData.name?.trim()) errors.name = 'Centre name is required';
     if (!formData.centre_type_id) errors.centre_type_id = 'Centre type is required';
-    if (!formData.institute_id) errors.institute_id = 'Affiliated institute is required';
   }
   if (step === 1) {
+    if (!formData.college_code?.trim()) errors.college_code = 'College code is required';
+    if (!formData.college_name?.trim()) errors.college_name = 'College name is required';
+    if (formData.principal_mobile && !/^\d{10,15}$/.test(formData.principal_mobile.replace(/\D/g, '')))
+      errors.principal_mobile = 'Enter valid mobile number (10–15 digits)';
+    if (formData.hod_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.hod_email))
+      errors.hod_email = 'Enter valid email address';
+  }
+  if (step === 2) {
     if (!formData.address_1?.trim()) errors.address_1 = 'Address is required';
     if (!formData.district_id) errors.district_id = 'District is required';
-    if (formData.contact_number && !/^\d{10,11}$/.test(formData.contact_number)) errors.contact_number = 'Enter valid phone number';
-    if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) errors.email = 'Enter valid email address';
-    if (formData.pincode && !/^\d{6}$/.test(formData.pincode)) errors.pincode = 'Pincode must be 6 digits';
+    if (formData.contact_number && !/^\d{10,11}$/.test(formData.contact_number))
+      errors.contact_number = 'Enter valid phone number';
+    if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email))
+      errors.email = 'Enter valid email address';
+    if (formData.pincode && !/^\d{6}$/.test(formData.pincode))
+      errors.pincode = 'Pincode must be 6 digits';
   }
   return errors;
 }
@@ -97,59 +108,57 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
   const [errors, setErrors] = useState({});
   const [dropdowns, setDropdowns] = useState({});
   const [appStatus, setAppStatus] = useState('Draft');
+
+  // ── Master form state — ALL fields from the registration form ────────────────
   const [formData, setFormData] = useState({
+    // Step 0: Centre Information
     name: '',
-    // ── Institute fields — use semantic names; DB id resolved by backend ──
-    college_code: '',   // drives College Code dropdown; saved as rc.abbreviation
-    college_name: '',   // drives College Name dropdown; NOT a DB column (join)
-    // institute_id is kept for backward-compat with old saved drafts; backend
-    // always resolves it from college_code on POST so we never rely on it in UI
-    institute_id: '',
     centre_type_id: '',
-    address_1: '', address_2: '', address_3: '', district_id: '', pincode: '',
-    contact_number: '', email: '', hod_email: '',
-    recognition_date: '', centre_ref_no: '', status: 'Draft',
-    recognition_certificate: null
+    centre_ref_no: '',
+    recognition_date: '',
+    status: 'Draft',
+    // Step 1: Institute Details (master source — feeds Institute Master on approval)
+    college_code: '',
+    college_name: '',
+    principal_name: '',
+    principal_mobile: '',
+    hod_email: '',        // Principal / HOD email
+    college_phone: '',
+    // Step 2: Address & Contact
+    address_1: '', address_2: '', address_3: '',
+    district_id: '', pincode: '',
+    contact_number: '', email: '',
+    // file path (display only)
+    recognition_certificate: null,
   });
   const [files, setFiles] = useState({ recognition_certificate: null });
 
   const CENTER_API = (import.meta.env.VITE_CENTER_API_URL || 'http://localhost:5003') + '/api';
-  const ADMIN_API = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
-
-  const activeAPI = isAdminMode ? ADMIN_API : CENTER_API;
-  const tokenKey = isAdminMode ? 'adminToken' : 'ct_token';
-  const getHeaders = () => ({
-    headers: { Authorization: `Bearer ${localStorage.getItem(tokenKey) || ''}` }
-  });
+  const ADMIN_API  = (import.meta.env.VITE_ADMIN_API_URL  || 'http://localhost:5001') + '/api';
+  const activeAPI  = isAdminMode ? ADMIN_API : CENTER_API;
+  const tokenKey   = isAdminMode ? 'adminToken' : 'ct_token';
+  const getHeaders = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem(tokenKey) || ''}` } });
 
   const isReadOnly = isAdminMode ? false : ['Active', 'Approved', 'Suspended'].includes(appStatus);
 
+  // ── Load dropdowns ───────────────────────────────────────────────────────────
   useEffect(() => {
-    const tables = ['master_districts', 'master_centre_types', 'master_institutes'];
-    // Dropdowns are fetched from Center API port (unauthenticated) to ensure consistency
+    const tables = ['master_districts', 'master_centre_types'];
     Promise.all(tables.map(t => axios.get(`${CENTER_API}/dropdowns/${t}`))).then(results => {
       const data = {};
-      tables.forEach((t, i) => data[t] = results[i].data || []);
+      tables.forEach((t, i) => { data[t] = results[i].data || []; });
       setDropdowns(data);
     }).catch(() => toast.error('Failed to load dropdown data.'));
+  }, []);
 
+  // ── Load existing application data ──────────────────────────────────────────
+  useEffect(() => {
     if (isAdminMode) {
       if (centerId) {
         axios.get(`${ADMIN_API}/centres/${centerId}`, getHeaders()).then(res => {
           const d = res.data.data || res.data;
-          setAppStatus(d.status || d.centre_active || 'Pending');
-          setFormData(prev => ({
-            ...prev, ...d,
-            name:                    d.name || '',
-            email:                   d.email || '',
-            recognition_date:        d.recognition_date ? d.recognition_date.substring(0, 10) : '',
-            recognition_certificate: d.recognition_certificate || null,
-            college_code:            d.institute_code || d.abbreviation || '',
-            college_name:            d.institute_name || '',
-            institute_id:            d.institute_id ? String(d.institute_id) : '',
-            centre_type_id:          d.centre_type_id ? String(d.centre_type_id) : '',
-            district_id:             d.district_id ? String(d.district_id) : '',
-          }));
+          setAppStatus(d.status || 'Pending');
+          populateForm(d);
         }).catch(() => toast.error('Failed to load centre details.')).finally(() => setLoading(false));
       } else {
         setAppStatus('Pending');
@@ -159,27 +168,38 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
       axios.get(`${CENTER_API}/portal/me`, getHeaders()).then(res => {
         const d = res.data;
         setAppStatus(d.centre_status || d.centre_active || 'Draft');
-        if (d.center_id) {
-          setFormData(prev => ({
-            ...prev, ...d,
-            name:                    d.centre_name || d.name || '',
-            email:                   d.centre_email || d.email || '',
-            recognition_date:        d.recognition_date ? d.recognition_date.split('T')[0] : '',
-            recognition_certificate: d.recognition_certificate || null,
-            // ── Institute — use semantic identifiers, never DB serial ──────────
-            college_code:    d.college_code    || '',
-            college_name:    d.college_name    || '',
-            institute_id:    d.institute_id    ? String(d.institute_id)    : '',
-            // ── FK dropdowns ────────────────────────────────────────────────────
-            centre_type_id:  d.centre_type_id  ? String(d.centre_type_id)  : '',
-            district_id:     d.district_id     ? String(d.district_id)     : '',
-          }));
-        } else {
-          setFormData(prev => ({ ...prev, name: d.name || '', email: d.email || '' }));
-        }
+        if (d.center_id) populateForm(d);
+        else setFormData(prev => ({ ...prev, name: d.name || '', email: d.email || '' }));
       }).catch(() => {}).finally(() => setLoading(false));
     }
   }, [user, centerId, isAdminMode]);
+
+  function populateForm(d) {
+    setFormData(prev => ({
+      ...prev,
+      // Step 0
+      name:                    d.name || d.centre_name || '',
+      centre_type_id:          d.centre_type_id  ? String(d.centre_type_id)  : '',
+      centre_ref_no:           d.centre_ref_no   || '',
+      recognition_date:        d.recognition_date ? d.recognition_date.split('T')[0] : '',
+      recognition_certificate: d.recognition_certificate || null,
+      // Step 1 — prefer direct rc fields; fall back to institute join fields
+      college_code:    d.college_code    || d.abbreviation    || d.institute_code || '',
+      college_name:    d.college_name    || d.institute_name  || '',
+      principal_name:  d.principal_name  || d.institute_principal || '',
+      principal_mobile:d.principal_mobile|| d.institute_principal_mobile || '',
+      hod_email:       d.hod_email       || '',
+      college_phone:   d.college_phone   || d.institute_phone || '',
+      // Step 2
+      address_1:       d.address_1   || '',
+      address_2:       d.address_2   || '',
+      address_3:       d.address_3   || '',
+      district_id:     d.district_id  ? String(d.district_id) : '',
+      pincode:         d.pincode      || '',
+      contact_number:  d.contact_number || '',
+      email:           d.centre_email || d.email || '',
+    }));
+  }
 
   const handleInput = useCallback((e) => {
     const { name, value } = e.target;
@@ -187,30 +207,11 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
     if (errors[name]) setErrors(prev => { const n = { ...prev }; delete n[name]; return n; });
   }, [errors]);
 
-  // ── Unified Institute Selection Handler ────────────────────────────────────
-  const handleInstituteChange = useCallback((e) => {
-    const id = e.target.value;
-    const inst = dropdowns.master_institutes?.find(d => String(d.id) === String(id));
-    setFormData(prev => ({
-      ...prev,
-      institute_id: id,
-      college_code: inst ? inst.college_code : '',
-      college_name: inst ? inst.college_name : '',
-    }));
-    if (errors.institute_id) setErrors(prev => { const n = { ...prev }; delete n.institute_id; return n; });
-  }, [dropdowns.master_institutes, errors]);
-
   const handleFile = (e, field) => {
     const file = e.target.files[0];
     if (!file) return;
-    if (file.type !== 'application/pdf') {
-      toast.error('Only PDF documents are allowed.');
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('File too large. Max 5MB allowed.');
-      return;
-    }
+    if (file.type !== 'application/pdf') { toast.error('Only PDF documents are allowed.'); return; }
+    if (file.size > 5 * 1024 * 1024)    { toast.error('File too large. Max 5MB allowed.'); return; }
     setFiles(prev => ({ ...prev, [field]: file }));
     toast.success('Certificate selected successfully');
   };
@@ -218,7 +219,7 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
   const saveApplication = async (isFinal = false) => {
     if (isReadOnly) return;
     if (isFinal) {
-      const allErrors = { ...validate(0, formData), ...validate(1, formData) };
+      const allErrors = { ...validate(0, formData), ...validate(1, formData), ...validate(2, formData) };
       if (Object.keys(allErrors).length > 0) {
         toast.error('Please fill all required fields before submitting.');
         setErrors(allErrors);
@@ -229,15 +230,11 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
       if (Object.keys(errs).length > 0) { setErrors(errs); toast.error('Please fix highlighted errors.'); return; }
     }
     setSaving(true);
-    
+
     const postData = new FormData();
-    Object.entries(formData).forEach(([k, v]) => {
-      postData.append(k, v ?? '');
-    });
+    Object.entries(formData).forEach(([k, v]) => { postData.append(k, v ?? ''); });
     if (isFinal) postData.set('status', 'Pending');
-    if (files.recognition_certificate) {
-      postData.append('recognition_certificate', files.recognition_certificate);
-    }
+    if (files.recognition_certificate) postData.append('recognition_certificate', files.recognition_certificate);
 
     const toastId = toast.loading(isFinal ? 'Submitting registration...' : 'Saving progress...');
     try {
@@ -252,13 +249,13 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
             headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${localStorage.getItem('adminToken') || ''}` }
           });
         }
-        toast.success('💾 Registration saved successfully!', { id: toastId });
+        toast.success('Registration saved successfully!', { id: toastId });
         if (onDone) onDone();
       } else {
         await axios.post(`${activeAPI}/portal/application`, postData, {
           headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${localStorage.getItem('ct_token') || ''}` }
         });
-        toast.success(isFinal ? '✅ Registration submitted for university review!' : '💾 Progress saved successfully!', { id: toastId });
+        toast.success(isFinal ? 'Registration submitted for university review!' : 'Progress saved successfully!', { id: toastId });
         if (isFinal) { await fetchMe(); navigate('/dashboard'); }
       }
     } catch (err) {
@@ -302,7 +299,7 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
         <div style={{ ...S.statusBar, background: sc.bg, borderColor: sc.color, color: sc.color }}>
           <StatusIcon size={18} />
           <span>Registration Status: <strong>{appStatus}</strong></span>
-          {appStatus === 'Pending' && <span style={{ marginLeft: 'auto', fontSize: 12 }}>Under university review</span>}
+          {appStatus === 'Pending'  && <span style={{ marginLeft: 'auto', fontSize: 12 }}>Under university review</span>}
           {appStatus === 'Rejected' && <span style={{ marginLeft: 'auto', fontSize: 12 }}>Contact admin for clarification</span>}
         </div>
 
@@ -312,11 +309,12 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
           </div>
         )}
 
+        {/* ── Stepper ── */}
         <div style={S.stepper}>
           {STEPS.map((s, i) => {
             const Icon = s.icon;
             const active = step === i;
-            const done = step > i;
+            const done   = step > i;
             return (
               <div key={i} style={S.stepItem} onClick={() => done && setStep(i)}>
                 {i < STEPS.length - 1 && <div style={S.stepLine} />}
@@ -337,76 +335,55 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
           </div>
           <div style={S.sectionSub}>{STEPS[step].desc}</div>
 
+          {/* ══ STEP 0: Centre Information ══════════════════════════════════ */}
           {step === 0 && (
             <div style={S.grid2}>
               <div style={{ ...S.group, gridColumn: '1 / -1' }}>
                 <label style={S.label}><Building size={14} color="#0891b2" /> Centre Name <span style={S.required}>*</span></label>
-                <input style={S.input(errors.name)} name="name" value={formData.name} onChange={handleInput} readOnly={isReadOnly} placeholder="e.g. Department of Computer Science, Periyar University" />
+                <input style={S.input(errors.name)} name="name" value={formData.name}
+                  onChange={handleInput} readOnly={isReadOnly}
+                  placeholder="e.g. Department of Computer Science, Periyar University" />
                 {errors.name && <span style={S.errMsg}>{errors.name}</span>}
-              </div>
-              {/* ── Unified Institute Selection Dropdown ──────────────────────────── */}
-              <div style={{ ...S.group, gridColumn: '1 / -1' }}>
-                <label style={S.label}><Building size={14} color="#0891b2" /> Affiliated Institute <span style={S.required}>*</span></label>
-                <select
-                  style={S.select(errors.institute_id)}
-                  name="institute_id"
-                  value={formData.institute_id}
-                  onChange={handleInstituteChange}
-                  disabled={isReadOnly}
-                >
-                  <option value="">— Select Affiliated Institute —</option>
-                  {[...(dropdowns.master_institutes || [])]
-                    .sort((a, b) => (a.college_name || '').localeCompare(b.college_name || ''))
-                    .map(d => (
-                      <option key={d.id} value={d.id}>
-                        [{d.college_code}] {d.college_name}
-                      </option>
-                    ))
-                  }
-                </select>
-                {errors.institute_id && <span style={S.errMsg}>{errors.institute_id}</span>}
               </div>
 
               <div style={S.group}>
                 <label style={S.label}>Centre Type <span style={S.required}>*</span></label>
-                <select style={S.select(errors.centre_type_id)} name="centre_type_id" value={formData.centre_type_id} onChange={handleInput} disabled={isReadOnly}>
+                <select style={S.select(errors.centre_type_id)} name="centre_type_id"
+                  value={formData.centre_type_id} onChange={handleInput} disabled={isReadOnly}>
                   <option value="">— Select Type —</option>
                   {dropdowns.master_centre_types?.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                 </select>
                 {errors.centre_type_id && <span style={S.errMsg}>{errors.centre_type_id}</span>}
               </div>
+
               <div style={S.group}>
                 <label style={S.label}>Recognition Ref. No.</label>
-                <input style={S.input(false)} name="centre_ref_no" value={formData.centre_ref_no} onChange={handleInput} readOnly={isReadOnly} placeholder="e.g. PU/RC/2024/001" />
+                <input style={S.input(false)} name="centre_ref_no" value={formData.centre_ref_no}
+                  onChange={handleInput} readOnly={isReadOnly} placeholder="e.g. PU/RC/2024/001" />
               </div>
+
               <div style={S.group}>
                 <label style={S.label}>Recognition Date</label>
-                <input style={S.input(false)} name="recognition_date" type="date" value={formData.recognition_date} onChange={handleInput} readOnly={isReadOnly} />
+                <input style={S.input(false)} name="recognition_date" type="date"
+                  value={formData.recognition_date} onChange={handleInput} readOnly={isReadOnly} />
               </div>
+
               <div style={S.group}>
                 <label style={S.label}>Recognition Certificate (PDF)</label>
                 {formData.recognition_certificate && (
                   <div style={{ marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
                     <FileText size={15} color="#0891b2" />
-                    <a
-                      href={`${import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001'}${formData.recognition_certificate}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ fontSize: 12, color: '#0891b2', fontWeight: 600, textDecoration: 'underline' }}
-                    >
+                    <a href={`${import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001'}${formData.recognition_certificate}`}
+                      target="_blank" rel="noopener noreferrer"
+                      style={{ fontSize: 12, color: '#0891b2', fontWeight: 600, textDecoration: 'underline' }}>
                       View Existing Certificate
                     </a>
                   </div>
                 )}
-                <input
-                  style={S.input(errors.recognition_certificate)}
-                  type="file"
-                  accept=".pdf"
-                  onChange={e => handleFile(e, 'recognition_certificate')}
-                  disabled={isReadOnly}
-                />
-                {errors.recognition_certificate && <span style={S.errMsg}>{errors.recognition_certificate}</span>}
+                <input style={S.input(false)} type="file" accept=".pdf"
+                  onChange={e => handleFile(e, 'recognition_certificate')} disabled={isReadOnly} />
               </div>
+
               <div style={{ ...S.notice, gridColumn: '1 / -1' }}>
                 <AlertCircle size={17} style={{ flexShrink: 0 }} />
                 <span>Once submitted, a Periyar University administrator will review and activate your centre for PhD admissions.</span>
@@ -414,52 +391,126 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
             </div>
           )}
 
+          {/* ══ STEP 1: Institute Details ════════════════════════════════════
+               These fields feed directly into Institute Master on approval.
+               No separate Institute data entry is required.              */}
           {step === 1 && (
+            <div style={S.grid2}>
+              <div style={{ ...S.notice, gridColumn: '1 / -1' }}>
+                <AlertCircle size={17} style={{ flexShrink: 0 }} />
+                <span>
+                  Institute Master is automatically populated from the information you provide here.
+                  No separate institute data entry is required by the admin.
+                </span>
+              </div>
+
+              <div style={S.group}>
+                <label style={S.label}><Building size={14} color="#0891b2" /> College Code <span style={S.required}>*</span></label>
+                <input style={S.input(errors.college_code)} name="college_code"
+                  value={formData.college_code} onChange={handleInput} readOnly={isReadOnly}
+                  placeholder="e.g. 101" />
+                {errors.college_code && <span style={S.errMsg}>{errors.college_code}</span>}
+                <span style={S.fieldHint}>Official college code assigned by the university</span>
+              </div>
+
+              <div style={S.group}>
+                <label style={S.label}><Building size={14} color="#0891b2" /> College Name <span style={S.required}>*</span></label>
+                <input style={S.input(errors.college_name)} name="college_name"
+                  value={formData.college_name} onChange={handleInput} readOnly={isReadOnly}
+                  placeholder="Full name of the affiliated college" />
+                {errors.college_name && <span style={S.errMsg}>{errors.college_name}</span>}
+              </div>
+
+              <div style={S.group}>
+                <label style={S.label}><User size={13} color="#0891b2" /> Principal / HOD Name</label>
+                <input style={S.input(false)} name="principal_name"
+                  value={formData.principal_name} onChange={handleInput} readOnly={isReadOnly}
+                  placeholder="Dr. Name" />
+              </div>
+
+              <div style={S.group}>
+                <label style={S.label}><Phone size={13} color="#0891b2" /> Principal Mobile</label>
+                <input style={S.input(errors.principal_mobile)} name="principal_mobile"
+                  value={formData.principal_mobile} onChange={handleInput} readOnly={isReadOnly}
+                  placeholder="10-digit mobile number" inputMode="numeric" />
+                {errors.principal_mobile && <span style={S.errMsg}>{errors.principal_mobile}</span>}
+              </div>
+
+              <div style={S.group}>
+                <label style={S.label}><Mail size={13} color="#0891b2" /> Principal / HOD Email</label>
+                <input style={S.input(errors.hod_email)} name="hod_email" type="email"
+                  value={formData.hod_email} onChange={handleInput} readOnly={isReadOnly}
+                  placeholder="principal@college.ac.in" />
+                {errors.hod_email && <span style={S.errMsg}>{errors.hod_email}</span>}
+              </div>
+
+              <div style={S.group}>
+                <label style={S.label}><Phone size={13} color="#0891b2" /> College Phone</label>
+                <input style={S.input(false)} name="college_phone"
+                  value={formData.college_phone} onChange={handleInput} readOnly={isReadOnly}
+                  placeholder="0427-2XXXXXX" />
+              </div>
+            </div>
+          )}
+
+          {/* ══ STEP 2: Address & Contact ════════════════════════════════════ */}
+          {step === 2 && (
             <div style={S.grid2}>
               <div style={{ ...S.group, gridColumn: '1 / -1' }}>
                 <label style={S.label}><MapPin size={14} color="#0891b2" /> Address Line 1 <span style={S.required}>*</span></label>
-                <input style={S.input(errors.address_1)} name="address_1" value={formData.address_1} onChange={handleInput} readOnly={isReadOnly} placeholder="Building No., Street Name" />
+                <input style={S.input(errors.address_1)} name="address_1" value={formData.address_1}
+                  onChange={handleInput} readOnly={isReadOnly} placeholder="Building No., Street Name" />
                 {errors.address_1 && <span style={S.errMsg}>{errors.address_1}</span>}
               </div>
+
               <div style={S.group}>
                 <label style={S.label}>Address Line 2</label>
-                <input style={S.input(false)} name="address_2" value={formData.address_2} onChange={handleInput} readOnly={isReadOnly} placeholder="Area / Colony" />
+                <input style={S.input(false)} name="address_2" value={formData.address_2}
+                  onChange={handleInput} readOnly={isReadOnly} placeholder="Area / Colony" />
               </div>
+
               <div style={S.group}>
                 <label style={S.label}>City / Town</label>
-                <input style={S.input(false)} name="address_3" value={formData.address_3} onChange={handleInput} readOnly={isReadOnly} />
+                <input style={S.input(false)} name="address_3" value={formData.address_3}
+                  onChange={handleInput} readOnly={isReadOnly} />
               </div>
+
               <div style={S.group}>
                 <label style={S.label}>District <span style={S.required}>*</span></label>
-                <select style={S.select(errors.district_id)} name="district_id" value={formData.district_id} onChange={handleInput} disabled={isReadOnly}>
+                <select style={S.select(errors.district_id)} name="district_id"
+                  value={formData.district_id} onChange={handleInput} disabled={isReadOnly}>
                   <option value="">— Select District —</option>
                   {dropdowns.master_districts?.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                 </select>
                 {errors.district_id && <span style={S.errMsg}>{errors.district_id}</span>}
               </div>
+
               <div style={S.group}>
                 <label style={S.label}>Pincode</label>
-                <input style={S.input(errors.pincode)} name="pincode" value={formData.pincode} onChange={handleInput} readOnly={isReadOnly} maxLength={6} placeholder="6-digit pincode" />
+                <input style={S.input(errors.pincode)} name="pincode" value={formData.pincode}
+                  onChange={handleInput} readOnly={isReadOnly} maxLength={6} placeholder="6-digit pincode" />
                 {errors.pincode && <span style={S.errMsg}>{errors.pincode}</span>}
               </div>
+
               <div style={S.group}>
                 <label style={S.label}><Mail size={13} color="#0891b2" /> Centre Email</label>
-                <input style={S.input(errors.email)} name="email" type="email" value={formData.email} onChange={handleInput} readOnly={isReadOnly} placeholder="centre@university.edu" />
+                <input style={S.input(errors.email)} name="email" type="email" value={formData.email}
+                  onChange={handleInput} readOnly={isReadOnly} placeholder="centre@university.edu" />
                 {errors.email && <span style={S.errMsg}>{errors.email}</span>}
               </div>
-              <div style={S.group}>
-                <label style={S.label}><Phone size={13} color="#0891b2" /> Contact Number</label>
-                <input style={S.input(errors.contact_number)} name="contact_number" value={formData.contact_number} onChange={handleInput} readOnly={isReadOnly} placeholder="10-digit phone number" />
-                {errors.contact_number && <span style={S.errMsg}>{errors.contact_number}</span>}
-              </div>
+
               <div style={{ ...S.group, gridColumn: '1 / -1' }}>
-                <label style={S.label}>HOD / PRINCIPAL</label>
-                <input style={S.input(false)} name="hod_email" type="email" value={formData.hod_email} onChange={handleInput} readOnly={isReadOnly} placeholder="hod@university.edu" />
+                <label style={S.label}><Phone size={13} color="#0891b2" /> Centre Contact Number</label>
+                <input style={S.input(errors.contact_number)} name="contact_number"
+                  value={formData.contact_number} onChange={handleInput} readOnly={isReadOnly}
+                  placeholder="10-digit phone number" />
+                {errors.contact_number && <span style={S.errMsg}>{errors.contact_number}</span>}
               </div>
             </div>
           )}
         </div>
 
+        {/* ── Navigation ── */}
         <div style={S.actions}>
           {step > 0
             ? <button style={S.btnSecondary} onClick={() => setStep(s => s - 1)}><ChevronLeft size={17} /> Previous</button>

@@ -364,17 +364,16 @@ export default function PaymentManagement() {
         `${API_URL}/payment-management/receipt/${orderId}`,
         { headers, responseType: 'blob' }
       );
-      const url  = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-      const link = document.createElement('a');
-      link.href  = url;
-      link.setAttribute('download', `Payment_Receipt_${receiptNumber || orderId}.pdf`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-      toast.success('Receipt downloaded successfully');
+      // Open as blob:// URL in a new tab — avoids the file:// security restriction
+      // that causes "Unsafe attempt to load URL" in Edge's PDF viewer
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const tab = window.open(url, '_blank');
+      // Revoke after a delay so the new tab has time to load the blob
+      setTimeout(() => window.URL.revokeObjectURL(url), 30000);
+      if (!tab) toast.error('Pop-up blocked — please allow pop-ups for this site.');
+      else toast.success('Receipt opened in new tab');
     } catch (err) {
-      toast.error('Failed to download receipt PDF');
+      toast.error('Failed to load receipt PDF');
     } finally {
       setDownloadingReceipt(null);
     }
@@ -554,8 +553,7 @@ export default function PaymentManagement() {
                   <td style={{ padding: '10px 12px' }}>
                     {txn.receipt_number || txn.payment_status === 'SUCCESS' ? (
                       <button
-                        onClick={() => handleDownloadReceipt(txn.order_id, txn.receipt_number || txn.order_id)}
-                        disabled={downloadingReceipt === txn.order_id}
+                        onClick={() => window.open(`/payment/receipt/${txn.order_id}`, '_blank')}
                         style={{
                           background: '#eff6ff',
                           color: '#2563eb',
@@ -564,27 +562,22 @@ export default function PaymentManagement() {
                           padding: '6px 12px',
                           fontSize: 12,
                           fontWeight: 600,
-                          cursor: downloadingReceipt === txn.order_id ? 'not-allowed' : 'pointer',
+                          cursor: 'pointer',
                           display: 'inline-flex',
                           alignItems: 'center',
                           gap: 6,
                           transition: 'all 0.15s ease-in-out',
-                          opacity: downloadingReceipt === txn.order_id ? 0.7 : 1,
                         }}
                         onMouseEnter={(e) => {
-                          if (downloadingReceipt !== txn.order_id) {
-                            e.currentTarget.style.background = '#dbeafe';
-                            e.currentTarget.style.borderColor = '#93c5fd';
-                          }
+                          e.currentTarget.style.background = '#dbeafe';
+                          e.currentTarget.style.borderColor = '#93c5fd';
                         }}
                         onMouseLeave={(e) => {
-                          if (downloadingReceipt !== txn.order_id) {
-                            e.currentTarget.style.background = '#eff6ff';
-                            e.currentTarget.style.borderColor = '#bfdbfe';
-                          }
+                          e.currentTarget.style.background = '#eff6ff';
+                          e.currentTarget.style.borderColor = '#bfdbfe';
                         }}
                       >
-                        {downloadingReceipt === txn.order_id ? <Spinner size={12} /> : <FileDown size={14} />}
+                        <FileDown size={14} />
                         e-Receipt
                       </button>
                     ) : (

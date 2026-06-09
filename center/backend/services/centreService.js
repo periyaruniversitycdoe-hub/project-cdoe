@@ -118,40 +118,52 @@ async function remove(id) {
 }
 
 function buildCentreData(body, files, existing = {}) {
-    const nullableInt = v => (v !== undefined && v !== '' && v !== null) ? parseInt(v) : null;
-    const nullable = v => (v !== undefined && v !== '') ? v : null;
+    const nullableInt  = v => (v !== undefined && v !== '' && v !== null) ? parseInt(v) : null;
+    const nullable     = v => (v !== undefined && v !== '' && v !== null) ? String(v).trim() || null : null;
     const nullableDate = v => (v && v !== '') ? v : null;
 
     const data = {
-        centre_ref_no:            nullable(body.centre_ref_no),
-        centre_type_id:           nullableInt(body.centre_type_id),
-        subject_id:               nullableInt(body.subject_id),
-        name:                     body.name,
-        abbreviation:             nullable(body.abbreviation),
-        category_id:              nullableInt(body.category_id),
-        institute_id:             nullableInt(body.institute_id),
-        institute_name_override:  null,
-        institute_abbreviation:   null,
-        address_1:                nullable(body.address_1),
-        address_2:                nullable(body.address_2),
-        address_3:                nullable(body.address_3),
-        district_id:              nullableInt(body.district_id),
-        pincode:                  nullable(body.pincode),
-        contact_number:           nullable(body.contact_number),
-        email:                    nullable(body.email),
-        recognition_date:         nullableDate(body.recognition_date),
-        hod_email:                nullable(body.hod_email),
-        remark:                   nullable(body.remark),
-        is_active:                body.is_active === 'false' || body.is_active === false ? 0 : 1,
+        // Step 0 — Centre Information
+        name:             body.name,
+        centre_ref_no:    nullable(body.centre_ref_no),
+        centre_type_id:   nullableInt(body.centre_type_id),
+        subject_id:       nullableInt(body.subject_id),
+        category_id:      nullableInt(body.category_id),
+        recognition_date: nullableDate(body.recognition_date),
+
+        // Step 1 — Institute Details (master source for Institute Master sync)
+        college_code:     nullable(body.college_code),
+        college_name:     nullable(body.college_name),
+        principal_name:   nullable(body.principal_name),
+        principal_mobile: nullable(body.principal_mobile),
+        hod_email:        nullable(body.hod_email),
+        college_phone:    nullable(body.college_phone),
+        // abbreviation kept for backward-compat; mirrors college_code
+        abbreviation:     nullable(body.college_code) || nullable(body.abbreviation),
+
+        // institute_id — FK resolved from college_code on submission; kept in sync on approval
+        institute_id:     nullableInt(body.institute_id),
+
+        // Step 2 — Address & Contact
+        address_1:        nullable(body.address_1),
+        address_2:        nullable(body.address_2),
+        address_3:        nullable(body.address_3),
+        district_id:      nullableInt(body.district_id),
+        pincode:          nullable(body.pincode),
+        contact_number:   nullable(body.contact_number),
+        email:            nullable(body.email),
+
+        remark:           nullable(body.remark),
+        is_active:        body.is_active === 'false' || body.is_active === false ? 0 : 1,
+        // File paths — populated below; declared here so the object shape is complete
+        recognition_certificate: existing.recognition_certificate || null,
+        logo:                    existing.logo                    || null,
     };
 
     if (files) {
         if (files.recognition_certificate) data.recognition_certificate = `/uploads/centres/${files.recognition_certificate[0].filename}`;
         if (files.logo)                    data.logo                    = `/uploads/centres/${files.logo[0].filename}`;
     }
-
-    if (!data.recognition_certificate && existing.recognition_certificate) data.recognition_certificate = existing.recognition_certificate;
-    if (!data.logo && existing.logo)                                        data.logo                    = existing.logo;
 
     return data;
 }

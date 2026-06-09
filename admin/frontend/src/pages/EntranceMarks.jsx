@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import { useSession } from '../contexts/SessionContext';
+import { AlertTriangle } from 'lucide-react';
 
 const API_URL = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
 
@@ -20,6 +21,7 @@ const EntranceMarks = () => {
   const [loading, setLoading]           = useState(true);
   const [markUpdating, setMarkUpdating] = useState(null);
   const [editingMark, setEditingMark]   = useState(null);
+  const [attendanceFinished, setAttendanceFinished] = useState(true);
 
   // --- Search state ---
   const [search, setSearch]             = useState('');
@@ -200,6 +202,7 @@ const EntranceMarks = () => {
         setApplications(res.data.data || []);
         setTotal(res.data.total || 0);
         setTotalPages(res.data.totalPages || 1);
+        setAttendanceFinished(res.data.attendanceFinished !== false);
         if (res.data.summary) {
           setSummary(res.data.summary);
         }
@@ -335,7 +338,7 @@ const EntranceMarks = () => {
             className={`btn btn-sm fw-semibold transition-all px-3 ${isPublished ? 'btn-success text-white' : 'btn-outline-primary'}`}
             style={{ fontSize: 12, borderRadius: '6px' }}
             onClick={togglePublish}
-            disabled={toggling}
+            disabled={toggling || !attendanceFinished}
           >
             {toggling ? '…' : isPublished ? '✓ Results Published' : 'Publish Entrance Results'}
           </button>
@@ -368,6 +371,24 @@ const EntranceMarks = () => {
           </div>
         ))}
       </div>
+
+      {!attendanceFinished && (
+        <div className="alert alert-warning border-0 shadow-sm rounded-3 py-3 px-4 mb-4 d-flex align-items-center gap-3 animate-fade-in" style={{ backgroundColor: '#fffbeb', borderLeft: '4px solid #f59e0b' }}>
+          <div className="bg-warning bg-opacity-20 text-warning rounded-circle p-2.5 d-flex align-items-center justify-content-center" style={{ width: 42, height: 42, backgroundColor: '#fef3c7' }}>
+            <AlertTriangle size={20} className="text-warning" />
+          </div>
+          <div>
+            <h6 className="fw-bold mb-1" style={{ color: '#92400e', fontSize: '14px' }}>Attendance recording is in progress</h6>
+            <span className="text-secondary small" style={{ color: '#b45309', fontSize: '12.5px' }}>
+              You cannot enter entrance marks yet. Please complete marking attendance for all candidates in the{' '}
+              <Link to="/attendance" className="fw-bold text-decoration-underline" style={{ color: '#b45309' }}>
+                Attendance Management
+              </Link>{' '}
+              module first.
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Search & Cascading Dropdown Filters Panel */}
       <div className="card border-0 shadow-sm rounded-3 mb-4">
@@ -472,7 +493,7 @@ const EntranceMarks = () => {
                 className="btn btn-sm btn-outline-success fw-bold d-inline-flex align-items-center gap-1"
                 style={{ fontSize: 12, borderRadius: '6px' }}
                 onClick={() => handleExport('filtered')}
-                disabled={total === 0}
+                disabled={total === 0 || !attendanceFinished}
               >
                 <span>Export Filtered Data</span>
               </button>
@@ -481,6 +502,7 @@ const EntranceMarks = () => {
                 className="btn btn-sm btn-success fw-bold d-inline-flex align-items-center gap-1 text-white border-0 shadow-sm"
                 style={{ fontSize: 12, borderRadius: '6px', backgroundColor: '#10b981' }}
                 onClick={() => handleExport('all')}
+                disabled={!attendanceFinished}
               >
                 <span>Export Complete Dataset</span>
               </button>
@@ -514,7 +536,13 @@ const EntranceMarks = () => {
                 {loading ? (
                   <tr><td colSpan={12} className="text-center py-5 text-secondary"><div className="spinner-border spinner-border-sm me-2 text-primary" role="status" />Loading applications...</td></tr>
                 ) : applications.length === 0 ? (
-                  <tr><td colSpan={12} className="text-center py-5 text-muted">No records match the current filters</td></tr>
+                  <tr>
+                    <td colSpan={12} className="text-center py-5 text-muted fw-semibold">
+                      {!attendanceFinished 
+                        ? 'Attendance recording is in progress for this session. Complete attendance marking first.' 
+                        : 'No records match the current filters'}
+                    </td>
+                  </tr>
                 ) : applications.map((app, i) => {
                   const isEditing    = editingMark?.id === app.id;
                   const isSaving     = markUpdating === app.id;

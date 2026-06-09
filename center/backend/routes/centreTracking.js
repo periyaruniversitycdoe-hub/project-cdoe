@@ -171,10 +171,98 @@ router.get('/:id/history', verifyToken, isAdmin, async (req, res) => {
 
 // ── action endpoints ─────────────────────────────────────────────────────────
 
+// ── Institute Master sync ─────────────────────────────────────────────────────
+// Called on every approval. UPSERTs master_institutes using the registration
+// form data as the single source of truth.  Uses college_code as the natural
+// key so the same college is never duplicated across multiple approvals.
+async function syncInstituteMaster(rc) {
+    try {
+        if (!rc.college_code && !rc.college_name) return null;
+
+        const code  = (rc.college_code  || '').trim().toUpperCase() || null;
+        const name  = (rc.college_name  || rc.name || '').trim()    || null;
+        if (!name) return null;
+
+        // Try to find an existing institute row by college_code first, then by name
+        let existId = null;
+        if (code) {
+            const [[byCode]] = await pool.execute(
+                'SELECT id FROM master_institutes WHERE college_code = ? LIMIT 1', [code]
+            );
+            if (byCode) existId = byCode.id;
+        }
+        if (!existId) {
+            const [[byName]] = await pool.execute(
+                'SELECT id FROM master_institutes WHERE LOWER(TRIM(name)) = LOWER(?) LIMIT 1', [name]
+            );
+            if (byName) existId = byName.id;
+        }
+
+        if (existId) {
+            // Update existing row — registration data wins
+            await pool.execute(
+                `UPDATE master_institutes SET
+                    name = ?, college_code = ?, abbreviation = ?,
+                    college_name = ?, principal_name = ?, principal_mobile = ?,
+                    college_email = ?, college_phone = ?,
+                    source_centre_id = ?, is_active = 1
+                 WHERE id = ?`,
+                [
+                    name, code, code,
+                    name,
+                    rc.principal_name   || null,
+                    rc.principal_mobile || null,
+                    rc.hod_email        || null,
+                    rc.college_phone    || null,
+                    rc.id,
+                    existId,
+                ]
+            );
+            // Keep research_centres.institute_id in sync
+            await pool.execute(
+                'UPDATE research_centres SET institute_id = ? WHERE id = ?',
+                [existId, rc.id]
+            );
+            return existId;
+        } else {
+            // Insert new institute row from registration data
+            const [result] = await pool.execute(
+                `INSERT INTO master_institutes
+                    (name, college_code, abbreviation, college_name,
+                     principal_name, principal_mobile, college_email, college_phone,
+                     source_centre_id, is_active)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+                [
+                    name, code, code, name,
+                    rc.principal_name   || null,
+                    rc.principal_mobile || null,
+                    rc.hod_email        || null,
+                    rc.college_phone    || null,
+                    rc.id,
+                ]
+            );
+            await pool.execute(
+                'UPDATE research_centres SET institute_id = ? WHERE id = ?',
+                [result.insertId, rc.id]
+            );
+            return result.insertId;
+        }
+    } catch (e) {
+        console.error('Institute Master sync error:', e.message);
+        return null;
+    }
+}
+
 // PATCH /api/centre-tracking/:id/approve
 router.patch('/:id/approve', verifyToken, isAdmin, async (req, res) => {
     try {
-        const [[rc]] = await pool.execute('SELECT id, email, status, name FROM research_centres WHERE id = ?', [req.params.id]);
+        const [[rc]] = await pool.execute(
+            `SELECT id, email, status, name,
+                    college_code, college_name, principal_name, principal_mobile,
+                    hod_email, college_phone
+             FROM research_centres WHERE id = ?`,
+            [req.params.id]
+        );
         if (!rc) return res.status(404).json({ success: false, message: 'Research centre not found' });
 
         const prev = rc.status;
@@ -182,6 +270,10 @@ router.patch('/:id/approve', verifyToken, isAdmin, async (req, res) => {
             'UPDATE research_centres SET status = ?, approved_by = ?, approved_at = NOW(), rejection_reason = NULL WHERE id = ?',
             ['Approved', req.user.id, req.params.id]
         );
+
+        // Auto-sync Institute Master from registration data (single source of truth)
+        await syncInstituteMaster(rc);
+
         await logAction({ centre_id: rc.id, action: 'Approved', previous_status: prev, new_status: 'Approved', performed_by: req.user.id });
         await sendStatusEmail(rc, 'Approved');
 

@@ -30,6 +30,7 @@ import QualificationManagement from './pages/QualificationManagement';
 import DirectPassRules from './pages/DirectPassRules';
 import StudentTracking from './pages/StudentTracking';
 import JoiningLetterPrint from './pages/JoiningLetterPrint';
+import ReceiptView from './pages/ReceiptView';
 import PartTimeConfigurations from './pages/PartTimeConfigurations';
 import EligibilityManagement from './pages/EligibilityManagement';
 import SupervisorManagement, {
@@ -154,6 +155,7 @@ function App() {
         <Route path="/sessions" element={<ProtectedRoute><SessionManagement /></ProtectedRoute>} />
         <Route path="/locations" element={<ProtectedRoute><LocationManagement /></ProtectedRoute>} />
         <Route path="/counselling/joining-letter/:id" element={<ProtectedPrintRoute><JoiningLetterPrint /></ProtectedPrintRoute>} />
+        <Route path="/payment/receipt/:orderId" element={<ProtectedPrintRoute><ReceiptView /></ProtectedPrintRoute>} />
         <Route path="/counselling/*" element={<ProtectedRoute><CounsellingManagement /></ProtectedRoute>} />
         <Route path="/community-fees" element={<ProtectedRoute><CommunityFees /></ProtectedRoute>} />
         <Route path="/payment-management" element={<ProtectedRoute><PaymentManagement /></ProtectedRoute>} />

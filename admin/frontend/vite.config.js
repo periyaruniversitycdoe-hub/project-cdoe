@@ -8,6 +8,7 @@ export default defineConfig({
   server: {
     port: 5174,
     host: true,
+    strictPort: true,
     allowedHosts: true,
   },
   resolve: {
@@ -23,7 +24,7 @@ export default defineConfig({
   },
   build: {
     target: 'es2020',
-    minify: 'esbuild',
+    minify: false,
     cssMinify: true,
     chunkSizeWarningLimit: 1000,
     rollupOptions: {

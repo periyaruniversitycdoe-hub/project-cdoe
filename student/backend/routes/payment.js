@@ -352,7 +352,7 @@ router.get('/receipt-data/:orderId', authenticateToken, async (req, res) => {
       const [[txn]] = await db.query(
         `SELECT pt.*, a.applicant_name, a.email, a.mobile
          FROM payment_transactions pt
-         JOIN applications a ON pt.application_id = a.application_id
+         JOIN applications a ON pt.application_id = a.application_id COLLATE utf8mb4_general_ci
          WHERE pt.order_id = ? LIMIT 1`,
         [req.params.orderId]
       );
@@ -381,6 +381,19 @@ router.get('/receipt-data/:orderId', authenticateToken, async (req, res) => {
     } else {
       if (receipt.user_id !== req.user.id) return res.status(403).json({ success: false, message: 'Forbidden' });
       data = receipt;
+    }
+
+    if (data) {
+      try {
+        const QRCode = require('qrcode');
+        const feBase = process.env.STUDENT_FRONTEND_URL || 'http://localhost:5173';
+        const qrContent = data.qr_verification_code
+          ? `${feBase}/verify-receipt?code=${encodeURIComponent(data.qr_verification_code)}`
+          : `${feBase}/receipt/${encodeURIComponent(data.order_id || data.application_id || 'N/A')}`;
+        data.qr_code_base64 = await QRCode.toDataURL(qrContent, { width: 120, margin: 1 });
+      } catch (qrErr) {
+        console.error('Failed to generate QR code:', qrErr);
+      }
     }
 
     res.json({ success: true, data });
@@ -444,6 +457,19 @@ router.get('/receipt-data-by-app/:appId', authenticateToken, async (req, res) =>
       data = receipt;
     }
 
+    if (data) {
+      try {
+        const QRCode = require('qrcode');
+        const feBase = process.env.STUDENT_FRONTEND_URL || 'http://localhost:5173';
+        const qrContent = data.qr_verification_code
+          ? `${feBase}/verify-receipt?code=${encodeURIComponent(data.qr_verification_code)}`
+          : `${feBase}/receipt/${encodeURIComponent(data.order_id || data.application_id || 'N/A')}`;
+        data.qr_code_base64 = await QRCode.toDataURL(qrContent, { width: 120, margin: 1 });
+      } catch (qrErr) {
+        console.error('Failed to generate QR code:', qrErr);
+      }
+    }
+
     res.json({ success: true, data });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -456,13 +482,26 @@ router.get('/verify-receipt', async (req, res) => {
   const { code } = req.query;
   if (!code) return res.status(400).json({ success: false, message: 'code is required' });
   try {
-    const [[rcpt]] = await db.query(
-      `SELECT receipt_number, order_id, application_id, amount, applicant_name, issued_at
-       FROM payment_receipts WHERE qr_verification_code = ? LIMIT 1`,
+    const [[receipt]] = await db.query(
+      `SELECT pr.*, pt.payment_method, pt.payment_sub_method, pt.provider_name, 
+              pt.gateway_transaction_id, pt.payment_status, pt.completed_at, pt.callback_payload
+       FROM payment_receipts pr
+       LEFT JOIN payment_transactions pt ON pr.order_id = pt.order_id
+       WHERE pr.qr_verification_code = ? LIMIT 1`,
       [code]
     );
-    if (!rcpt) return res.status(404).json({ success: false, message: 'Receipt not found' });
-    res.json({ success: true, data: rcpt });
+    if (!receipt) return res.status(404).json({ success: false, message: 'Receipt not found' });
+
+    // Generate base64 QR code
+    try {
+      const QRCode = require('qrcode');
+      const verifyUrl = `${process.env.STUDENT_FRONTEND_URL || 'http://localhost:5173'}/verify-receipt?code=${encodeURIComponent(receipt.qr_verification_code)}`;
+      receipt.qr_code_base64 = await QRCode.toDataURL(verifyUrl, { width: 120, margin: 1 });
+    } catch (qrErr) {
+      console.error('Failed to generate verification QR code:', qrErr);
+    }
+
+    res.json({ success: true, data: receipt });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

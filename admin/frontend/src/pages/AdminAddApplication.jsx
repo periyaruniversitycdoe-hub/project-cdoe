@@ -26,7 +26,7 @@ export default function AdminAddApplication() {
   const [form, setForm] = useState({ full_name: '', email: '', password: '', confirmPassword: '' });
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null); // { applicationId, userId }
+  const [result, setResult] = useState(null); // { userId, email, studentToken, studentUser }
 
   const set = (key) => (e) => {
     setForm((f) => ({ ...f, [key]: e.target.value }));
@@ -72,7 +72,7 @@ export default function AdminAddApplication() {
         // Auto-login failed — Phase 2 will still render but may need manual auth
       }
 
-      setResult({ applicationId: data.applicationId, userId: data.userId, studentToken, studentUser });
+      setResult({ userId: data.userId, email: form.email, fullName: form.full_name, studentToken, studentUser });
       toast.success('Student registered successfully');
     } catch (err) {
       toast.error(err.response?.data?.message || 'Registration failed');
@@ -89,15 +89,16 @@ export default function AdminAddApplication() {
         <div className="alert alert-success d-flex align-items-center gap-2 mx-4 mt-4 mb-0 py-2">
           <CheckCircle size={18} className="flex-shrink-0" />
           <span>
-            <strong>Account created — Application ID: {result.applicationId}</strong>
+            <strong>Account created — {result.fullName}</strong>
+            <span className="ms-2 text-muted small">({result.email})</span>
             <button
               className="btn btn-sm btn-outline-secondary py-0 ms-2"
               style={{ fontSize: 11 }}
-              onClick={() => navigator.clipboard.writeText(result.applicationId).then(() => toast.success('Copied!'))}
+              onClick={() => navigator.clipboard.writeText(result.email).then(() => toast.success('Email copied!'))}
             >
-              <Copy size={11} className="me-1" />Copy
+              <Copy size={11} className="me-1" />Copy email
             </button>
-            <span className="ms-2 text-muted small">Now fill the full application form below — same form as Student Portal.</span>
+            <span className="ms-2 text-muted small">Now fill the full application form below — Application ID assigned after payment.</span>
           </span>
           <Link to="/applications" className="btn btn-sm btn-outline-secondary ms-auto">
             <ArrowLeft size={13} className="me-1" />Back to Applications

@@ -8,7 +8,11 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
+    strictPort: true,
     allowedHosts: true,
+    headers: {
+      'Cache-Control': 'no-store',
+    },
   },
   resolve: {
     alias: {
@@ -19,14 +23,20 @@ export default defineConfig({
   },
   build: {
     target: 'es2020',
-    minify: 'esbuild',
+    minify: false,
     cssMinify: true,
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          'vendor-ui':    ['axios', 'react-hot-toast'],
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('react/') || id.includes('react-dom/') || id.includes('react-router-dom/')) {
+              return 'vendor-react';
+            }
+            if (id.includes('axios/') || id.includes('react-hot-toast/')) {
+              return 'vendor-ui';
+            }
+          }
         },
       },
     },

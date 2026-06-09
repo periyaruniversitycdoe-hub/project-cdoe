@@ -355,7 +355,9 @@ export default function InstituteMaster() {
                     </button>
                     <div>
                         <h4 className="fw-bold mb-0">🏫 Institute Master</h4>
-                        <small className="text-muted">Manage affiliated colleges · Periyar University ERP</small>
+                        <small className="text-muted">
+                            Synchronized projection of Research Centre registrations · Periyar University ERP
+                        </small>
                     </div>
                 </div>
                 <div className="d-flex gap-2 flex-wrap">
@@ -371,6 +373,18 @@ export default function InstituteMaster() {
                     <button className="btn btn-primary btn-sm" onClick={openAdd}>
                         + Add Institute
                     </button>
+                </div>
+            </div>
+
+            {/* ── Architecture notice ── */}
+            <div className="alert alert-info d-flex gap-2 align-items-start py-2 px-3 mb-3 small">
+                <span style={{ fontSize: 18 }}>🔄</span>
+                <div>
+                    <strong>Synchronized Projection</strong> — Institute records are automatically created and updated
+                    when a Research Centre registration is <strong>approved</strong>. No separate institute data entry
+                    is required. Rows marked <span className="badge bg-success-subtle text-success border border-success-subtle">Auto-synced</span> originate
+                    from an approved registration; rows marked <span className="badge bg-secondary-subtle text-secondary border border-secondary-subtle">Manual</span> were
+                    added before this architecture was in place.
                 </div>
             </div>
 
@@ -457,11 +471,14 @@ export default function InstituteMaster() {
                                         <th>College Email</th>
                                         <th>College Phone</th>
                                         <th style={{ width: 90 }}>Status</th>
+                                        <th style={{ width: 80 }}>Source</th>
                                         <th style={{ width: 160 }}>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {rows.map(row => (
+                                    {rows.map(row => {
+                                        const isSynced = !!row.source_centre_id;
+                                        return (
                                         <tr key={row.id} className={!row.is_active ? 'table-secondary' : ''}>
                                             <td className="text-muted small fw-semibold">{row.serial_no}</td>
                                             <td>
@@ -490,12 +507,31 @@ export default function InstituteMaster() {
                                                 </Badge>
                                             </td>
                                             <td>
+                                                {isSynced ? (
+                                                    <span className="badge bg-success-subtle text-success border border-success-subtle"
+                                                        title={`Auto-synced from Centre #${row.source_centre_id}`}>
+                                                        🔄 Synced
+                                                    </span>
+                                                ) : (
+                                                    <span className="badge bg-secondary-subtle text-secondary border border-secondary-subtle">
+                                                        Manual
+                                                    </span>
+                                                )}
+                                            </td>
+                                            <td>
                                                 <div className="d-flex gap-1 flex-wrap">
-                                                    <button className="btn btn-xs btn-outline-primary"
-                                                        style={{ fontSize: 11, padding: '2px 7px' }}
-                                                        onClick={() => openEdit(row)} title="Edit">
-                                                        ✏️
-                                                    </button>
+                                                    {/* Synced rows: show view-only link; manual rows: allow edit */}
+                                                    {isSynced ? (
+                                                        <span className="text-muted small fst-italic" style={{ fontSize: 10 }}>
+                                                            Edit via Registration
+                                                        </span>
+                                                    ) : (
+                                                        <button className="btn btn-xs btn-outline-primary"
+                                                            style={{ fontSize: 11, padding: '2px 7px' }}
+                                                            onClick={() => openEdit(row)} title="Edit">
+                                                            ✏️
+                                                        </button>
+                                                    )}
                                                     <button
                                                         className={`btn btn-xs ${row.is_active ? 'btn-outline-warning' : 'btn-outline-success'}`}
                                                         style={{ fontSize: 11, padding: '2px 7px' }}
@@ -503,15 +539,18 @@ export default function InstituteMaster() {
                                                         title={row.is_active ? 'Disable' : 'Enable'}>
                                                         {row.is_active ? '🔴' : '🟢'}
                                                     </button>
-                                                    <button className="btn btn-xs btn-outline-danger"
-                                                        style={{ fontSize: 11, padding: '2px 7px' }}
-                                                        onClick={() => handleDelete(row)} title="Delete">
-                                                        🗑️
-                                                    </button>
+                                                    {!isSynced && (
+                                                        <button className="btn btn-xs btn-outline-danger"
+                                                            style={{ fontSize: 11, padding: '2px 7px' }}
+                                                            onClick={() => handleDelete(row)} title="Delete">
+                                                            🗑️
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </td>
                                         </tr>
-                                    ))}
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>

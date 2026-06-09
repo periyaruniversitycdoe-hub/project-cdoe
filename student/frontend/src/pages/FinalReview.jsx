@@ -138,14 +138,10 @@ const FinalReview = () => {
         responseType: 'blob',
       });
       const blobUrl = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = `PhD_Application_${data.application_id}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      const tab = window.open(blobUrl, '_blank');
       setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
-      toast.success('PDF downloaded successfully!');
+      if (!tab) toast.error('Pop-up blocked — please allow pop-ups for this site.');
+      else toast.success('PDF opened in new tab!');
     } catch {
       toast.error('Failed to generate PDF. Please try again.');
     } finally {
@@ -493,14 +489,10 @@ ${expRows ? `<div class="section">
         responseType: 'blob',
       });
       const blobUrl = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = `E-Receipt_${data.application_id}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      const tab = window.open(blobUrl, '_blank');
       setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
-      toast.success('E-Receipt downloaded successfully!');
+      if (!tab) toast.error('Pop-up blocked — please allow pop-ups for this site.');
+      else toast.success('E-Receipt opened in new tab!');
     } catch (err) {
       console.error(err);
       toast.error('Failed to generate E-Receipt. Please try again.');

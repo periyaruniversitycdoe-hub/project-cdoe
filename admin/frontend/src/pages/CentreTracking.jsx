@@ -154,67 +154,114 @@ function ActionDialog({ mode, onConfirm, onCancel, loading }) {
     );
 }
 
+// ── Section heading helper ────────────────────────────────────────────────────
+function SectionHeading({ title, color = '#0891b2' }) {
+    return (
+        <div className="col-12 mt-3 mb-1">
+            <div className="fw-bold small text-uppercase" style={{ color, letterSpacing: 1, borderBottom: `2px solid ${color}22`, paddingBottom: 4 }}>
+                {title}
+            </div>
+        </div>
+    );
+}
+
+function InfoField({ label, value }) {
+    return (
+        <div className="col-md-6">
+            <div className="small text-muted fw-semibold">{label}</div>
+            <div className="fw-semibold text-dark" style={{ wordBreak: 'break-word' }}>{value || '—'}</div>
+        </div>
+    );
+}
+
 // ── View Detail Modal ─────────────────────────────────────────────────────────
+// Shows the complete registration form data — all three steps — so the admin
+// sees exactly what the centre submitted with no partial views.
 function ViewModal({ centre, onClose }) {
     const c = centre;
     const statusMeta = STATUS_META[c?.status] || STATUS_META.Draft;
+    const ADMIN_URL  = import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001';
+
     return (
         <div className="modal d-block" style={{ background: 'rgba(0,0,0,0.5)', zIndex: 9998 }}>
-            <div className="modal-dialog modal-dialog-centered modal-lg">
+            <div className="modal-dialog modal-dialog-centered modal-xl">
                 <div className="modal-content border-0 shadow-lg">
                     <div className="modal-header border-bottom">
-                        <h5 className="modal-title fw-bold">Research Centre Details</h5>
+                        <h5 className="modal-title fw-bold">Research Centre — Full Registration Details</h5>
                         <button className="btn-close" onClick={onClose} />
                     </div>
-                    <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
-                        <div className="d-flex align-items-start gap-3 mb-4">
+                    <div className="modal-body" style={{ maxHeight: '78vh', overflowY: 'auto' }}>
+
+                        {/* ── Header band ── */}
+                        <div className="d-flex align-items-start gap-3 mb-4 p-3 rounded-3 bg-light">
                             {c.logo ? (
-                                <img src={`${import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001'}${c.logo}`} alt="Logo" className="rounded" style={{ width: 72, height: 72, objectFit: 'contain', border: '1px solid #e2e8f0', background: '#f8fafc' }} />
+                                <img src={`${ADMIN_URL}${c.logo}`} alt="Logo" className="rounded"
+                                    style={{ width: 72, height: 72, objectFit: 'contain', border: '1px solid #e2e8f0', background: '#fff' }} />
                             ) : (
-                                <div className="rounded bg-info d-flex align-items-center justify-content-center text-white fw-bold" style={{ width: 72, height: 72, fontSize: 26 }}>
-                                    {(c.centre_name || 'C').charAt(0)}
+                                <div className="rounded bg-info d-flex align-items-center justify-content-center text-white fw-bold"
+                                    style={{ width: 72, height: 72, fontSize: 26, flexShrink: 0 }}>
+                                    {(c.centre_name || c.name || 'C').charAt(0)}
                                 </div>
                             )}
                             <div>
                                 <h5 className="fw-bold mb-1">{c.centre_name || c.name}</h5>
-                                <div className="text-muted small">{c.centre_type_name} · {c.institute_name}</div>
-                                <span className={`badge mt-1 ${statusMeta.badge}`}>{statusMeta.label}</span>
+                                <div className="text-muted small mb-1">{c.centre_type_name}</div>
+                                <span className={`badge ${statusMeta.badge}`}>{statusMeta.label}</span>
+                                {c.centre_ref_no && (
+                                    <span className="badge bg-light text-dark border ms-2">{c.centre_ref_no}</span>
+                                )}
                             </div>
                         </div>
 
                         <div className="row g-3">
-                            {[
-                                ['Centre ID', `#${c.id}`],
-                                ['Centre Ref No', c.centre_ref_no || '—'],
-                                ['Centre Type', c.centre_type_name || '—'],
-                                ['Email', c.email || '—'],
-                                ['Contact', c.contact_number || '—'],
-                                ['Institute Code', c.institute_code || '—'],
-                                ['Institute', c.institute_name || '—'],
-                                ['District', c.district_name || '—'],
-                                ['Recognition Date', fmt(c.recognition_date)],
-                                ['Applied Date', fmt(c.created_at)],
-                                ['Approved / Action Date', fmt(c.approved_at)],
-                                ['HOD Email', c.hod_email || '—'],
-                            ].map(([k, v]) => (
-                                <div className="col-md-6" key={k}>
-                                    <div className="small text-muted fw-semibold">{k}</div>
-                                    <div className="fw-semibold text-dark">{v}</div>
+                            {/* ── Step 0: Centre Information ── */}
+                            <SectionHeading title="Centre Information" color="#0891b2" />
+                            <InfoField label="Centre ID"            value={`#${c.id}`} />
+                            <InfoField label="Centre Type"          value={c.centre_type_name} />
+                            <InfoField label="Recognition Ref. No." value={c.centre_ref_no} />
+                            <InfoField label="Recognition Date"     value={fmt(c.recognition_date)} />
+                            <InfoField label="Applied Date"         value={fmt(c.created_at)} />
+                            <InfoField label="Approved / Action Date" value={fmt(c.approved_at)} />
+
+                            {/* ── Step 1: Institute Details (from registration form) ── */}
+                            <SectionHeading title="Institute Details  —  Source of Truth for Institute Master" color="#0369a1" />
+                            <InfoField label="College Code"      value={c.college_code    || c.institute_code} />
+                            <InfoField label="College Name"      value={c.college_name    || c.institute_name} />
+                            <InfoField label="Principal / HOD"   value={c.principal_name  || c.institute_principal} />
+                            <InfoField label="Principal Mobile"  value={c.principal_mobile|| c.institute_principal_mobile} />
+                            <InfoField label="Principal Email"   value={c.hod_email       || c.institute_email} />
+                            <InfoField label="College Phone"     value={c.college_phone   || c.institute_phone} />
+
+                            {/* ── Step 2: Address & Contact ── */}
+                            <SectionHeading title="Address &amp; Contact" color="#059669" />
+                            <div className="col-12">
+                                <div className="small text-muted fw-semibold">Address</div>
+                                <div className="fw-semibold text-dark">
+                                    {[c.address_1, c.address_2, c.address_3, c.district_name, c.pincode]
+                                        .filter(Boolean).join(', ') || '—'}
                                 </div>
-                            ))}
+                            </div>
+                            <InfoField label="Centre Email"    value={c.email} />
+                            <InfoField label="Contact Number"  value={c.contact_number} />
                         </div>
 
                         {c.rejection_reason && (
                             <div className="alert alert-danger mt-4 mb-0">
-                                <strong>Rejection / Suspension Reason:</strong><br />
-                                {c.rejection_reason}
+                                <strong>Rejection / Suspension Reason:</strong><br />{c.rejection_reason}
+                            </div>
+                        )}
+                        {c.remark && (
+                            <div className="alert alert-secondary mt-3 mb-0">
+                                <strong>Admin Remark:</strong><br />{c.remark}
                             </div>
                         )}
                     </div>
                     <div className="modal-footer border-0">
                         <button className="btn btn-outline-secondary" onClick={onClose}>Close</button>
                         {c.recognition_certificate && (
-                            <a className="btn btn-outline-primary" href={`${import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001'}${c.recognition_certificate}`} target="_blank" rel="noreferrer">
+                            <a className="btn btn-outline-primary"
+                                href={`${ADMIN_URL}${c.recognition_certificate}`}
+                                target="_blank" rel="noreferrer">
                                 <Download size={14} className="me-1" /> Recognition Certificate
                             </a>
                         )}

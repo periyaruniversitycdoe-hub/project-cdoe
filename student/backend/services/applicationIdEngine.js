@@ -1,5 +1,11 @@
 'use strict';
 
+// Valid month names stored in the sessions table
+const VALID_MONTHS = new Set([
+    'January','February','March','April','May','June',
+    'July','August','September','October','November','December',
+]);
+
 /**
  * ApplicationIdGenerationEngine
  *
@@ -7,26 +13,32 @@
  * submits their registration form. Never called at account-creation time.
  *
  * Format: CETPHD/{SESSION_CODE}/{SERIAL}
- *   SESSION_CODE = {MONTH_CODE}{YEAR_LAST_2_DIGITS}
- *     MONTH_CODE:  J  → July session
- *                  D  → December session
- *     YEAR (last 2 digits of the active session year)
+ *   SESSION_CODE = {MONTH_FIRST_LETTER}{YEAR_LAST_2_DIGITS}
+ *     MONTH_FIRST_LETTER: First letter of the Admin-configured session month
+ *       January   → J  |  February  → F  |  March     → M
+ *       April     → A  |  May       → M  |  June      → J
+ *       July      → J  |  August    → A  |  September → S
+ *       October   → O  |  November  → N  |  December  → D
+ *     YEAR: last 2 digits of the active session year
  *   SERIAL = 4-digit session-scoped running sequence (0001 → 9999)
+ *            resets automatically when a new session is activated
  *
  * Examples:
+ *   June 2026 session     → CETPHD/J26/0001, CETPHD/J26/0002 …
  *   July 2026 session     → CETPHD/J26/0001, CETPHD/J26/0002 …
  *   December 2026 session → CETPHD/D26/0001, CETPHD/D26/0002 …
+ *   January 2027 session  → CETPHD/J27/0001, CETPHD/J27/0002 …
  *
  * Thread / concurrency safety:
  *   Uses SELECT … FOR UPDATE inside a transaction so concurrent
  *   simultaneous submissions cannot receive the same serial number.
  *
  * @param {import('mysql2/promise').Pool} db - mysql2 promise pool
- * @param {number} sessionId - active session id
+ * @param {number} sessionId - active session id (from users.session_id)
  * @returns {Promise<string>} application ID, e.g. "CETPHD/J26/0001"
  */
 async function generateCETPHDApplicationId(db, sessionId) {
-    // ── 1. Resolve session details ────────────────────────────────────────────
+    // ── 1. Resolve session details from Admin-configured active session ────────
     const [sessionRows] = await db.query(
         'SELECT year, month FROM sessions WHERE id = ? LIMIT 1',
         [sessionId]
@@ -37,11 +49,18 @@ async function generateCETPHDApplicationId(db, sessionId) {
 
     const { year, month } = sessionRows[0];
 
-    // Determine month code: J = July, D = December
-    const monthLower = String(month).toLowerCase().trim();
-    const monthCode = monthLower.startsWith('jul') ? 'J' : 'D';
-    const yearCode  = String(year).slice(-2);              // e.g. "2026" → "26"
-    const sessionCode = `${monthCode}${yearCode}`;          // e.g. "J26"
+    // Derive month code: first letter of the Admin-configured session month name.
+    // The month column stores full English month names (e.g. "June", "December").
+    const monthTrimmed = String(month).trim();
+    if (!VALID_MONTHS.has(monthTrimmed)) {
+        throw new Error(
+            `ApplicationIdEngine: invalid session month "${monthTrimmed}" for session ${sessionId}. ` +
+            `Expected one of: ${[...VALID_MONTHS].join(', ')}`
+        );
+    }
+    const monthCode   = monthTrimmed.charAt(0).toUpperCase(); // "June" → "J", "December" → "D"
+    const yearCode    = String(year).slice(-2);               // "2026" → "26"
+    const sessionCode = `${monthCode}${yearCode}`;            // "J26", "D26", "J27" …
 
     // ── 2. Atomic serial generation with row-level lock ───────────────────────
     const conn = await db.getConnection();
