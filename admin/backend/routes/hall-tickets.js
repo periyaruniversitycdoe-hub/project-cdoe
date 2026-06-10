@@ -492,8 +492,8 @@ router.post('/preview', verifyToken, isAdmin, async (req, res) => {
       LEFT JOIN hall_tickets ht ON ht.application_id = a.application_id AND ht.venue_id IS NOT NULL
       WHERE ${conditions.join(' AND ')}
       ORDER BY a.created_at ASC
-      LIMIT ${numToAllocate}
-    `, params);
+      LIMIT ?
+    `, [...params, numToAllocate]);
 
     if (students.length === 0) {
       return res.status(400).json({ success: false, message: 'No unallocated students found for this department' });
@@ -599,8 +599,8 @@ router.post('/bulk-generate', verifyToken, isAdmin, async (req, res) => {
       LEFT JOIN hall_tickets ht ON ht.application_id = a.application_id AND ht.venue_id IS NOT NULL
       WHERE ${conditions.join(' AND ')}
       ORDER BY a.created_at ASC
-      LIMIT ${numToAllocate}
-    `, params);
+      LIMIT ?
+    `, [...params, numToAllocate]);
 
     if (students.length === 0) {
       await connection.rollback();
@@ -698,12 +698,14 @@ router.post('/auto-allocate', verifyToken, isAdmin, async (req, res) => {
     await connection.beginTransaction();
 
     const [venues] = await connection.execute(`
-      SELECT v.*,
-             v.capacity - COALESCE((SELECT COUNT(*) FROM hall_tickets ht WHERE ht.venue_id = v.id), 0) AS remaining
-      FROM venues v
-      WHERE v.session_id = ?
-      HAVING remaining > 0
-      ORDER BY v.department, v.hall_name
+      SELECT * FROM (
+        SELECT v.*,
+               v.capacity - COALESCE((SELECT COUNT(*) FROM hall_tickets ht WHERE ht.venue_id = v.id), 0) AS remaining
+        FROM venues v
+        WHERE v.session_id = ?
+      ) AS venue_remaining
+      WHERE remaining > 0
+      ORDER BY department, hall_name
     `, [session_id]);
 
     if (venues.length === 0) {

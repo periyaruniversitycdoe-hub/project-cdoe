@@ -4,28 +4,29 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import useAuthStore from '../store/authStore';
 import Header from '../components/Header';
-import { GraduationCap, Plus, Trash2, Send, CheckCircle, Lock, Clock } from 'lucide-react';
+import { GraduationCap, Plus, Trash2, Send, CheckCircle, Lock, Clock, Building2, User } from 'lucide-react';
 
 const API = import.meta.env.VITE_API_URL || (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api';
-
-const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const MAX_PREFS = 5;
 
 const CounsellingApplication = () => {
   const { user, token } = useAuthStore();
   const navigate = useNavigate();
 
-  const [settings, setSettings]           = useState(null);
+  const [settings, setSettings]         = useState(null);
   const [settingsError, setSettingsError] = useState('');
-  const [centers, setCenters]             = useState([]);
-  const [supervisorsMap, setSupervisorsMap] = useState({});
-  const [loadingSups, setLoadingSups]     = useState({});
-  const [choices, setChoices]             = useState([{ research_center_id: '', supervisor_id: '' }]);
-  const [existingApp, setExistingApp]     = useState(null);
-  const [loading, setLoading]             = useState(true);
-  const [saving, setSaving]               = useState(false);
-  const [submitting, setSubmitting]       = useState(false);
+  const [centers, setCenters]           = useState([]);
+  const [allSupervisors, setAllSupervisors] = useState([]);
 
-  // Check date window validity
+  // 5 center prefs + 5 supervisor prefs (independent)
+  const [centerPrefs, setCenterPrefs]   = useState(['']);      // array of center IDs (strings)
+  const [supPrefs, setSupPrefs]         = useState(['']);      // array of supervisor IDs (strings)
+
+  const [existingApp, setExistingApp]   = useState(null);
+  const [loading, setLoading]           = useState(true);
+  const [saving, setSaving]             = useState(false);
+  const [submitting, setSubmitting]     = useState(false);
+
   const dateStatus = useCallback(() => {
     if (!settings) return 'loading';
     const today = new Date().toISOString().split('T')[0];
@@ -39,15 +40,11 @@ const CounsellingApplication = () => {
   useEffect(() => {
     const init = async () => {
       setLoading(true);
-
-      // ── CounsellingAccessEngine: Unified Enterprise Gate ───────────────────
       try {
         const er = await axios.get(`${API}/student/eligibility`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         const eligibility = er.data.data || {};
-
-        // Master check from centralized backend engine
         if (!eligibility.eligible_for_counselling) {
           if (eligibility.final_result_status === 'FAIL') {
             toast.error('Counselling Restricted: Your entrance result is Not Qualified (FAIL).');
@@ -63,14 +60,13 @@ const CounsellingApplication = () => {
           navigate('/dashboard');
           return;
         }
-      } catch (err) {
+      } catch {
         toast.error('Security Gate Error: Unable to verify eligibility.');
         navigate('/dashboard');
         return;
       }
 
       try {
-        // Load counselling settings for this user's session
         const sr = await axios.get(`${API}/counselling/settings`, {
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -81,11 +77,13 @@ const CounsellingApplication = () => {
         return;
       }
 
-      // Load centers
-      try {
-        const cr = await axios.get(`${API}/counselling/research-centers`);
-        setCenters(cr.data.data || []);
-      } catch {}
+      // Load centers and all supervisors in parallel
+      const [centersRes, supsRes] = await Promise.allSettled([
+        axios.get(`${API}/counselling/research-centers`),
+        axios.get(`${API}/counselling/research-supervisors`),
+      ]);
+      if (centersRes.status === 'fulfilled') setCenters(centersRes.value.data.data || []);
+      if (supsRes.status === 'fulfilled') setAllSupervisors(supsRes.value.data.data || []);
 
       // Load existing application
       try {
@@ -93,12 +91,27 @@ const CounsellingApplication = () => {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (ar.data.data) {
-          setExistingApp(ar.data.data);
-          if (ar.data.data.choices && ar.data.data.choices.length > 0) {
-            setChoices(ar.data.data.choices.map(c => ({
-              research_center_id: String(c.research_center_id),
-              supervisor_id:      String(c.supervisor_id),
-            })));
+          const app = ar.data.data;
+          setExistingApp(app);
+          // Populate new separate preferences if available
+          if (app.center_preferences?.length > 0) {
+            setCenterPrefs(app.center_preferences.map(p => String(p.research_center_id)));
+          } else if (app.choices?.length > 0) {
+            // Backward compat: fill from legacy choices
+            const seen = new Set();
+            const cp = app.choices
+              .map(c => String(c.centre_id || c.research_center_id || ''))
+              .filter(id => id && !seen.has(id) && seen.add(id));
+            if (cp.length > 0) setCenterPrefs(cp);
+          }
+          if (app.supervisor_preferences?.length > 0) {
+            setSupPrefs(app.supervisor_preferences.map(p => String(p.supervisor_id)));
+          } else if (app.choices?.length > 0) {
+            const seen = new Set();
+            const sp = app.choices
+              .map(c => String(c.master_supervisor_id || c.supervisor_id || ''))
+              .filter(id => id && !seen.has(id) && seen.add(id));
+            if (sp.length > 0) setSupPrefs(sp);
           }
         }
       } catch {}
@@ -108,66 +121,42 @@ const CounsellingApplication = () => {
     init();
   }, [token]);
 
-  // Load supervisors for a given center
-  const loadSupervisors = async (centerId) => {
-    if (!centerId || supervisorsMap[centerId]) return;
-    setLoadingSups(p => ({ ...p, [centerId]: true }));
-    try {
-      const res = await axios.get(`${API}/counselling/research-supervisors?center_id=${centerId}`);
-      setSupervisorsMap(p => ({ ...p, [centerId]: res.data.data || [] }));
-    } catch {}
-    finally { setLoadingSups(p => ({ ...p, [centerId]: false })); }
-  };
+  const isSubmitted = existingApp?.status === 'Submitted';
 
-  const handleCenterChange = (idx, centerId) => {
-    const updated = [...choices];
-    updated[idx] = { research_center_id: centerId, supervisor_id: '' };
-    setChoices(updated);
-    if (centerId) loadSupervisors(centerId);
-  };
+  // ── Center preference handlers ──────────────────────────────────────────────
+  const setCenterAt    = (idx, val) => setCenterPrefs(p => { const n = [...p]; n[idx] = val; return n; });
+  const addCenter      = ()         => { if (centerPrefs.length < MAX_PREFS) setCenterPrefs(p => [...p, '']); };
+  const removeCenter   = (idx)      => { if (centerPrefs.length > 1) setCenterPrefs(p => p.filter((_, i) => i !== idx)); };
 
-  const handleSupervisorChange = (idx, supervisorId) => {
-    const updated = [...choices];
-    updated[idx] = { ...updated[idx], supervisor_id: supervisorId };
-    setChoices(updated);
-  };
-
-  const addChoice = () => {
-    if (!settings) return;
-    if (choices.length >= settings.max_research_choices) {
-      toast.error(`Maximum ${settings.max_research_choices} research preferences allowed`);
-      return;
-    }
-    setChoices(p => [...p, { research_center_id: '', supervisor_id: '' }]);
-  };
-
-  const removeChoice = (idx) => {
-    if (choices.length <= 1) { toast.error('At least one preference is required'); return; }
-    setChoices(p => p.filter((_, i) => i !== idx));
-  };
+  // ── Supervisor preference handlers ─────────────────────────────────────────
+  const setSupAt       = (idx, val) => setSupPrefs(p => { const n = [...p]; n[idx] = val; return n; });
+  const addSup         = ()         => { if (supPrefs.length < MAX_PREFS) setSupPrefs(p => [...p, '']); };
+  const removeSup      = (idx)      => { if (supPrefs.length > 1) setSupPrefs(p => p.filter((_, i) => i !== idx)); };
 
   const validate = () => {
-    for (let i = 0; i < choices.length; i++) {
-      if (!choices[i].research_center_id) { toast.error(`Select a Research Center for Preference ${i + 1}`); return false; }
-      if (!choices[i].supervisor_id)      { toast.error(`Select a Supervisor for Preference ${i + 1}`); return false; }
-    }
-    const supIds = choices.map(c => c.supervisor_id);
-    if (new Set(supIds).size !== supIds.length) { toast.error('Duplicate supervisor selections are not allowed'); return false; }
+    const filledCenters = centerPrefs.filter(Boolean);
+    const filledSups    = supPrefs.filter(Boolean);
+    if (filledCenters.length === 0) { toast.error('Select at least one Research Center preference'); return false; }
+    if (filledSups.length === 0)    { toast.error('Select at least one Supervisor preference'); return false; }
+    if (new Set(filledCenters).size !== filledCenters.length) { toast.error('Duplicate center selections are not allowed'); return false; }
+    if (new Set(filledSups).size !== filledSups.length)       { toast.error('Duplicate supervisor selections are not allowed'); return false; }
     return true;
   };
+
+  const buildPayload = () => ({
+    center_preferences:     centerPrefs.filter(Boolean).map(Number),
+    supervisor_preferences: supPrefs.filter(Boolean).map(Number),
+  });
 
   const handleSave = async () => {
     if (!validate()) return;
     setSaving(true);
     try {
-      await axios.post(`${API}/counselling/save`, { choices }, {
+      await axios.post(`${API}/counselling/save-preferences`, buildPayload(), {
         headers: { Authorization: `Bearer ${token}` }
       });
       toast.success('Research preferences saved as draft');
-      // Reload
-      const ar = await axios.get(`${API}/counselling/my-application`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const ar = await axios.get(`${API}/counselling/my-application`, { headers: { Authorization: `Bearer ${token}` } });
       if (ar.data.data) setExistingApp(ar.data.data);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Save failed');
@@ -179,25 +168,15 @@ const CounsellingApplication = () => {
     if (!window.confirm('Submit your counselling application? You cannot edit after submission.')) return;
     setSubmitting(true);
     try {
-      // Save first, then submit
-      await axios.post(`${API}/counselling/save`, { choices }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      await axios.post(`${API}/counselling/submit`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await axios.post(`${API}/counselling/save-preferences`, buildPayload(), { headers: { Authorization: `Bearer ${token}` } });
+      await axios.post(`${API}/counselling/submit`, {}, { headers: { Authorization: `Bearer ${token}` } });
       toast.success('Counselling application submitted!');
-      // Reload
-      const ar = await axios.get(`${API}/counselling/my-application`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const ar = await axios.get(`${API}/counselling/my-application`, { headers: { Authorization: `Bearer ${token}` } });
       if (ar.data.data) setExistingApp(ar.data.data);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Submission failed');
     } finally { setSubmitting(false); }
   };
-
-  const isSubmitted = existingApp?.status === 'Submitted';
 
   if (loading) {
     return (
@@ -231,7 +210,7 @@ const CounsellingApplication = () => {
   return (
     <div className="bg-light min-vh-100 pb-5">
       <Header />
-      <div className="container mt-4" style={{ maxWidth: 860 }}>
+      <div className="container mt-4" style={{ maxWidth: 900 }}>
 
         {/* Breadcrumb */}
         <nav aria-label="breadcrumb" className="mb-3">
@@ -249,15 +228,15 @@ const CounsellingApplication = () => {
               <div>
                 <h4 className="fw-bold mb-0">Counselling Application</h4>
                 <p className="mb-0 opacity-75 small">
-                  Select your research preferences. Dates: {settings?.start_date} to {settings?.end_date}.
-                  Maximum choices: {settings?.max_research_choices}
+                  Select up to {MAX_PREFS} Research Center preferences and up to {MAX_PREFS} Supervisor preferences independently.
+                  Window: {settings?.start_date} – {settings?.end_date}
                 </p>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Date status banners */}
+        {/* Status banners */}
         {status === 'not_started' && (
           <div className="alert alert-warning d-flex align-items-center gap-2 rounded-4">
             <Clock size={18} /> Counselling application has not started yet. Opens on {settings?.start_date}.
@@ -274,141 +253,173 @@ const CounsellingApplication = () => {
           </div>
         )}
 
-        {/* Research Preferences Form */}
-        <div className="card border-0 shadow-sm rounded-4">
-          <div className="card-header py-3" style={{ background: '#32b5c0', color: '#fff', borderRadius: '1rem 1rem 0 0' }}>
-            <h5 className="mb-0 fw-bold">Research Preferences</h5>
-          </div>
-          <div className="card-body p-4">
+        <div className="row g-4">
+          {/* ── Research Center Preferences ── */}
+          <div className="col-md-6">
+            <div className="card border-0 shadow-sm rounded-4 h-100">
+              <div className="card-header py-3 d-flex align-items-center gap-2" style={{ background: '#0d6efd', color: '#fff', borderRadius: '1rem 1rem 0 0' }}>
+                <Building2 size={18} />
+                <h6 className="mb-0 fw-bold">Research Center Preferences</h6>
+                <span className="badge bg-white text-primary ms-auto">{centerPrefs.filter(Boolean).length} / {MAX_PREFS}</span>
+              </div>
+              <div className="card-body p-3">
+                <p className="text-muted small mb-3">Rank your preferred Research Centers (1 = most preferred)</p>
 
-            {choices.map((choice, idx) => {
-              const centerSups = supervisorsMap[choice.research_center_id] || [];
-              const isLoading  = loadingSups[choice.research_center_id];
-              return (
-                <div key={idx} className="card border rounded-3 mb-3 p-3 bg-light">
-                  <div className="d-flex align-items-center justify-content-between mb-3">
-                    <span className="fw-bold text-primary" style={{ fontSize: 14 }}>
-                      Preference {idx + 1}
-                    </span>
-                    {!isSubmitted && choices.length > 1 && (
-                      <button className="btn btn-sm btn-outline-danger border-0" onClick={() => removeChoice(idx)}>
+                {centerPrefs.map((centerId, idx) => (
+                  <div key={idx} className="d-flex align-items-center gap-2 mb-2">
+                    <span className="badge rounded-pill" style={{ background: '#0d6efd', minWidth: 26, fontSize: 12 }}>{idx + 1}</span>
+                    <select
+                      className="form-select form-select-sm flex-grow-1"
+                      value={centerId}
+                      onChange={e => setCenterAt(idx, e.target.value)}
+                      disabled={isSubmitted || status !== 'open'}
+                    >
+                      <option value="">Select Center</option>
+                      {centers.map(c => (
+                        <option key={c.id} value={c.id}
+                          disabled={centerPrefs.some((v, i) => i !== idx && v === String(c.id))}>
+                          {c.center_name}
+                        </option>
+                      ))}
+                    </select>
+                    {!isSubmitted && status === 'open' && centerPrefs.length > 1 && (
+                      <button className="btn btn-sm btn-outline-danger border-0 p-1" onClick={() => removeCenter(idx)} title="Remove">
                         <Trash2 size={14} />
                       </button>
                     )}
                   </div>
-                  <div className="row g-3">
-                    <div className="col-md-6">
-                      <label className="form-label fw-semibold" style={{ fontSize: 13 }}>
-                        Research Center <span className="text-danger">*</span>
-                      </label>
-                      <select
-                        className="form-select form-select-sm"
-                        value={choice.research_center_id}
-                        onChange={e => handleCenterChange(idx, e.target.value)}
-                        disabled={isSubmitted || status !== 'open'}
-                      >
-                        <option value="">Select Research Center</option>
-                        {centers.map(c => (
-                          <option key={c.id} value={c.id}>{c.center_name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="col-md-6">
-                      <label className="form-label fw-semibold" style={{ fontSize: 13 }}>
-                        Research Supervisor <span className="text-danger">*</span>
-                      </label>
-                      <select
-                        className="form-select form-select-sm"
-                        value={choice.supervisor_id}
-                        onChange={e => handleSupervisorChange(idx, e.target.value)}
-                        disabled={isSubmitted || status !== 'open' || !choice.research_center_id}
-                      >
-                        <option value="">
-                          {isLoading ? 'Loading…' : choice.research_center_id ? 'Select Supervisor' : 'Select center first'}
-                        </option>
-                        {centerSups.map(s => (
-                          <option key={s.id} value={s.id}>
-                            {s.supervisor_name}{s.designation ? ` (${s.designation})` : ''}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+                ))}
 
-            {/* Add preference */}
-            {!isSubmitted && status === 'open' && choices.length < (settings?.max_research_choices || 3) && (
-              <button
-                className="btn btn-sm btn-outline-primary d-flex align-items-center gap-1 mb-3"
-                onClick={addChoice}
-              >
-                <Plus size={14} /> Add Research Preference
-              </button>
-            )}
-
-            {/* Max reached hint */}
-            {!isSubmitted && status === 'open' && choices.length >= (settings?.max_research_choices || 3) && (
-              <p className="text-muted small mb-3">
-                Maximum {settings?.max_research_choices} preferences reached.
-              </p>
-            )}
-
-            {/* Action buttons */}
-            {!isSubmitted && status === 'open' && (
-              <div className="d-flex gap-2 mt-2">
-                <button
-                  className="btn btn-outline-secondary px-4"
-                  onClick={handleSave}
-                  disabled={saving || submitting}
-                >
-                  {saving ? <><span className="spinner-border spinner-border-sm me-1" /> Saving…</> : 'Save Draft'}
-                </button>
-                <button
-                  className="btn btn-success px-5 d-flex align-items-center gap-2"
-                  onClick={handleSubmit}
-                  disabled={saving || submitting}
-                >
-                  {submitting
-                    ? <><span className="spinner-border spinner-border-sm" /> Submitting…</>
-                    : <><Send size={15} /> Submit Application</>
-                  }
-                </button>
+                {!isSubmitted && status === 'open' && centerPrefs.length < MAX_PREFS && (
+                  <button className="btn btn-sm btn-outline-primary d-flex align-items-center gap-1 mt-1" onClick={addCenter}>
+                    <Plus size={13} /> Add Center
+                  </button>
+                )}
               </div>
-            )}
+            </div>
+          </div>
 
+          {/* ── Supervisor Preferences ── */}
+          <div className="col-md-6">
+            <div className="card border-0 shadow-sm rounded-4 h-100">
+              <div className="card-header py-3 d-flex align-items-center gap-2" style={{ background: '#7c3aed', color: '#fff', borderRadius: '1rem 1rem 0 0' }}>
+                <User size={18} />
+                <h6 className="mb-0 fw-bold">Supervisor Preferences</h6>
+                <span className="badge bg-white text-purple ms-auto" style={{ color: '#7c3aed' }}>{supPrefs.filter(Boolean).length} / {MAX_PREFS}</span>
+              </div>
+              <div className="card-body p-3">
+                <p className="text-muted small mb-3">Rank your preferred Supervisors (1 = most preferred)</p>
+
+                {supPrefs.map((supId, idx) => (
+                  <div key={idx} className="d-flex align-items-center gap-2 mb-2">
+                    <span className="badge rounded-pill" style={{ background: '#7c3aed', minWidth: 26, fontSize: 12 }}>{idx + 1}</span>
+                    <select
+                      className="form-select form-select-sm flex-grow-1"
+                      value={supId}
+                      onChange={e => setSupAt(idx, e.target.value)}
+                      disabled={isSubmitted || status !== 'open'}
+                    >
+                      <option value="">Select Supervisor</option>
+                      {allSupervisors.map(s => (
+                        <option key={s.id} value={s.id}
+                          disabled={supPrefs.some((v, i) => i !== idx && v === String(s.id))}>
+                          {s.supervisor_name}{s.designation ? ` (${s.designation})` : ''}{s.center_name ? ` — ${s.center_name}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {!isSubmitted && status === 'open' && supPrefs.length > 1 && (
+                      <button className="btn btn-sm btn-outline-danger border-0 p-1" onClick={() => removeSup(idx)} title="Remove">
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+
+                {!isSubmitted && status === 'open' && supPrefs.length < MAX_PREFS && (
+                  <button className="btn btn-sm d-flex align-items-center gap-1 mt-1" style={{ color: '#7c3aed', border: '1px solid #7c3aed', background: 'transparent' }} onClick={addSup}>
+                    <Plus size={13} /> Add Supervisor
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Submitted view — show submitted choices read-only */}
-        {isSubmitted && existingApp?.choices?.length > 0 && (
-          <div className="card border-0 shadow-sm rounded-4 mt-4">
-            <div className="card-header py-2 fw-semibold" style={{ fontSize: 13, background: '#f8f9fa' }}>
-              Submitted Preferences
-            </div>
-            <div className="card-body p-0">
-              <table className="table table-hover align-middle mb-0" style={{ fontSize: 13 }}>
-                <thead>
-                  <tr>
-                    <th className="ps-3 py-2">Preference</th>
-                    <th className="py-2">Research Center</th>
-                    <th className="py-2">Supervisor</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {existingApp.choices.map(c => (
-                    <tr key={c.id}>
-                      <td className="ps-3">
-                        <span className="badge bg-primary">#{c.preference_order}</span>
-                      </td>
-                      <td className="fw-semibold">{c.center_name}</td>
-                      <td>{c.supervisor_name}{c.designation ? ` — ${c.designation}` : ''}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+        {/* Action buttons */}
+        {!isSubmitted && status === 'open' && (
+          <div className="d-flex gap-2 mt-4">
+            <button
+              className="btn btn-outline-secondary px-4"
+              onClick={handleSave}
+              disabled={saving || submitting}
+            >
+              {saving ? <><span className="spinner-border spinner-border-sm me-1" /> Saving…</> : 'Save Draft'}
+            </button>
+            <button
+              className="btn btn-success px-5 d-flex align-items-center gap-2"
+              onClick={handleSubmit}
+              disabled={saving || submitting}
+            >
+              {submitting
+                ? <><span className="spinner-border spinner-border-sm" /> Submitting…</>
+                : <><Send size={15} /> Submit Application</>
+              }
+            </button>
+          </div>
+        )}
+
+        {/* Read-only submitted view */}
+        {isSubmitted && (
+          <div className="row g-4 mt-2">
+            {existingApp?.center_preferences?.length > 0 && (
+              <div className="col-md-6">
+                <div className="card border-0 shadow-sm rounded-4">
+                  <div className="card-header py-2 fw-semibold" style={{ fontSize: 13, background: '#eff6ff', color: '#1d4ed8' }}>
+                    Submitted Center Preferences
+                  </div>
+                  <div className="card-body p-0">
+                    <table className="table table-hover align-middle mb-0" style={{ fontSize: 13 }}>
+                      <tbody>
+                        {existingApp.center_preferences.map((p, i) => (
+                          <tr key={i}>
+                            <td className="ps-3 py-2" style={{ width: 40 }}>
+                              <span className="badge bg-primary rounded-pill">#{p.preference_order}</span>
+                            </td>
+                            <td className="fw-semibold">{p.center_name}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+            {existingApp?.supervisor_preferences?.length > 0 && (
+              <div className="col-md-6">
+                <div className="card border-0 shadow-sm rounded-4">
+                  <div className="card-header py-2 fw-semibold" style={{ fontSize: 13, background: '#f5f3ff', color: '#7c3aed' }}>
+                    Submitted Supervisor Preferences
+                  </div>
+                  <div className="card-body p-0">
+                    <table className="table table-hover align-middle mb-0" style={{ fontSize: 13 }}>
+                      <tbody>
+                        {existingApp.supervisor_preferences.map((p, i) => (
+                          <tr key={i}>
+                            <td className="ps-3 py-2" style={{ width: 40 }}>
+                              <span className="badge rounded-pill" style={{ background: '#7c3aed' }}>#{p.preference_order}</span>
+                            </td>
+                            <td>
+                              <div className="fw-semibold">{p.supervisor_name}</div>
+                              {p.designation && <div className="text-muted" style={{ fontSize: 11 }}>{p.designation}</div>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

@@ -213,7 +213,7 @@ router.get('/settings', verifyToken, isAdmin, async (_req, res) => {
     try {
         const [rows] = await db.query(`SELECT * FROM chatbot_settings ORDER BY portal_key ASC`);
         res.json({ success: true, data: rows });
-    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+    } catch (e) { res.status(500).json({ success: false, message: safeError(e) }); }
 });
 
 router.put('/settings/:portal_key', verifyToken, isAdmin, async (req, res) => {
@@ -225,7 +225,7 @@ router.put('/settings/:portal_key', verifyToken, isAdmin, async (req, res) => {
         );
         await auditLog('update_settings', 'settings', null, req.user);
         res.json({ success: true, message: 'Settings updated' });
-    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+    } catch (e) { res.status(500).json({ success: false, message: safeError(e) }); }
 });
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -236,14 +236,14 @@ router.get('/categories', async (_req, res) => {
     try {
         const [rows] = await db.query(`SELECT * FROM kb_categories WHERE is_active=1 ORDER BY sort_order ASC, name ASC`);
         res.json({ success: true, data: rows });
-    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+    } catch (e) { res.status(500).json({ success: false, message: safeError(e) }); }
 });
 
 router.get('/categories/all', verifyToken, isAdmin, async (_req, res) => {
     try {
         const [rows] = await db.query(`SELECT * FROM kb_categories ORDER BY sort_order ASC, name ASC`);
         res.json({ success: true, data: rows });
-    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+    } catch (e) { res.status(500).json({ success: false, message: safeError(e) }); }
 });
 
 router.post('/categories', verifyToken, isAdmin, async (req, res) => {
@@ -256,7 +256,7 @@ router.post('/categories', verifyToken, isAdmin, async (req, res) => {
             [name, slug, description||null, sort_order]
         );
         res.json({ success: true, id: r.insertId, message: 'Category created' });
-    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+    } catch (e) { res.status(500).json({ success: false, message: safeError(e) }); }
 });
 
 router.put('/categories/:id', verifyToken, isAdmin, async (req, res) => {
@@ -267,7 +267,7 @@ router.put('/categories/:id', verifyToken, isAdmin, async (req, res) => {
             [name, description||null, is_active === false || is_active === 0 ? 0 : 1, sort_order||0, req.params.id]
         );
         res.json({ success: true, message: 'Category updated' });
-    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+    } catch (e) { res.status(500).json({ success: false, message: safeError(e) }); }
 });
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -290,7 +290,7 @@ router.get('/faqs', async (req, res) => {
         );
         const [[{total}]] = await db.query(`SELECT COUNT(*) AS total FROM faqs f WHERE ${w}`, p);
         res.json({ success: true, data: rows, total, page: parseInt(page) });
-    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+    } catch (e) { res.status(500).json({ success: false, message: safeError(e) }); }
 });
 
 router.post('/faqs', verifyToken, isAdmin, async (req, res) => {
@@ -305,7 +305,7 @@ router.post('/faqs', verifyToken, isAdmin, async (req, res) => {
         );
         await auditLog('create_faq', 'faq', r.insertId, req.user);
         res.json({ success: true, id: r.insertId, message: 'FAQ created' });
-    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+    } catch (e) { res.status(500).json({ success: false, message: safeError(e) }); }
 });
 
 router.put('/faqs/:id', verifyToken, isAdmin, async (req, res) => {
@@ -319,7 +319,7 @@ router.put('/faqs/:id', verifyToken, isAdmin, async (req, res) => {
         );
         await auditLog('update_faq', 'faq', req.params.id, req.user);
         res.json({ success: true, message: 'FAQ updated' });
-    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+    } catch (e) { res.status(500).json({ success: false, message: safeError(e) }); }
 });
 
 router.delete('/faqs/:id', verifyToken, isAdmin, async (req, res) => {
@@ -327,14 +327,14 @@ router.delete('/faqs/:id', verifyToken, isAdmin, async (req, res) => {
         await db.execute(`UPDATE faqs SET is_deleted=1 WHERE id=?`, [req.params.id]);
         await auditLog('delete_faq', 'faq', req.params.id, req.user);
         res.json({ success: true, message: 'FAQ deleted' });
-    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+    } catch (e) { res.status(500).json({ success: false, message: safeError(e) }); }
 });
 
 router.patch('/faqs/:id/toggle', verifyToken, isAdmin, async (req, res) => {
     try {
         await db.execute(`UPDATE faqs SET status = IF(status='active','inactive','active'), updated_at=NOW() WHERE id=?`, [req.params.id]);
         res.json({ success: true, message: 'FAQ toggled' });
-    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+    } catch (e) { res.status(500).json({ success: false, message: safeError(e) }); }
 });
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -357,7 +357,7 @@ router.get('/knowledge-base', async (req, res) => {
         );
         const [[{total}]] = await db.query(`SELECT COUNT(*) AS total FROM knowledge_base k WHERE ${w}`, p);
         res.json({ success: true, data: rows, total, page: parseInt(page) });
-    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+    } catch (e) { res.status(500).json({ success: false, message: safeError(e) }); }
 });
 
 router.get('/knowledge-base/:id', async (req, res) => {
@@ -370,7 +370,7 @@ router.get('/knowledge-base/:id', async (req, res) => {
         if (!row) return res.status(404).json({ success: false, message: 'Not found' });
         await db.execute(`UPDATE knowledge_base SET view_count=view_count+1 WHERE id=?`, [req.params.id]);
         res.json({ success: true, data: row });
-    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+    } catch (e) { res.status(500).json({ success: false, message: safeError(e) }); }
 });
 
 router.post('/knowledge-base', verifyToken, isAdmin, async (req, res) => {
@@ -385,7 +385,7 @@ router.post('/knowledge-base', verifyToken, isAdmin, async (req, res) => {
         );
         await auditLog('create_kb', 'knowledge_base', r.insertId, req.user);
         res.json({ success: true, id: r.insertId, message: 'Article created' });
-    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+    } catch (e) { res.status(500).json({ success: false, message: safeError(e) }); }
 });
 
 router.put('/knowledge-base/:id', verifyToken, isAdmin, async (req, res) => {
@@ -399,7 +399,7 @@ router.put('/knowledge-base/:id', verifyToken, isAdmin, async (req, res) => {
         );
         await auditLog('update_kb', 'knowledge_base', req.params.id, req.user);
         res.json({ success: true, message: 'Article updated' });
-    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+    } catch (e) { res.status(500).json({ success: false, message: safeError(e) }); }
 });
 
 router.delete('/knowledge-base/:id', verifyToken, isAdmin, async (req, res) => {
@@ -407,7 +407,7 @@ router.delete('/knowledge-base/:id', verifyToken, isAdmin, async (req, res) => {
         await db.execute(`UPDATE knowledge_base SET is_deleted=1 WHERE id=?`, [req.params.id]);
         await auditLog('delete_kb', 'knowledge_base', req.params.id, req.user);
         res.json({ success: true, message: 'Article deleted' });
-    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+    } catch (e) { res.status(500).json({ success: false, message: safeError(e) }); }
 });
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -430,7 +430,7 @@ router.get('/queries/stats', verifyToken, isAdmin, async (_req, res) => {
         const [[faq]] = await db.query(`SELECT COUNT(*) AS c FROM faqs WHERE is_deleted=0 AND status='active'`);
         const [[kb]]  = await db.query(`SELECT COUNT(*) AS c FROM knowledge_base WHERE is_deleted=0 AND status='published'`);
         res.json({ success: true, data: { ...stats, faq_count: faq.c, kb_count: kb.c } });
-    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+    } catch (e) { res.status(500).json({ success: false, message: safeError(e) }); }
 });
 
 // List queries
@@ -460,7 +460,7 @@ router.get('/queries', verifyToken, isAdmin, async (req, res) => {
         );
         const [[{total}]] = await db.query(`SELECT COUNT(*) AS total FROM chat_queries q WHERE ${w}`, p);
         res.json({ success: true, data: rows, total, page: parseInt(page) });
-    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+    } catch (e) { res.status(500).json({ success: false, message: safeError(e) }); }
 });
 
 // Single query detail
@@ -479,7 +479,7 @@ router.get('/queries/:id', verifyToken, isAdmin, async (req, res) => {
              WHERE a.query_id=? GROUP BY a.id`, [req.params.id]
         );
         res.json({ success: true, data: { ...query, answers } });
-    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+    } catch (e) { res.status(500).json({ success: false, message: safeError(e) }); }
 });
 
 // Submit answer
@@ -590,7 +590,7 @@ router.post('/queries/:id/answer', verifyToken, isAdmin, async (req, res) => {
         res.json({ success: true, message: 'Answer submitted successfully', answer_id: answerId });
     } catch (e) {
         await conn.rollback();
-        res.status(500).json({ success: false, message: e.message });
+        res.status(500).json({ success: false, message: safeError(e) });
     } finally {
         conn.release();
     }
@@ -608,7 +608,7 @@ router.patch('/queries/:id/status', verifyToken, isAdmin, async (req, res) => {
     try {
         await db.execute(`UPDATE chat_queries SET ${sets.join(',')} WHERE id=?`, p);
         res.json({ success: true, message: 'Query updated' });
-    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+    } catch (e) { res.status(500).json({ success: false, message: safeError(e) }); }
 });
 
 // Update visibility
@@ -621,7 +621,7 @@ router.patch('/queries/:id/visibility', verifyToken, isAdmin, async (req, res) =
             await db.execute(`UPDATE chat_query_answers SET is_published=1 WHERE query_id=?`, [req.params.id]);
         }
         res.json({ success: true, message: 'Visibility updated' });
-    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+    } catch (e) { res.status(500).json({ success: false, message: safeError(e) }); }
 });
 
 // Reopen closed query
@@ -632,7 +632,7 @@ router.patch('/queries/:id/reopen', verifyToken, isAdmin, async (req, res) => {
             [req.params.id]
         );
         res.json({ success: true, message: 'Query reopened' });
-    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+    } catch (e) { res.status(500).json({ success: false, message: safeError(e) }); }
 });
 
 // Delete query (soft)
@@ -641,7 +641,7 @@ router.delete('/queries/:id', verifyToken, isAdmin, async (req, res) => {
         await db.execute(`UPDATE chat_queries SET is_deleted=1, updated_at=NOW() WHERE id=?`, [req.params.id]);
         await auditLog('delete_query', 'query', req.params.id, req.user);
         res.json({ success: true, message: 'Query deleted' });
-    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+    } catch (e) { res.status(500).json({ success: false, message: safeError(e) }); }
 });
 
 module.exports = router;

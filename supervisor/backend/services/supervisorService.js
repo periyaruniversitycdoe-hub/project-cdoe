@@ -152,6 +152,8 @@ async function buildSupervisorData(body, files, existing = {}) {
         department_id:           nullableInt(body.department_id),
         area_of_specialization:  nullable(body.area_of_specialization),
         serving_institute_id:    nullableInt(body.serving_institute_id),
+        university_institute_id: nullableInt(body.university_institute_id),
+        research_center_id:      nullableInt(body.research_center_id),
         address_1:               nullable(body.address_1),
         address_2:               nullable(body.address_2),
         address_3:               nullable(body.address_3),

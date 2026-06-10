@@ -104,7 +104,7 @@ router.post('/login', validateBody(loginSchema), async (req, res) => {
 
         const { accessToken, refreshToken } = await issueTokenPair(
             pool,
-            { id: user.id, email: user.email, name: user.name, role: 'supervisor' },
+            { id: user.id, email: user.email, name: user.name, role: 'supervisor', supervisor_id: user.supervisor_id },
             'supervisor',
             process.env.SUPERVISOR_JWT_SECRET,
             { ip: req.headers['x-real-ip'] || req.ip || 'unknown' }

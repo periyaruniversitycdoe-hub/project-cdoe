@@ -97,6 +97,7 @@ app.use('/api/auth/mfa', verifyCenterToken, makeMfaRoutes(db, process.env.CENTER
 app.use('/api/portal', require('./routes/portal'));
 app.use('/api/dropdowns', require('./routes/dropdowns'));
 app.use('/api/notifications', require('./routes/notifications'));
+app.use('/api/permission-applications', require('./routes/permission-applications'));
 
 // News & Announcements board — audience = all | centre
 app.get('/api/news-announcements', async (_req, res) => {

@@ -302,6 +302,33 @@ router.post('/announcements', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
+// PUT /api/portal-home/announcements/reorder  — must be declared BEFORE /:id so Express
+// does not mistake "reorder" as an id parameter.
+router.put('/announcements/reorder', verifyToken, isAdmin, async (req, res) => {
+    const { orders } = req.body;
+    if (!Array.isArray(orders)) {
+        return res.status(400).json({ success: false, message: 'Orders array is required' });
+    }
+
+    try {
+        for (const item of orders) {
+            await pool.query(
+                'UPDATE portal_announcements SET display_order = ?, updated_at = NOW() WHERE id = ?',
+                [parseInt(item.display_order) || 0, item.id]
+            );
+        }
+
+        await pool.query(
+            'INSERT INTO settings_audit_logs (admin_id, action, field_name, new_value, ip_address, user_agent) VALUES (?, ?, ?, ?, ?, ?)',
+            [req.user.id, 'REORDER_ANNOUNCEMENTS', 'announcement', JSON.stringify(orders), req.ip, req.headers['user-agent']]
+        );
+
+        res.json({ success: true, message: 'Announcements reordered successfully' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: safeError(err) });
+    }
+});
+
 // PUT /api/portal-home/announcements/:id
 router.put('/announcements/:id', verifyToken, isAdmin, async (req, res) => {
     const {
@@ -397,32 +424,6 @@ router.patch('/announcements/:id/toggle', verifyToken, isAdmin, async (req, res)
         );
 
         res.json({ success: true, message: 'Announcement visibility toggled successfully', is_active: newActive });
-    } catch (err) {
-        res.status(500).json({ success: false, message: safeError(err) });
-    }
-});
-
-// PUT /api/portal-home/announcements/reorder
-router.put('/announcements/reorder', verifyToken, isAdmin, async (req, res) => {
-    const { orders } = req.body;
-    if (!Array.isArray(orders)) {
-        return res.status(400).json({ success: false, message: 'Orders array is required' });
-    }
-
-    try {
-        for (const item of orders) {
-            await pool.query(
-                'UPDATE portal_announcements SET display_order = ?, updated_at = NOW() WHERE id = ?',
-                [parseInt(item.display_order) || 0, item.id]
-            );
-        }
-
-        await pool.query(
-            'INSERT INTO settings_audit_logs (admin_id, action, field_name, new_value, ip_address, user_agent) VALUES (?, ?, ?, ?, ?, ?)',
-            [req.user.id, 'REORDER_ANNOUNCEMENTS', 'announcement', JSON.stringify(orders), req.ip, req.headers['user-agent']]
-        );
-
-        res.json({ success: true, message: 'Announcements reordered successfully' });
     } catch (err) {
         res.status(500).json({ success: false, message: safeError(err) });
     }

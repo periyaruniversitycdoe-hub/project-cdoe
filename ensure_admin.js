@@ -37,7 +37,7 @@ async function run() {
   let connection;
   try {
     connection = await mysql.createConnection(dbConfig);
-    console.log('✅ Successfully connected to Railway database!');
+    console.log('✅ Successfully connected to MySQL database!');
   } catch (err) {
     console.error('❌ Database connection failed:', err.message);
     process.exit(1);

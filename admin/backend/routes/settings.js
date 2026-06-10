@@ -64,7 +64,7 @@ router.get('/', async (req, res) => {
             return {
                 ...rows[0],
                 university_name_english: rows[0].university_name_english || rows[0].university_name_en || rows[0].header_line1,
-                university_name_tamil: rows[0].university_name_ta || rows[0].university_name_ta,
+                university_name_tamil: rows[0].university_name_ta || '',
                 logo: rows[0].logo_url,
                 logo2: rows[0].logo2,
             };

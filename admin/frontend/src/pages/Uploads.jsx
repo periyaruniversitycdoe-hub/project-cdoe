@@ -34,7 +34,7 @@ const Uploads = () => {
 
   const fetchSettings = async () => {
     try {
-      const res = await axios.get(`${API_URL}/uploads/file-settings`);
+      const res = await axios.get(`${API_URL}/uploads/file-settings`, { headers });
       setSettings(res.data.data || []);
     } catch { toast.error('Failed to load upload settings'); }
     finally  { setLoading(false); }

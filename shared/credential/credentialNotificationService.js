@@ -23,7 +23,7 @@ function getBackendBaseUrl() {
   if (studentApiUrl) {
     return studentApiUrl.replace(/\/student\/?$/, '');
   }
-  return 'https://project-cdoe.onrender.com';
+  return 'http://localhost:5000';
 }
 
 const logoUrl = `${getBackendBaseUrl()}/student/uploads/settings/pu_logo.png`;
@@ -373,7 +373,7 @@ async function notifyPasswordChange({ db, email, newPassword, portalType, ipAddr
                     <strong>${name}</strong> (${email}) changed their password on the
                     <strong>${portalType} Portal</strong> at <strong>${now}</strong>${ipAddress ? ` from IP ${ipAddress}` : ''}.
                     <br/><br/>View the updated record in the
-                    <a href="http://localhost:5174/credential-management">Credential Monitor</a>.
+                    <a href="${process.env.ADMIN_PORTAL_URL || 'http://localhost:5174'}/credential-management">Credential Monitor</a>.
                 </p>`,
             });
         } catch (e) { /* non-fatal */ }

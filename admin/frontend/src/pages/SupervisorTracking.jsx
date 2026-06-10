@@ -217,8 +217,8 @@ function ViewModal({ supervisor, onClose }) {
                                 ['Registration No', s.recognition_ref_no || '—'],
                                 ['Email', s.email || '—'],
                                 ['Mobile', s.mobile || '—'],
-                                ['Institute', s.institute_name || '—'],
-                                ['Institute Code', s.institute_code || '—'],
+                                ['University Institute', s.university_institute_name || '—'],
+                                ['Research Center', s.research_center_name || '—'],
                                 ['Department', s.department_name || '—'],
                                 ['Designation', s.designation_name || '—'],
                                 ['Applied Date', fmt(s.created_at)],
@@ -323,8 +323,8 @@ function HistoryModal({ history, supervisorName, onClose }) {
 export default function SupervisorTracking() {
     const [counters, setCounters] = useState(null);
     const [data, setData] = useState({ rows: [], total: 0 });
-    const [filterOptions, setFilterOptions] = useState({ institutes: [], departments: [], designations: [] });
-    const [filters, setFilters] = useState({ status: '', search: '', institute_id: '', department_id: '', designation_id: '', date_from: '', date_to: '', page: 1, limit: 20 });
+    const [filterOptions, setFilterOptions] = useState({ institutes: [], universityInstitutes: [], departments: [], designations: [] });
+    const [filters, setFilters] = useState({ status: '', search: '', institute_id: '', university_institute_id: '', department_id: '', designation_id: '', date_from: '', date_to: '', page: 1, limit: 20 });
     const [loading, setLoading] = useState(false);
     const [actionLoading, setActionLoading] = useState(false);
 
@@ -452,9 +452,9 @@ export default function SupervisorTracking() {
                             </select>
                         </div>
                         <div className="col-md-2">
-                            <select className="form-select form-select-sm" value={filters.institute_id} onChange={e => setFilter('institute_id', e.target.value)}>
-                                <option value="">All Institutes</option>
-                                {filterOptions.institutes.map(i => <option key={i.id} value={i.id}>{i.college_code} — {i.name}</option>)}
+                            <select className="form-select form-select-sm" value={filters.university_institute_id} onChange={e => setFilter('university_institute_id', e.target.value)}>
+                                <option value="">All Univ. Institutes</option>
+                                {(filterOptions.universityInstitutes || []).map(i => <option key={i.id} value={i.id}>{i.institute_code ? `${i.institute_code} — ` : ''}{i.name}</option>)}
                             </select>
                         </div>
                         <div className="col-md-2">
@@ -470,7 +470,7 @@ export default function SupervisorTracking() {
                             </select>
                         </div>
                         <div className="col-md-1">
-                            <button className="btn btn-sm btn-outline-secondary w-100" onClick={() => setFilters({ status: '', search: '', institute_id: '', department_id: '', designation_id: '', date_from: '', date_to: '', page: 1, limit: 20 })}>
+                            <button className="btn btn-sm btn-outline-secondary w-100" onClick={() => setFilters({ status: '', search: '', institute_id: '', university_institute_id: '', department_id: '', designation_id: '', date_from: '', date_to: '', page: 1, limit: 20 })}>
                                 Clear
                             </button>
                         </div>
@@ -509,7 +509,7 @@ export default function SupervisorTracking() {
                                         <th>Reg No</th>
                                         <th>Contact</th>
                                         <th>Designation</th>
-                                        <th>Institute</th>
+                                        <th>Institute / RC</th>
                                         <th>Applied</th>
                                         <th>Status</th>
                                         <th>Remarks</th>
@@ -532,8 +532,18 @@ export default function SupervisorTracking() {
                                                 <td className="text-muted small">{sv.mobile || '—'}</td>
                                                 <td className="small">{sv.designation_name || '—'}</td>
                                                 <td className="small">
-                                                    {sv.institute_code && <span className="badge bg-light text-dark border me-1">{sv.institute_code}</span>}
-                                                    <span className="text-muted">{sv.institute_name || '—'}</span>
+                                                    {sv.university_institute_name ? (
+                                                        <>
+                                                            {sv.university_institute_code && <span className="badge bg-light text-dark border me-1">{sv.university_institute_code}</span>}
+                                                            <span className="text-muted d-block">{sv.university_institute_name}</span>
+                                                            {sv.research_center_name && <span className="text-info d-block" style={{ fontSize: 11 }}>↳ {sv.research_center_name}</span>}
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            {sv.institute_code && <span className="badge bg-light text-dark border me-1">{sv.institute_code}</span>}
+                                                            <span className="text-muted">{sv.institute_name || '—'}</span>
+                                                        </>
+                                                    )}
                                                 </td>
                                                 <td className="small text-muted">{fmt(sv.created_at)}</td>
                                                 <td>

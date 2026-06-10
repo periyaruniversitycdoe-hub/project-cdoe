@@ -34,7 +34,8 @@ const menuStructure = [
       { icon: BarChart3,       label: 'Reports & Analytics',   path: '/reports' },
       { icon: Users,           label: 'Student Tracking',      path: '/students' },
       { icon: GraduationCap,   label: 'Counselling Mgmt',      path: '/counselling' },
-      { icon: ListTree,        label: 'Roster Management',         path: '/roster-management' },
+      { icon: ClipboardList,   label: 'Permission Review',      path: '/permission-review' },
+      { icon: ListTree,        label: 'Roster',                    path: '/roster' },
       { icon: ShieldCheck,     label: 'Direct Pass Rules',     path: '/qualification-rules' },
       { icon: Award,           label: 'Qualifications',         path: '/qualifications' },
       { icon: CalendarRange,   label: 'Session Management',    path: '/sessions' },
@@ -50,6 +51,7 @@ const menuStructure = [
   {
     group: 'SUPERVISOR & CENTRES',
     items: [
+      { icon: Layers,          label: 'Institute Master',      path: '/institute-master' },
       { icon: UserSquare2,     label: 'Supervisors',           path: '/supervisors' },
       { icon: ClipboardList,   label: 'Supervisor Tracking',   path: '/supervisor-tracking' },
       { icon: Building2,       label: 'Research Centres',      path: '/research-centres' },
@@ -101,6 +103,7 @@ const Sidebar = ({ isOpen, onClose }) => {
   const handleLogout = () => {
     if (window.confirm('Are you sure want to logout?')) {
       localStorage.removeItem('adminToken');
+      localStorage.removeItem('adminRefreshToken');
       localStorage.removeItem('adminUser');
       window.location.href = '/login';
     }

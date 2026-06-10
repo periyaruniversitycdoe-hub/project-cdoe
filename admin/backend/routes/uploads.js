@@ -4,8 +4,8 @@ const router = express.Router();
 const pool = require('../config/db');
 const { verifyToken, isAdmin } = require('../middleware/auth');
 
-// GET all per-file-type upload settings (public â€” student frontend also reads this)
-router.get('/file-settings', async (req, res) => {
+// GET all per-file-type upload settings (admin only)
+router.get('/file-settings', verifyToken, isAdmin, async (req, res) => {
     try {
         const [rows] = await pool.execute(
             'SELECT * FROM file_upload_settings ORDER BY file_type ASC'

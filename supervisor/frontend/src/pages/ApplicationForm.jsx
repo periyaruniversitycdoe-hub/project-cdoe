@@ -158,7 +158,10 @@ export default function ApplicationForm({ isAdminMode = false, adminSupervisorId
   const [appStatus, setAppStatus] = useState('Draft');
   const [formData, setFormData] = useState({
     name: '', gender: 'Male', designation_id: '',
-    department_id: '', area_of_specialization: '', serving_institute_id: '',
+    department_id: '', area_of_specialization: '',
+    serving_institute_id: '',           // legacy — kept for backward compat
+    university_institute_id: '',        // new hierarchy: University Institute
+    research_center_id: '',             // new hierarchy: Research Center
     eligibility_dept_id: '', program_offered_id: '',
     address_1: '', address_2: '', address_3: '', district_id: '', pincode: '',
     home_address_1: '', home_address_2: '', home_address_3: '', home_district_id: '', home_pincode: '',
@@ -174,6 +177,9 @@ export default function ApplicationForm({ isAdminMode = false, adminSupervisorId
 
   const [eligibilityDepts, setEligibilityDepts] = useState([]);
   const [offeredCourses, setOfferedCourses] = useState([]);
+  const [institutes, setInstitutes] = useState([]);
+  const [researchCenters, setResearchCenters] = useState([]);
+  const [centersLoading, setCentersLoading] = useState(false);
 
   const [ifscResolving, setIfscResolving] = useState(false);
   const [isMasked, setIsMasked] = useState(true);
@@ -209,6 +215,24 @@ export default function ApplicationForm({ isAdminMode = false, adminSupervisorId
       .then(res => { if (res.data.success) setOfferedCourses(res.data.data || []); })
       .catch(() => setOfferedCourses([]));
   }, [formData.eligibility_dept_id]);
+
+  // Load university institutes dropdown on mount
+  useEffect(() => {
+    axios.get(`${ADMIN_API}/university-institutes/dropdown`)
+      .then(res => setInstitutes(res.data?.data || []))
+      .catch(() => {});
+  }, []);
+
+  // Reload research centers when university_institute_id changes
+  useEffect(() => {
+    if (!formData.university_institute_id) { setResearchCenters([]); return; }
+    setCentersLoading(true);
+    const centerBase = (import.meta.env.VITE_CENTER_API_URL || 'http://localhost:5003');
+    axios.get(`${centerBase}/api/centres/by-institute/${formData.university_institute_id}`)
+      .then(res => setResearchCenters(res.data?.data || []))
+      .catch(() => setResearchCenters([]))
+      .finally(() => setCentersLoading(false));
+  }, [formData.university_institute_id]);
 
   useEffect(() => {
     axios.get(`${API}/file-upload-settings`)
@@ -252,6 +276,8 @@ export default function ApplicationForm({ isAdminMode = false, adminSupervisorId
               designation_id: d.designation_id != null ? String(d.designation_id) : '',
               department_id: d.department_id != null ? String(d.department_id) : '',
               serving_institute_id: d.serving_institute_id != null ? String(d.serving_institute_id) : '',
+              university_institute_id: d.university_institute_id != null ? String(d.university_institute_id) : '',
+              research_center_id: d.research_center_id != null ? String(d.research_center_id) : '',
               district_id: d.district_id != null ? String(d.district_id) : '',
               home_district_id: d.home_district_id != null ? String(d.home_district_id) : '',
             }));
@@ -559,9 +585,9 @@ export default function ApplicationForm({ isAdminMode = false, adminSupervisorId
   const dobSetting = getFileSetting('dob_evidence');
   const recSetting = getFileSetting('recognition_certificate');
 
-  const lookup = (list, id) => {
+  const lookup = (list, id, nameKey = 'name') => {
     if (!id) return '—';
-    return list?.find(d => String(d.id) === String(id))?.name || '—';
+    return list?.find(d => String(d.id) === String(id))?.[nameKey] || '—';
   };
   const REQUIRED_ALL = [...REQUIRED_STEP0, ...REQUIRED_STEP1, ...REQUIRED_STEP2, ...REQUIRED_STEP3];
   const filledCount = REQUIRED_ALL.filter(f => formData[f] && String(formData[f]).trim() !== '').length;
@@ -675,10 +701,34 @@ export default function ApplicationForm({ isAdminMode = false, adminSupervisorId
                   </select>
                 </div>
                 <div style={S.group}>
-                  <label style={S.label}>Serving Institute</label>
-                  <select style={S.select(false)} name="serving_institute_id" value={formData.serving_institute_id} onChange={handleInput} disabled={isReadOnly}>
+                  <label style={S.label}>University Institute<span style={S.required}>*</span></label>
+                  <select
+                    style={S.select(!formData.university_institute_id && errors?.university_institute_id)}
+                    name="university_institute_id"
+                    value={formData.university_institute_id}
+                    onChange={e => {
+                      handleInput(e);
+                      setFormData(f => ({ ...f, research_center_id: '' }));
+                    }}
+                    disabled={isReadOnly}
+                  >
                     <option value="">— Select Institute —</option>
-                    {dropdowns.master_institutes?.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                    {institutes.map(i => <option key={i.id} value={i.id}>{i.institute_name}{i.institute_code ? ` (${i.institute_code})` : ''}</option>)}
+                  </select>
+                </div>
+                <div style={S.group}>
+                  <label style={S.label}>Research Center<span style={S.required}>*</span></label>
+                  <select
+                    style={S.select(!formData.research_center_id && errors?.research_center_id)}
+                    name="research_center_id"
+                    value={formData.research_center_id}
+                    onChange={handleInput}
+                    disabled={isReadOnly || !formData.university_institute_id || centersLoading}
+                  >
+                    <option value="">
+                      {centersLoading ? 'Loading…' : formData.university_institute_id ? '— Select Research Center —' : '— Select Institute first —'}
+                    </option>
+                    {researchCenters.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                 </div>
                 {/* Research Programme — Department → Offered Course dynamic mapping */}
@@ -1102,7 +1152,8 @@ export default function ApplicationForm({ isAdminMode = false, adminSupervisorId
                     { label: 'Gender', value: formData.gender },
                     { label: 'Designation', value: lookup(dropdowns.master_designations, formData.designation_id) },
                     { label: 'Department', value: lookup(dropdowns.master_departments, formData.department_id) },
-                    { label: 'Serving Institute', value: lookup(dropdowns.master_institutes, formData.serving_institute_id) },
+                    { label: 'University Institute', value: lookup(institutes, formData.university_institute_id, 'institute_name') },
+                    { label: 'Research Center', value: lookup(researchCenters, formData.research_center_id) },
                     { label: 'Programme Department', value: lookup(eligibilityDepts, formData.eligibility_dept_id) || formData.eligibility_dept_name },
                     { label: 'Offered Course', value: lookup(offeredCourses, formData.program_offered_id) || formData.program_offered_name },
                     { label: 'Area of Specialization', value: formData.area_of_specialization },

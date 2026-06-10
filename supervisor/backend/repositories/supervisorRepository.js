@@ -8,12 +8,18 @@ const SELECT_JOINED = `
         dept.name AS department_name,
         inst.name        AS serving_institute_name,
         inst.college_code AS serving_institute_code,
-        dist.name AS district_name
+        dist.name AS district_name,
+        ui.institute_name AS university_institute_name,
+        ui.institute_code AS university_institute_code,
+        rc.name           AS research_center_name,
+        rc.centre_ref_no  AS research_center_ref_no
     FROM supervisors s
-    LEFT JOIN master_designations        d    ON s.designation_id         = d.id
-    LEFT JOIN master_departments          dept ON s.department_id            = dept.id
-    LEFT JOIN master_institutes           inst ON s.serving_institute_id     = inst.id
-    LEFT JOIN master_districts            dist ON s.district_id              = dist.id
+    LEFT JOIN master_designations  d    ON s.designation_id          = d.id
+    LEFT JOIN master_departments   dept ON s.department_id            = dept.id
+    LEFT JOIN master_institutes    inst ON s.serving_institute_id     = inst.id
+    LEFT JOIN master_districts     dist ON s.district_id              = dist.id
+    LEFT JOIN institutes           ui   ON s.university_institute_id  = ui.id
+    LEFT JOIN research_centres     rc   ON s.research_center_id       = rc.id
 `;
 
 function enrichCapacity(row) {
@@ -27,7 +33,7 @@ function enrichCapacity(row) {
     return row;
 }
 
-async function findAll({ status, search, page = 1, limit = 20, institute_id, department_id, designation_id }) {
+async function findAll({ status, search, page = 1, limit = 20, institute_id, department_id, designation_id, university_institute_id, research_center_id }) {
     const conditions = [];
     const vals = [];
 
@@ -37,9 +43,11 @@ async function findAll({ status, search, page = 1, limit = 20, institute_id, dep
         const like = `%${search}%`;
         vals.push(like, like, like, like);
     }
-    if (institute_id)   { conditions.push('s.serving_institute_id = ?'); vals.push(parseInt(institute_id)); }
-    if (department_id)  { conditions.push('s.department_id = ?');        vals.push(parseInt(department_id)); }
-    if (designation_id) { conditions.push('s.designation_id = ?');       vals.push(parseInt(designation_id)); }
+    if (institute_id)          { conditions.push('s.serving_institute_id = ?');     vals.push(parseInt(institute_id)); }
+    if (department_id)         { conditions.push('s.department_id = ?');           vals.push(parseInt(department_id)); }
+    if (designation_id)        { conditions.push('s.designation_id = ?');          vals.push(parseInt(designation_id)); }
+    if (university_institute_id) { conditions.push('s.university_institute_id = ?'); vals.push(parseInt(university_institute_id)); }
+    if (research_center_id)    { conditions.push('s.research_center_id = ?');      vals.push(parseInt(research_center_id)); }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const offset = (page - 1) * limit;
@@ -61,6 +69,12 @@ async function getFilterOptions() {
          WHERE  is_active = 1
          ORDER  BY college_code ASC`
     );
+    const [universityInstitutes] = await pool.execute(
+        `SELECT id, institute_code, institute_name AS name
+         FROM   institutes
+         WHERE  status = 'Active'
+         ORDER  BY institute_name ASC`
+    );
     const [departments] = await pool.execute(
         `SELECT DISTINCT d.id, d.name
          FROM   master_departments d
@@ -73,7 +87,7 @@ async function getFilterOptions() {
          WHERE  is_active = 1
          ORDER  BY name ASC`
     );
-    return { institutes, departments, designations };
+    return { institutes, universityInstitutes, departments, designations };
 }
 
 async function findById(id) {

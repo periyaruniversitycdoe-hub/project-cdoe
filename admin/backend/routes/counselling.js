@@ -166,17 +166,27 @@ router.delete('/research-centers/:id', verifyToken, isAdmin, async (req, res) =>
 router.get('/research-supervisors', async (req, res) => {
   try {
     const { center_id, active } = req.query;
-    let query = `
+    let baseQuery = `
       SELECT rs.*, rc.center_name
       FROM research_supervisors rs
       JOIN research_centers rc ON rs.research_center_id = rc.id
       WHERE 1=1
     `;
     const params = [];
-    if (center_id) { query += ' AND rs.research_center_id = ?'; params.push(center_id); }
-    if (active === '1') { query += ' AND rs.is_active = 1'; }
-    query += ' ORDER BY rs.supervisor_name';
-    const [rows] = await pool.execute(query, params);
+    if (center_id) { baseQuery += ' AND rs.research_center_id = ?'; params.push(center_id); }
+    baseQuery += ' ORDER BY rs.supervisor_name';
+
+    let rows;
+    if (active === '1') {
+      // Try with is_active filter; fall back without it if column doesn't exist
+      try {
+        [rows] = await pool.execute(baseQuery.replace('WHERE 1=1', 'WHERE 1=1 AND rs.is_active = 1'), params);
+      } catch (colErr) {
+        [rows] = await pool.execute(baseQuery, params);
+      }
+    } else {
+      [rows] = await pool.execute(baseQuery, params);
+    }
     res.json({ success: true, data: rows });
   } catch (err) {
     res.status(500).json({ success: false, message: safeError(err) });
@@ -268,8 +278,8 @@ router.get('/applications', verifyToken, isAdmin, async (req, res) => {
 
     if (center_id || supervisor_id) {
         let subWhere = 'WHERE 1=1';
-        if (center_id)     { subWhere += ' AND research_center_id = ?'; params.push(parseInt(center_id, 10)); }
-        if (supervisor_id) { subWhere += ' AND supervisor_id = ?';       params.push(parseInt(supervisor_id, 10)); }
+        if (center_id)     { subWhere += ' AND (centre_id = ? OR research_center_id = ?)'; params.push(parseInt(center_id, 10)); params.push(parseInt(center_id, 10)); }
+        if (supervisor_id) { subWhere += ' AND (master_supervisor_id = ? OR supervisor_id = ?)'; params.push(parseInt(supervisor_id, 10)); params.push(parseInt(supervisor_id, 10)); }
         query += ` AND ca.id IN (SELECT DISTINCT counselling_application_id FROM counselling_research_choices ${subWhere})`;
     }
 
@@ -283,10 +293,16 @@ router.get('/applications', verifyToken, isAdmin, async (req, res) => {
     if (appIds.length > 0) {
       const placeholders = appIds.map(() => '?').join(',');
       const [choiceRows] = await pool.execute(`
-        SELECT crc.*, rc.center_name, rs.supervisor_name, rs.designation
+        SELECT crc.*,
+               COALESCE(rc2.college_name, rc2.name, rc1.center_name) AS center_name,
+               COALESCE(sup.name, rs.supervisor_name) AS supervisor_name,
+               COALESCE(d.name, rs.designation) AS designation
         FROM counselling_research_choices crc
-        JOIN research_centers rc ON crc.research_center_id = rc.id
-        JOIN research_supervisors rs ON crc.supervisor_id = rs.id
+        LEFT JOIN research_centres rc2 ON crc.centre_id = rc2.id
+        LEFT JOIN research_centers rc1 ON crc.research_center_id = rc1.id
+        LEFT JOIN supervisors sup ON crc.master_supervisor_id = sup.id
+        LEFT JOIN master_designations d ON sup.designation_id = d.id
+        LEFT JOIN research_supervisors rs ON crc.supervisor_id = rs.id
         WHERE crc.counselling_application_id IN (${placeholders})
         ORDER BY crc.counselling_application_id, crc.preference_order
       `, appIds);
@@ -338,10 +354,13 @@ router.get('/applications/export/excel', verifyToken, isAdmin, async (req, res) 
       const placeholders = appIds.map(() => '?').join(',');
       const [choiceRows] = await pool.execute(`
         SELECT crc.counselling_application_id, crc.preference_order,
-               rc.center_name, rs.supervisor_name
+               COALESCE(rc2.college_name, rc2.name, rc1.center_name) AS center_name,
+               COALESCE(sup.name, rs.supervisor_name) AS supervisor_name
         FROM counselling_research_choices crc
-        JOIN research_centers rc ON crc.research_center_id = rc.id
-        JOIN research_supervisors rs ON crc.supervisor_id = rs.id
+        LEFT JOIN research_centres rc2 ON crc.centre_id = rc2.id
+        LEFT JOIN research_centers rc1 ON crc.research_center_id = rc1.id
+        LEFT JOIN supervisors sup ON crc.master_supervisor_id = sup.id
+        LEFT JOIN research_supervisors rs ON crc.supervisor_id = rs.id
         WHERE crc.counselling_application_id IN (${placeholders})
         ORDER BY crc.counselling_application_id, crc.preference_order
       `, appIds);

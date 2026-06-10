@@ -253,7 +253,7 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
       has_mphil:   false,
       has_integrated: false,
       diploma: {
-        level: 'Diploma', degree_id: '', specialization_id: '', institution_name: '',
+        level: 'Diploma', degree_id: '', specialization_id: '', specialization_other: '', institution_name: '',
         university_name: '', university_type_id: '', passing_month: '', passing_year: '',
         score_type: 'Percentage', score_value: ''
       },
@@ -274,7 +274,7 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
         { level: 'HSC', institution_name: '', board_id: '', other_board_name: '', passing_month: '', passing_year: '', percentage: '' }
       ],
       higher_education: [
-        { level: 'UG', degree_id: '', specialization_id: '', institution_name: '', university_name: '', university_type_id: '', passing_month: '', passing_year: '', score_type: 'Percentage', score_value: '' },
+        { level: 'UG', degree_id: '', specialization_id: '', specialization_other: '', institution_name: '', university_name: '', university_type_id: '', passing_month: '', passing_year: '', score_type: 'Percentage', score_value: '' },
         { level: 'PG', degree_id: '', degree_name: '', specialization_id: '', institution_name: '', university_name: '', university_type_id: '', passing_month: '', passing_year: '', score_type: 'Percentage', score_value: '' }
       ],
       experience_details: [],
@@ -2049,15 +2049,30 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
                 </div>
                 {/* Module 3: Specialization removed from Integrated Course — keep for UG/Diploma only */}
                 {degreeLevel !== 'Integrated' && (
-                  <div className="col-md-3">
-                    <label className="form-label small fw-bold">Specialization {isRequired && <span className="text-danger">*</span>}</label>
-                    <select className={`form-select form-select-sm ${getFieldError('specialization_id') ? 'is-invalid' : ''}`}
-                      {...register(`${prefix}.specialization_id`, rules)} disabled={isSubmitted}>
-                      <option value="">Select Specialization</option>
-                      {(dropdowns.specializations || FALLBACK_SPECIALIZATIONS).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
-                    {renderError('specialization_id')}
-                  </div>
+                  <>
+                    <div className="col-md-3">
+                      <label className="form-label small fw-bold">Specialization {isRequired && <span className="text-danger">*</span>}</label>
+                      <select className={`form-select form-select-sm ${getFieldError('specialization_id') ? 'is-invalid' : ''}`}
+                        {...register(`${prefix}.specialization_id`, rules)} disabled={isSubmitted}>
+                        <option value="">Select Specialization</option>
+                        {(dropdowns.specializations || FALLBACK_SPECIALIZATIONS).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        <option value="Others">Others (please specify)</option>
+                      </select>
+                      {renderError('specialization_id')}
+                    </div>
+                    {watch(`${prefix}.specialization_id`) === 'Others' && (
+                      <div className="col-md-3">
+                        <label className="form-label small fw-bold">Specify Specialization <span className="text-danger">*</span></label>
+                        <input type="text" className={`form-control form-control-sm ${getFieldError('specialization_other') ? 'is-invalid' : ''}`}
+                          placeholder="Enter your specialization"
+                          {...register(`${prefix}.specialization_other`, {
+                            validate: v => watch(`${prefix}.specialization_id`) !== 'Others' || (v && v.trim()) ? true : 'Please specify your specialization'
+                          })}
+                          disabled={isSubmitted} />
+                        {renderError('specialization_other')}
+                      </div>
+                    )}
+                  </>
                 )}
               </>
             )}

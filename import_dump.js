@@ -52,7 +52,7 @@ async function runImport() {
   let connection;
   try {
     connection = await mysql.createConnection(dbConfig);
-    console.log('✅ Successfully connected to Railway MySQL database instance!');
+    console.log('✅ Successfully connected to MySQL database instance!');
   } catch (err) {
     console.error('❌ Database connection failed:', err.message);
     process.exit(1);
@@ -63,7 +63,7 @@ async function runImport() {
     let sqlContent = fs.readFileSync(dumpFilePath, 'utf8');
 
     // Clean up SQL content:
-    // Remove "CREATE DATABASE ..." and "USE ..." statements so everything goes into the active "railway" DB
+    // Remove "CREATE DATABASE ..." and "USE ..." statements so everything goes into the active target DB
     console.log('🧹 Cleaning SQL queries (stripping CREATE DATABASE / USE statements)...');
     
     // Replace: CREATE DATABASE IF NOT EXISTS `rsm_db` ...;
@@ -78,7 +78,7 @@ async function runImport() {
       (match) => match + '\n  UNIQUE KEY `uniq_application_id` (`application_id`),'
     );
 
-    console.log('⚡ Executing SQL statements onto Railway database...');
+    console.log('⚡ Executing SQL statements onto database...');
     console.log('⏳ This may take a moment. Please wait...');
     
     const startTime = Date.now();

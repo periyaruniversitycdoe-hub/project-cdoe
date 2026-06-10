@@ -204,6 +204,16 @@ function CentreList({ onAdd, onEdit }) {
         load();
     }
 
+    async function toggleInstituteActive(id, currentActive) {
+        const action = currentActive ? 'Deactivate' : 'Activate';
+        if (!window.confirm(`${action} the institute linked to this research centre?`)) return;
+        await fetch(`${API}/centres/${id}/toggle-institute`, {
+            method: 'PATCH',
+            headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        });
+        load();
+    }
+
     function handleReject(id) {
         const reason = window.prompt('Enter rejection reason:');
         if (reason === null) return;
@@ -302,6 +312,13 @@ function CentreList({ onAdd, onEdit }) {
                                             <td>
                                                 <div className="d-flex gap-1 flex-wrap">
                                                     <button className="btn btn-sm btn-outline-primary" onClick={() => onEdit(c.id)}>Edit</button>
+                                                    <button
+                                                        className={`btn btn-sm ${c.institute_active ? 'btn-outline-warning' : 'btn-outline-success'}`}
+                                                        onClick={() => toggleInstituteActive(c.id, c.institute_active)}
+                                                        title={c.institute_active ? 'Deactivate Institute' : 'Activate Institute'}
+                                                    >
+                                                        {c.institute_active ? 'Deactivate' : 'Activate'}
+                                                    </button>
                                                     
                                                     {/* Document Quick View */}
                                                     <div className="dropdown d-inline-block">

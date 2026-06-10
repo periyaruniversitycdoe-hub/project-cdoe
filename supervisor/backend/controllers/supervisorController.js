@@ -6,13 +6,15 @@ const wrap = fn => async (req, res) => {
 };
 
 const list = wrap(req => svc.list({
-    status:        req.query.status        || '',
-    search:        req.query.search        || '',
-    page:          parseInt(req.query.page)  || 1,
-    limit:         parseInt(req.query.limit) || 20,
-    institute_id:  req.query.institute_id  || '',
-    department_id: req.query.department_id || '',
-    designation_id:req.query.designation_id|| '',
+    status:                 req.query.status                 || '',
+    search:                 req.query.search                 || '',
+    page:                   parseInt(req.query.page)           || 1,
+    limit:                  parseInt(req.query.limit)          || 20,
+    institute_id:           req.query.institute_id            || '',
+    department_id:          req.query.department_id           || '',
+    designation_id:         req.query.designation_id          || '',
+    university_institute_id: req.query.university_institute_id || '',
+    research_center_id:     req.query.research_center_id      || '',
 }));
 
 const get  = wrap(req => svc.get(req.params.id));

@@ -36,10 +36,13 @@ const centreUpload = upload.fields([
 ]);
 
 router.get('/',          verifyToken, isAdmin, ctrl.list);
+// Returns approved research centres filtered by university institute id (for supervisor form cascading)
+router.get('/by-institute/:institute_id', ctrl.listByInstitute);
 router.get('/:id',       verifyToken, isAdmin, ctrl.get);
 router.post('/',         verifyToken, isAdmin, centreUpload, postUploadCheck(), ctrl.create);
 router.put('/:id',       verifyToken, isAdmin, centreUpload, postUploadCheck(), ctrl.update);
 router.patch('/:id/status', verifyToken, isAdmin, ctrl.updateStatus);
+router.patch('/:id/toggle-institute', verifyToken, isAdmin, ctrl.toggleInstituteActive);
 router.delete('/:id',    verifyToken, isAdmin, ctrl.remove);
 
 module.exports = router;

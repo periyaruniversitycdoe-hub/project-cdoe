@@ -72,11 +72,11 @@ builds.forEach(build => {
       env: {
         ...process.env,
         VITE_BASE_PATH: build.basePath,
-        VITE_STUDENT_API_URL: 'https://project-cdoe.onrender.com/student',
-        VITE_ADMIN_API_URL: 'https://project-cdoe.onrender.com/admin',
-        VITE_SUPERVISOR_API_URL: 'https://project-cdoe.onrender.com/supervisor',
-        VITE_CENTER_API_URL: 'https://project-cdoe.onrender.com/center',
-        VITE_API_URL: 'https://project-cdoe.onrender.com/student/api'
+        VITE_STUDENT_API_URL: 'http://localhost:5000',
+        VITE_ADMIN_API_URL: 'http://localhost:5001',
+        VITE_SUPERVISOR_API_URL: 'http://localhost:5002',
+        VITE_CENTER_API_URL: 'http://localhost:5003',
+        VITE_API_URL: 'http://localhost:5000/api'
       }
     });
 
@@ -98,16 +98,5 @@ builds.forEach(build => {
     process.exit(1);
   }
 });
-
-// 3. Create Netlify _redirects file at the root dist
-console.log('\nCreating Netlify routing config (_redirects) in dist folder...');
-const redirectsContent = `
-/student/*  /student/index.html  200
-/admin/*    /admin/index.html    200
-/supervisor/*  /supervisor/index.html  200
-/center/*   /center/index.html   200
-/*          /index.html          200
-`;
-fs.writeFileSync(path.join(rootDist, '_redirects'), redirectsContent.trim(), 'utf8');
 
 console.log('\n🎉 ALL Frontends built and combined into the root "dist/" directory successfully!');

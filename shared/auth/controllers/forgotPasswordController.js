@@ -92,7 +92,7 @@ module.exports = function forgotPasswordController(db, portal) {
       }
       return res.status(500).json({
         success: false,
-        message: `An error occurred: ${err.message}`
+        message: 'An error occurred while processing your request. Please try again.'
       });
     }
   };

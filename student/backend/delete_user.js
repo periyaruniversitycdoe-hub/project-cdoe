@@ -43,7 +43,7 @@ const db = require('./config/db');
         
         // Retrieve database name dynamically
         const [[dbNameRow]] = await db.query('SELECT DATABASE() as dbName');
-        const dbName = dbNameRow.dbName || 'railway';
+        const dbName = dbNameRow.dbName || 'rsm_db';
         const key = `Tables_in_${dbName}`;
         
         for (const row of tables) {

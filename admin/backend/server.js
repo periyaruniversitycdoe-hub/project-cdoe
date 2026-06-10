@@ -133,6 +133,8 @@ app.use('/api/hall-tickets', hallTicketRoutes);
 app.use('/api/sessions', sessionRoutes);
 app.use('/api/locations', locationRoutes);
 app.use('/api/counselling', counsellingRoutes);
+const permissionReviewRoutes = require('./routes/permission-review');
+app.use('/api/permission-review', permissionReviewRoutes);
 app.use('/api/venues', venueRoutes);
 app.use('/api/qualifications', qualificationRoutes);
 app.use('/api/qualification-rules', qualificationRulesRoutes);
@@ -147,6 +149,8 @@ app.use('/api/supervisor-tracking', supervisorTrackingRoutes);
 app.use('/api/centre-tracking', centreTrackingRoutes);
 const instituteRoutes = require('./routes/institutes');
 app.use('/api/institutes', instituteRoutes);
+const universityInstituteRoutes = require('./routes/university_institutes');
+app.use('/api/university-institutes', universityInstituteRoutes);
 const eligibilityRoutes = require('./routes/eligibility');
 app.use('/api/eligibility', eligibilityRoutes);
 const credentialLogRoutes = require('./routes/credential-logs');
@@ -181,7 +185,7 @@ app.use('/api/notifications', notificationsRoutes);
 const portalHomeRoutes = require('./routes/portal-home');
 app.use('/api/portal-home', portalHomeRoutes);
 
-// Enterprise Dynamic Roster Management Engine
+// Enterprise Roster Module
 const rosterRoutes = require('./routes/roster');
 app.use('/api/roster', rosterRoutes);
 
@@ -523,6 +527,132 @@ app.use('/api/chatbot', chatbotRoutes);
     } catch (e) { console.error('centre_tracking_audit_log table:', e.message); }
 
     console.log('✅ Supervisor & Centre Tracking Engine schema verified.');
+})();
+
+// Auto-repair: research_centers + research_supervisors (recover from InnoDB "doesn't exist in engine" corruption)
+(async () => {
+    try {
+        // Verify / recreate research_centers
+        try { await db.query('SELECT 1 FROM research_centers LIMIT 1'); }
+        catch (e) {
+            if (e.message.includes("doesn't exist in engine") || e.code === 'ER_NO_SUCH_TABLE') {
+                await db.query('SET FOREIGN_KEY_CHECKS = 0');
+                await db.query('DROP TABLE IF EXISTS research_centers');
+                await db.query(`CREATE TABLE research_centers (
+                    id          INT AUTO_INCREMENT PRIMARY KEY,
+                    center_name VARCHAR(255) NOT NULL,
+                    is_active   TINYINT(1) NOT NULL DEFAULT 1,
+                    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+                await db.query('SET FOREIGN_KEY_CHECKS = 1');
+                console.log('✅ research_centers table repaired.');
+            }
+        }
+
+        // Verify / recreate research_supervisors
+        try { await db.query('SELECT 1 FROM research_supervisors LIMIT 1'); }
+        catch (e) {
+            if (e.message.includes("doesn't exist in engine") || e.code === 'ER_NO_SUCH_TABLE') {
+                await db.query('SET FOREIGN_KEY_CHECKS = 0');
+                await db.query('DROP TABLE IF EXISTS research_supervisors');
+                await db.query(`CREATE TABLE research_supervisors (
+                    id                 INT AUTO_INCREMENT PRIMARY KEY,
+                    research_center_id INT NOT NULL,
+                    supervisor_name    VARCHAR(255) NOT NULL,
+                    designation        VARCHAR(100) NULL,
+                    department         VARCHAR(100) NULL,
+                    is_active          TINYINT(1) NOT NULL DEFAULT 1,
+                    created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+                await db.query('SET FOREIGN_KEY_CHECKS = 1');
+                console.log('✅ research_supervisors table repaired.');
+            }
+        }
+        console.log('✅ Research centers & supervisors schema verified.');
+    } catch (err) {
+        console.error('[Research schema repair]', err.message);
+    }
+})();
+
+// Auto-migration: Permission Workflow (migration 012)
+(async () => {
+    try {
+        const cols = [
+            [`workflow_status`, `ENUM('Submitted','Documents_Verified','Center_Allocated','Supervisor_Allocated','Forwarded_Center','Center_Evaluated','Forwarded_Supervisor','Supervisor_Evaluated','Approved','Waitlisted','Rejected') NOT NULL DEFAULT 'Submitted'`],
+            [`forwarded_center_at`,    `TIMESTAMP NULL DEFAULT NULL`],
+            [`forwarded_supervisor_at`,`TIMESTAMP NULL DEFAULT NULL`],
+            [`final_decision`,         `ENUM('Approved','Waitlisted','Rejected') NULL DEFAULT NULL`],
+            [`final_decision_at`,      `TIMESTAMP NULL DEFAULT NULL`],
+            [`final_remarks`,          `TEXT NULL DEFAULT NULL`],
+            [`admin_verified_by`,      `VARCHAR(255) NULL DEFAULT NULL`],
+            [`admin_verified_at`,      `TIMESTAMP NULL DEFAULT NULL`],
+        ];
+        for (const [col, def] of cols) {
+            try { await db.execute(`ALTER TABLE counselling_applications ADD COLUMN ${col} ${def}`); }
+            catch (e) { if (e.code !== 'ER_DUP_FIELDNAME') console.error(`counselling_applications.${col}:`, e.message); }
+        }
+        try { await db.execute(`ALTER TABLE counselling_applications ADD INDEX idx_ca_workflow (workflow_status)`); } catch (_) {}
+        await db.execute(`CREATE TABLE IF NOT EXISTS permission_allocations (id INT AUTO_INCREMENT PRIMARY KEY, counselling_application_id INT NOT NULL, allocated_center_id INT NULL, allocated_supervisor_id INT NULL, center_allocation_date DATE NULL, supervisor_allocation_date DATE NULL, center_remarks TEXT NULL, supervisor_remarks TEXT NULL, allocated_by VARCHAR(255) NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, UNIQUE KEY uq_pa_app (counselling_application_id)) CHARACTER SET utf8mb4`);
+        await db.execute(`CREATE TABLE IF NOT EXISTS permission_center_evaluations (id INT AUTO_INCREMENT PRIMARY KEY, counselling_application_id INT NOT NULL, center_id INT NULL, evaluated_by VARCHAR(255) NULL, academic_record TINYINT UNSIGNED NOT NULL DEFAULT 0, research_aptitude TINYINT UNSIGNED NOT NULL DEFAULT 0, subject_relevance TINYINT UNSIGNED NOT NULL DEFAULT 0, research_proposal TINYINT UNSIGNED NOT NULL DEFAULT 0, interview_performance TINYINT UNSIGNED NOT NULL DEFAULT 0, remarks TEXT NULL, recommendation ENUM('Recommended','Waitlisted','Rejected') NOT NULL DEFAULT 'Waitlisted', submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, UNIQUE KEY uq_pce_app (counselling_application_id)) CHARACTER SET utf8mb4`);
+        await db.execute(`CREATE TABLE IF NOT EXISTS permission_supervisor_evaluations (id INT AUTO_INCREMENT PRIMARY KEY, counselling_application_id INT NOT NULL, supervisor_id INT NULL, evaluated_by VARCHAR(255) NULL, subject_knowledge TINYINT UNSIGNED NOT NULL DEFAULT 0, research_aptitude TINYINT UNSIGNED NOT NULL DEFAULT 0, research_feasibility TINYINT UNSIGNED NOT NULL DEFAULT 0, interview TINYINT UNSIGNED NOT NULL DEFAULT 0, remarks TEXT NULL, recommendation ENUM('Accept','Waitlist','Reject') NOT NULL DEFAULT 'Waitlist', submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, UNIQUE KEY uq_pse_app (counselling_application_id)) CHARACTER SET utf8mb4`);
+        await db.execute(`CREATE TABLE IF NOT EXISTS permission_workflow_history (id INT AUTO_INCREMENT PRIMARY KEY, counselling_application_id INT NOT NULL, action VARCHAR(100) NOT NULL, performed_by VARCHAR(255) NOT NULL, role VARCHAR(50) NOT NULL, from_status VARCHAR(50) NULL, to_status VARCHAR(50) NULL, remarks TEXT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, INDEX idx_pwh_app (counselling_application_id)) CHARACTER SET utf8mb4`);
+        await db.execute(`CREATE TABLE IF NOT EXISTS permission_notifications (id INT AUTO_INCREMENT PRIMARY KEY, counselling_application_id INT NOT NULL, recipient_type ENUM('center','supervisor','admin') NOT NULL, recipient_id INT NOT NULL, message TEXT NOT NULL, is_read TINYINT(1) NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, INDEX idx_pn_recipient (recipient_type, recipient_id), INDEX idx_pn_app (counselling_application_id)) CHARACTER SET utf8mb4`);
+        console.log('✅ Permission Workflow schema verified.');
+
+        // ── Phase 2: Preference-based allocation & interview marks ───────────
+        // New workflow_status values, mark columns, separate preference tables
+        try {
+            await db.execute(`ALTER TABLE counselling_applications MODIFY COLUMN workflow_status ENUM(
+                'Submitted','Documents_Verified',
+                'Allocated','Center_Allocated','Supervisor_Allocated',
+                'Forwarded_Center','Center_Evaluated','Center_Review_Completed',
+                'Forwarded_Supervisor','Supervisor_Evaluated','Supervisor_Interview_Completed',
+                'Final_Score_Calculated','Admin_Review',
+                'Approved','Waitlisted','Rejected'
+            ) NOT NULL DEFAULT 'Submitted'`);
+        } catch (e) { console.error('[workflow_status ENUM extend]', e.message); }
+
+        for (const [col, def] of [
+            ['academic_mark', 'DECIMAL(5,2) NULL COMMENT "Academic weightage mark (max 50)"'],
+            ['interview_mark','DECIMAL(5,2) NULL COMMENT "Supervisor interview mark (max 30)"'],
+            ['final_score',   'DECIMAL(5,2) NULL COMMENT "Calculated final score (max 100)"'],
+        ]) {
+            try { await db.execute(`ALTER TABLE counselling_applications ADD COLUMN ${col} ${def}`); }
+            catch (e) { if (e.code !== 'ER_DUP_FIELDNAME') console.error(`ca.${col}:`, e.message); }
+        }
+
+        // Add interview_mark + interview_remarks to supervisor evaluations
+        for (const [col, def] of [
+            ['interview_mark',    'DECIMAL(5,2) NULL'],
+            ['interview_remarks', 'TEXT NULL'],
+        ]) {
+            try { await db.execute(`ALTER TABLE permission_supervisor_evaluations ADD COLUMN ${col} ${def}`); }
+            catch (e) { if (e.code !== 'ER_DUP_FIELDNAME') console.error(`pse.${col}:`, e.message); }
+        }
+
+        // Separate preference tables: 5 center prefs + 5 supervisor prefs
+        await db.execute(`CREATE TABLE IF NOT EXISTS counselling_center_preferences (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            counselling_application_id INT NOT NULL,
+            preference_order TINYINT NOT NULL,
+            research_center_id INT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uk_ccp (counselling_application_id, preference_order),
+            INDEX idx_ccp_app (counselling_application_id)
+        ) CHARACTER SET utf8mb4`);
+
+        await db.execute(`CREATE TABLE IF NOT EXISTS counselling_supervisor_preferences (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            counselling_application_id INT NOT NULL,
+            preference_order TINYINT NOT NULL,
+            supervisor_id INT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uk_csp (counselling_application_id, preference_order),
+            INDEX idx_csp_app (counselling_application_id)
+        ) CHARACTER SET utf8mb4`);
+
+        console.log('✅ Preference-based allocation schema verified.');
+    } catch (e) { console.error('[Preference allocation migration]', e.message); }
 })();
 
 // Error Handling

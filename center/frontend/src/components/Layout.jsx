@@ -4,10 +4,11 @@ import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 
 const NAV = [
-  { to: '/dashboard',  label: 'Dashboard',          icon: '⊞' },
-  { to: '/apply',      label: 'Centre Registration', icon: '📋' },
-  { to: '/supervisors', label: 'Supervisors',        icon: '👥' },
-  { to: '/profile',    label: 'My Profile',          icon: '🏢' },
+  { to: '/dashboard',             label: 'Dashboard',           icon: '⊞' },
+  { to: '/apply',                 label: 'Centre Registration',  icon: '📋' },
+  { to: '/permission-applications', label: 'Assigned Applications', icon: '🗂️' },
+  { to: '/supervisors',           label: 'Supervisors',          icon: '👥' },
+  { to: '/profile',               label: 'My Profile',           icon: '🏢' },
 ];
 
 const BRAND_GRADIENT = 'linear-gradient(180deg,#0e7490 0%,#155e75 100%)';
@@ -144,7 +145,7 @@ function SidebarContent({ user, initials, nav, onLogout, accent, onClose }) {
         <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: 1, padding: '0 6px', marginBottom: 8 }}>Navigation</div>
         {nav.map(n => {
           // Restricted links if not approved
-          const restricted = ['/supervisors', '/profile'];
+          const restricted = ['/supervisors', '/profile', '/permission-applications'];
           if (restricted.includes(n.to) && user?.centre_status !== 'Approved') return null;
 
           return (

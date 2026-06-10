@@ -4,9 +4,10 @@ import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 
 const NAV = [
-  { to: '/dashboard',  label: 'Dashboard',       icon: '⊞' },
-  { to: '/apply',      label: 'My Application',  icon: '📋' },
-  { to: '/profile',    label: 'My Profile',       icon: '👤' },
+  { to: '/dashboard',               label: 'Dashboard',           icon: '⊞' },
+  { to: '/apply',                   label: 'My Application',      icon: '📋' },
+  { to: '/permission-applications', label: 'Assigned Applications', icon: '🗂️' },
+  { to: '/profile',                 label: 'My Profile',           icon: '👤' },
 ];
 
 const BRAND_GRADIENT = 'linear-gradient(180deg,#4338ca 0%,#312e81 100%)';
@@ -147,8 +148,9 @@ function SidebarContent({ user, initials, nav, onLogout, accent, onClose }) {
       <nav style={{ flex: 1, padding: '16px 12px' }}>
         <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: 1, padding: '0 6px', marginBottom: 8 }}>Navigation</div>
         {nav.map(n => {
-          // Hide Profile if not Approved
-          if (n.to === '/profile' && user?.supervisor_status !== 'Approved') return null;
+          // Hide restricted routes if not Approved
+          const restricted = ['/profile', '/permission-applications'];
+          if (restricted.includes(n.to) && user?.supervisor_status !== 'Approved') return null;
           
           return (
             <NavLink key={n.to} to={n.to} className={({ isActive }) => `sv-nav-link${isActive ? ' active' : ''}`}>

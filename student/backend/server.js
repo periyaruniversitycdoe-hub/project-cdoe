@@ -333,6 +333,14 @@ const initDB = async () => {
                 console.error('Error adding higher_education.degree_name_other:', err.message);
         }
 
+        // specialization_other column for UG/Diploma "Others" specialization option
+        try {
+            await db.query(`ALTER TABLE higher_education ADD COLUMN specialization_other VARCHAR(255) DEFAULT NULL`);
+        } catch (err) {
+            if (err.errno !== 1060 && err.code !== 'ER_DUP_FIELDNAME')
+                console.error('Error adding higher_education.specialization_other:', err.message);
+        }
+
         // Integrated Course master data — seed 6 new courses for all active programs
         try {
             const [progs] = await db.query('SELECT id FROM programs_offered WHERE is_active = 1');
@@ -835,6 +843,23 @@ const initDB = async () => {
         console.error('Database init error:', err);
     }
 };
+
+// ── Counselling research choices mapping migration ────────────────────────────
+(async () => {
+    try {
+        // Drop old FK constraints so we can change the data source
+        for (const fk of ['fk_crc_center', 'fk_crc_sup']) {
+            try { await db.execute(`ALTER TABLE counselling_research_choices DROP FOREIGN KEY ${fk}`); } catch (e) { /* already gone */ }
+        }
+        // Allow NULL on legacy columns (historical data preserved, new rows use new columns)
+        try { await db.execute('ALTER TABLE counselling_research_choices MODIFY COLUMN research_center_id INT NULL DEFAULT NULL'); } catch (e) { /* ignore */ }
+        try { await db.execute('ALTER TABLE counselling_research_choices MODIFY COLUMN supervisor_id INT NULL DEFAULT NULL'); } catch (e) { /* ignore */ }
+        // Add new mapping columns pointing to admin-managed master tables
+        try { await db.execute('ALTER TABLE counselling_research_choices ADD COLUMN centre_id INT NULL DEFAULT NULL'); } catch (e) { if (e.code !== 'ER_DUP_FIELDNAME') console.error('[CRC migration] centre_id:', e.message); }
+        try { await db.execute('ALTER TABLE counselling_research_choices ADD COLUMN master_supervisor_id INT NULL DEFAULT NULL'); } catch (e) { if (e.code !== 'ER_DUP_FIELDNAME') console.error('[CRC migration] master_supervisor_id:', e.message); }
+        console.log('✅ Counselling research choices master mapping verified.');
+    } catch (e) { console.error('[Counselling mapping migration]', e.message); }
+})();
 
 initDB().then(() => {
     // Start asynchronous enterprise queue processor
@@ -1572,7 +1597,7 @@ const APP_ALLOWED_COLUMNS = new Set([
 
 const COLUMNS = {
     school: ['level', 'institution_name', 'board_id', 'other_board_name', 'passing_month', 'passing_year', 'percentage', 'marksheet_path'],
-    higher: ['level', 'degree_id', 'degree_name', 'degree_name_other', 'specialization_id', 'institution_name', 'university_name', 'university_type_id', 'passing_month', 'passing_year', 'start_year', 'score_type', 'score_value', 'marksheet_path', 'consolidated_marksheet_path', 'registration_number', 'upload_mode'],
+    higher: ['level', 'degree_id', 'degree_name', 'degree_name_other', 'specialization_id', 'specialization_other', 'institution_name', 'university_name', 'university_type_id', 'passing_month', 'passing_year', 'start_year', 'score_type', 'score_value', 'marksheet_path', 'consolidated_marksheet_path', 'registration_number', 'upload_mode'],
     exp:    ['designation', 'organization_name', 'employment_type_id', 'from_month', 'from_year', 'to_month', 'to_year', 'from_date', 'to_date', 'total_years', 'total_months', 'state_id', 'district_id', 'address']
 };
 
@@ -1932,6 +1957,11 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
                 const { id, ...rawFields } = item;
                 const fields = {};
                 COLUMNS.higher.forEach(c => { if (rawFields[c] !== undefined) fields[c] = (rawFields[c] === '' || rawFields[c] === 'null' || rawFields[c] === 'undefined') ? null : rawFields[c]; });
+
+                // If specialization_id is not a valid numeric FK (e.g. user selected "Others"), null it out
+                if (fields.specialization_id !== undefined && fields.specialization_id !== null && isNaN(parseInt(fields.specialization_id, 10))) {
+                    fields.specialization_id = null;
+                }
 
                 if (!fields.level) fields.level = idx === 0 ? 'UG' : 'PG';
 
@@ -3764,11 +3794,14 @@ app.get('/api/counselling/settings', authenticateToken, async (req, res) => {
     }
 });
 
-// GET /api/counselling/research-centers â€” active centers (public)
+// GET /api/counselling/research-centers – Approved Research Centres from Admin master
 app.get('/api/counselling/research-centers', async (req, res) => {
     try {
         const [rows] = await db.query(
-            'SELECT id, center_name FROM research_centers WHERE is_active = 1 ORDER BY center_name'
+            `SELECT id, COALESCE(college_name, name) AS center_name
+             FROM research_centres
+             WHERE status = 'Approved'
+             ORDER BY COALESCE(college_name, name)`
         );
         res.json({ success: true, data: rows });
     } catch (err) {
@@ -3776,18 +3809,36 @@ app.get('/api/counselling/research-centers', async (req, res) => {
     }
 });
 
-// GET /api/counselling/research-supervisors?center_id= â€” active supervisors for center
+// GET /api/counselling/research-supervisors – Supervisors; optional ?center_id= filter
 app.get('/api/counselling/research-supervisors', async (req, res) => {
     const { center_id } = req.query;
-    if (!center_id) return res.status(400).json({ success: false, message: 'center_id required' });
     try {
-        const [rows] = await db.query(
-            `SELECT id, supervisor_name, designation, department
-             FROM research_supervisors
-             WHERE research_center_id = ? AND is_active = 1
-             ORDER BY supervisor_name`,
-            [center_id]
-        );
+        let query, params;
+        if (center_id) {
+            query = `SELECT DISTINCT s.id, s.name AS supervisor_name,
+                            d.name AS designation, dep.name AS department
+                     FROM supervisors s
+                     LEFT JOIN supervisor_disciplines sd ON sd.supervisor_id = s.id
+                     LEFT JOIN master_institutes mi ON s.serving_institute_id = mi.id
+                     LEFT JOIN master_designations d ON s.designation_id = d.id
+                     LEFT JOIN master_departments dep ON s.department_id = dep.id
+                     WHERE s.status IN ('Active', 'Approved')
+                       AND (sd.centre_id = ? OR mi.source_centre_id = ?)
+                     ORDER BY s.name`;
+            params = [center_id, center_id];
+        } else {
+            query = `SELECT s.id, s.name AS supervisor_name,
+                            d.name AS designation, dep.name AS department,
+                            COALESCE(rc.college_name, rc.name) AS center_name
+                     FROM supervisors s
+                     LEFT JOIN master_designations d ON s.designation_id = d.id
+                     LEFT JOIN master_departments dep ON s.department_id = dep.id
+                     LEFT JOIN research_centres rc ON s.research_center_id = rc.id
+                     WHERE s.status IN ('Active', 'Approved')
+                     ORDER BY s.name`;
+            params = [];
+        }
+        const [rows] = await db.query(query, params);
         res.json({ success: true, data: rows });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
@@ -3816,15 +3867,47 @@ app.get('/api/counselling/my-application', authenticateToken, async (req, res) =
 
         const app = rows[0];
         const [choices] = await db.query(
-            `SELECT crc.*, rc.center_name, rs.supervisor_name, rs.designation
+            `SELECT crc.*,
+                    COALESCE(rc2.college_name, rc2.name, rc1.center_name) AS center_name,
+                    COALESCE(sup.name, rs.supervisor_name) AS supervisor_name,
+                    COALESCE(d.name, rs.designation) AS designation
              FROM counselling_research_choices crc
-             JOIN research_centers rc ON crc.research_center_id = rc.id
-             JOIN research_supervisors rs ON crc.supervisor_id = rs.id
+             LEFT JOIN research_centres rc2 ON crc.centre_id = rc2.id
+             LEFT JOIN research_centers rc1 ON crc.research_center_id = rc1.id
+             LEFT JOIN supervisors sup ON crc.master_supervisor_id = sup.id
+             LEFT JOIN master_designations d ON sup.designation_id = d.id
+             LEFT JOIN research_supervisors rs ON crc.supervisor_id = rs.id
              WHERE crc.counselling_application_id = ?
              ORDER BY crc.preference_order`,
             [app.id]
         );
         app.choices = choices;
+
+        // New separate preference tables
+        const [centerPrefs] = await db.query(
+            `SELECT ccp.preference_order,
+                    COALESCE(rc.college_name, rc.name) AS center_name, rc.id AS research_center_id
+             FROM counselling_center_preferences ccp
+             LEFT JOIN research_centres rc ON ccp.research_center_id = rc.id
+             WHERE ccp.counselling_application_id = ?
+             ORDER BY ccp.preference_order`,
+            [app.id]
+        );
+        const [supPrefs] = await db.query(
+            `SELECT csp.preference_order, csp.supervisor_id,
+                    s.name AS supervisor_name, d.name AS designation,
+                    dep.name AS department
+             FROM counselling_supervisor_preferences csp
+             LEFT JOIN supervisors s ON csp.supervisor_id = s.id
+             LEFT JOIN master_designations d ON s.designation_id = d.id
+             LEFT JOIN master_departments dep ON s.department_id = dep.id
+             WHERE csp.counselling_application_id = ?
+             ORDER BY csp.preference_order`,
+            [app.id]
+        );
+        app.center_preferences     = centerPrefs;
+        app.supervisor_preferences = supPrefs;
+
         res.json({ success: true, data: app });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
@@ -3876,6 +3959,20 @@ app.post('/api/counselling/save', authenticateToken, async (req, res) => {
         if (new Set(supervisorIds).size !== supervisorIds.length)
             throw new Error('Duplicate supervisor selections are not allowed');
 
+        // Validate each supervisor belongs to the selected Research Centre
+        for (const choice of choices) {
+            const [mapping] = await conn.query(
+                `SELECT 1 
+                 FROM supervisors s
+                 LEFT JOIN supervisor_disciplines sd ON sd.supervisor_id = s.id
+                 LEFT JOIN master_institutes mi ON s.serving_institute_id = mi.id
+                 WHERE s.id = ? AND (sd.centre_id = ? OR mi.source_centre_id = ?)
+                 LIMIT 1`,
+                [choice.supervisor_id, choice.research_center_id, choice.research_center_id]
+            );
+            if (!mapping.length) throw new Error('Invalid selection: the selected Supervisor does not belong to the selected Research Centre.');
+        }
+
         // Upsert counselling application
         let caId;
         const [existing] = await conn.query(
@@ -3896,17 +3993,111 @@ app.post('/api/counselling/save', authenticateToken, async (req, res) => {
             caId = result.insertId;
         }
 
-        // Replace choices
+        // Replace choices — store in master-mapped columns (centre_id, master_supervisor_id)
         await conn.query('DELETE FROM counselling_research_choices WHERE counselling_application_id = ?', [caId]);
         for (let i = 0; i < choices.length; i++) {
             await conn.query(
-                'INSERT INTO counselling_research_choices (counselling_application_id, research_center_id, supervisor_id, preference_order) VALUES (?, ?, ?, ?)',
+                `INSERT INTO counselling_research_choices
+                 (counselling_application_id, centre_id, master_supervisor_id, preference_order)
+                 VALUES (?, ?, ?, ?)`,
                 [caId, choices[i].research_center_id, choices[i].supervisor_id, i + 1]
             );
         }
 
         await conn.commit();
         res.json({ success: true, message: 'Counselling application saved', id: caId });
+    } catch (err) {
+        await conn.rollback();
+        res.status(400).json({ success: false, message: err.message });
+    } finally {
+        conn.release();
+    }
+});
+
+// POST /api/counselling/save-preferences – save separate 5+5 preferences
+app.post('/api/counselling/save-preferences', authenticateToken, async (req, res) => {
+    const { center_preferences, supervisor_preferences } = req.body;
+    if (!Array.isArray(center_preferences) || !Array.isArray(supervisor_preferences)) {
+        return res.status(400).json({ success: false, message: 'center_preferences and supervisor_preferences arrays required' });
+    }
+    if (center_preferences.length === 0 && supervisor_preferences.length === 0) {
+        return res.status(400).json({ success: false, message: 'At least one preference is required' });
+    }
+
+    try {
+        const eligibility = await checkCounsellingEligibility(req.user.id);
+        if (!eligibility.eligible) {
+            return res.status(eligibility.status).json({ success: false, message: eligibility.message });
+        }
+    } catch (err) {
+        return res.status(500).json({ success: false, message: err.message });
+    }
+
+    const conn = await db.getConnection();
+    await conn.beginTransaction();
+    try {
+        const [userRows] = await conn.query('SELECT session_id FROM users WHERE id = ?', [req.user.id]);
+        const sessionId = userRows[0]?.session_id;
+        if (!sessionId) throw new Error('No session assigned to user');
+
+        const [settingsRows] = await conn.query(
+            'SELECT * FROM counselling_settings WHERE session_id = ? AND is_active = 1 LIMIT 1',
+            [sessionId]
+        );
+        if (settingsRows.length === 0) throw new Error('Counselling is not open for your session');
+
+        const settings = settingsRows[0];
+        const today = new Date().toISOString().split('T')[0];
+        if (today < settings.start_date) throw new Error('Counselling application has not started yet');
+        if (today > settings.end_date)   throw new Error('Counselling application is closed');
+
+        const MAX_PREFS = 5;
+        if (center_preferences.length > MAX_PREFS)     throw new Error(`Maximum ${MAX_PREFS} center preferences allowed`);
+        if (supervisor_preferences.length > MAX_PREFS)  throw new Error(`Maximum ${MAX_PREFS} supervisor preferences allowed`);
+
+        // Duplicate check
+        if (new Set(center_preferences).size !== center_preferences.length)
+            throw new Error('Duplicate center selections are not allowed');
+        if (new Set(supervisor_preferences).size !== supervisor_preferences.length)
+            throw new Error('Duplicate supervisor selections are not allowed');
+
+        // Upsert counselling application
+        let caId;
+        const [existing] = await conn.query(
+            'SELECT id FROM counselling_applications WHERE user_id = ? AND session_id = ?',
+            [req.user.id, sessionId]
+        );
+        if (existing.length > 0) {
+            caId = existing[0].id;
+            await conn.query('UPDATE counselling_applications SET counselling_setting_id = ?, updated_at = NOW() WHERE id = ?', [settings.id, caId]);
+        } else {
+            const [result] = await conn.query(
+                'INSERT INTO counselling_applications (user_id, session_id, counselling_setting_id, status) VALUES (?, ?, ?, "Draft")',
+                [req.user.id, sessionId, settings.id]
+            );
+            caId = result.insertId;
+        }
+
+        // Replace center preferences
+        await conn.query('DELETE FROM counselling_center_preferences WHERE counselling_application_id = ?', [caId]);
+        for (let i = 0; i < center_preferences.length; i++) {
+            await conn.query(
+                'INSERT INTO counselling_center_preferences (counselling_application_id, preference_order, research_center_id) VALUES (?, ?, ?)',
+                [caId, i + 1, center_preferences[i]]
+            );
+        }
+
+        // Replace supervisor preferences
+        await conn.query('DELETE FROM counselling_supervisor_preferences WHERE counselling_application_id = ?', [caId]);
+        for (let i = 0; i < supervisor_preferences.length; i++) {
+            await conn.query(
+                'INSERT INTO counselling_supervisor_preferences (counselling_application_id, preference_order, supervisor_id) VALUES (?, ?, ?)',
+                [caId, i + 1, supervisor_preferences[i]]
+            );
+        }
+
+        await conn.commit();
+        res.json({ success: true, message: 'Preferences saved', id: caId });
     } catch (err) {
         await conn.rollback();
         res.status(400).json({ success: false, message: err.message });
@@ -3942,12 +4133,22 @@ app.post('/api/counselling/submit', authenticateToken, async (req, res) => {
         if (rows.length === 0) throw new Error('No counselling application found. Please save first.');
         if (rows[0].status === 'Submitted') throw new Error('Already submitted');
 
-        // Validate at least one choice
+        // Validate at least one preference (new tables or legacy)
         const [choices] = await conn.query(
             'SELECT id FROM counselling_research_choices WHERE counselling_application_id = ?',
             [rows[0].id]
         );
-        if (choices.length === 0) throw new Error('Add at least one research preference before submitting');
+        const [centerPrefsCount] = await conn.query(
+            'SELECT COUNT(*) AS cnt FROM counselling_center_preferences WHERE counselling_application_id = ?',
+            [rows[0].id]
+        );
+        const [supPrefsCount] = await conn.query(
+            'SELECT COUNT(*) AS cnt FROM counselling_supervisor_preferences WHERE counselling_application_id = ?',
+            [rows[0].id]
+        );
+        if (choices.length === 0 && centerPrefsCount[0].cnt === 0 && supPrefsCount[0].cnt === 0) {
+            throw new Error('Add at least one research preference before submitting');
+        }
 
         await conn.query(
             'UPDATE counselling_applications SET status = "Submitted", submitted_at = NOW(), updated_at = NOW() WHERE id = ?',
@@ -4073,9 +4274,9 @@ app.get('/api/application/review', authenticateToken, async (req, res) => {
             return dt === t || dt.includes(t) || t.includes(dt);
         });
 
-        const [uploadSettings] = await db.query('SELECT file_type, is_active FROM file_upload_settings');
+        const [uploadSettings] = await db.query('SELECT file_type FROM file_upload_settings');
         const settingsMap = {};
-        uploadSettings.forEach(s => { settingsMap[s.file_type] = s.is_active !== 0; });
+        uploadSettings.forEach(s => { settingsMap[s.file_type] = true; });
 
         // Respect admin-configured number of exam centre preferences
         const [centreConfigRows] = await db.query('SELECT max_preferences FROM exam_centre_config LIMIT 1').catch(() => [[]]);
@@ -4298,9 +4499,9 @@ app.post('/api/application/final-submit', authenticateToken, async (req, res) =>
             return dt === t || dt.includes(t) || t.includes(dt);
         });
 
-        const [uploadSettings] = await db.query('SELECT file_type, is_active FROM file_upload_settings');
+        const [uploadSettings] = await db.query('SELECT file_type FROM file_upload_settings');
         const settingsMap = {};
-        uploadSettings.forEach(s => { settingsMap[s.file_type] = s.is_active !== 0; });
+        uploadSettings.forEach(s => { settingsMap[s.file_type] = true; });
 
         const [centreConfigRowsSub] = await db.query('SELECT max_preferences FROM exam_centre_config LIMIT 1').catch(() => [[]]);
         const maxPrefsSub = Math.max(1, parseInt(centreConfigRowsSub[0]?.max_preferences || 1, 10));

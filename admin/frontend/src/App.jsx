@@ -46,13 +46,14 @@ import EmailLogsPage from './modules/admin/email-services/pages/EmailLogsPage';
 import EmailTemplateListPage from './modules/admin/email-builder/pages/EmailTemplateListPage';
 import CredentialManagement from './pages/CredentialManagement';
 import Reports from './pages/Reports';
-import RosterManagement from './pages/RosterManagement';
+import RosterManagement from './pages/RosterManagement';  // new enterprise roster
 import PortalHomeManagement from './pages/PortalHomeManagement';
 import NewsAnnouncementsManagement from './pages/NewsAnnouncementsManagement';
 import SupervisorTracking from './pages/SupervisorTracking';
 import CentreTracking from './pages/CentreTracking';
 import ChatbotManagement from './pages/ChatbotManagement';
 import EmailDeliveryLog from './pages/EmailDeliveryLog';
+import PermissionReviewAllocation from './pages/PermissionReviewAllocation';
 
 // Global 401 interceptor — attempts token refresh before forcing re-login
 const ADMIN_API = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
@@ -193,8 +194,8 @@ function App() {
         {/* Enterprise Reports & Analytics Engine */}
         <Route path="/reports/*" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
 
-        {/* Dynamic Roster Management Engine */}
-        <Route path="/roster-management" element={<ProtectedRoute><RosterManagement /></ProtectedRoute>} />
+        {/* Enterprise Roster */}
+        <Route path="/roster" element={<ProtectedRoute><RosterManagement /></ProtectedRoute>} />
 
         {/* Portal Home Management */}
         <Route path="/portal-home" element={<ProtectedRoute><PortalHomeManagement /></ProtectedRoute>} />
@@ -207,6 +208,9 @@ function App() {
 
         {/* Email Failover Delivery Log */}
         <Route path="/email-delivery-log" element={<ProtectedRoute><EmailDeliveryLog /></ProtectedRoute>} />
+
+        {/* Permission Review & Allocation */}
+        <Route path="/permission-review" element={<ProtectedRoute><PermissionReviewAllocation /></ProtectedRoute>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

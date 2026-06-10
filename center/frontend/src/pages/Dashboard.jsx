@@ -79,7 +79,7 @@ export default function Dashboard() {
   if (loading) return <div style={{ textAlign: 'center', padding: 100, color: '#0891b2', fontWeight: 600 }}>Loading Dashboard...</div>;
   if (!profile) return <div style={{ textAlign: 'center', padding: 100, color: '#ef4444' }}>Error loading profile. Please try logging in again.</div>;
 
-  const appStatus = profile?.centre_active || 'Draft';
+  const appStatus = profile?.centre_status || 'Draft';
 
   return (
     <div style={{ animation: 'fadeIn 0.5s ease-out' }}>

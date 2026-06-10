@@ -71,8 +71,6 @@ function setupInterceptors(logoutFn) {
         toast.error('Access denied.');
       } else if (status === 500) {
         toast.error('Server error. Please try again later.');
-      } else if (!err.response) {
-        toast.error('Network error. Check your connection.');
       }
 
       return Promise.reject(err);

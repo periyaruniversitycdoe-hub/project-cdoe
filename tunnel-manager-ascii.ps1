@@ -81,9 +81,10 @@ foreach ($pair in $envMap.GetEnumerator()) {
 }
 Write-Host "Frontend .env files written with tunnel URLs." -ForegroundColor Cyan
 
-Write-Host "======================================================================" -ForegroundColor Green
+$line = "=" * 68
+Write-Host "`n$line" -ForegroundColor Green
 Write-Host "             PhD ERP PORTAL - PUBLIC ACCESS URLS                      " -ForegroundColor Green
-Write-Host "======================================================================" -ForegroundColor Green
+Write-Host $line -ForegroundColor Green
 Write-Host "  Portal Dashboard  : $($urls['portal-fe'])" -ForegroundColor White
 Write-Host "  Student Portal    : $($urls['student-fe'])" -ForegroundColor White
 Write-Host "  Admin Portal      : $($urls['admin-fe'])" -ForegroundColor White
@@ -94,7 +95,7 @@ Write-Host "  Student API       : $($urls['student-be'])" -ForegroundColor DarkG
 Write-Host "  Admin API         : $($urls['admin-be'])" -ForegroundColor DarkGray
 Write-Host "  Supervisor API    : $($urls['supervisor-be'])" -ForegroundColor DarkGray
 Write-Host "  Center API        : $($urls['center-be'])" -ForegroundColor DarkGray
-Write-Host "======================================================================" -ForegroundColor Green
+Write-Host $line -ForegroundColor Green
 Write-Host "  Keep THIS window open - closing it stops all tunnels" -ForegroundColor Yellow
 Write-Host "  Press Ctrl+C to stop all tunnels" -ForegroundColor Yellow
 

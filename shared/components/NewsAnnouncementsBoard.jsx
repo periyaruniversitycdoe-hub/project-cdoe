@@ -10,7 +10,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
-let CATEGORIES = {
+const DEFAULT_CATEGORIES = {
   news: { icon: '📰', label: 'News', color: '#0369a1', bg: '#e0f2fe' },
   announcement: { icon: '📢', label: 'Announcement', color: '#7c3aed', bg: '#ede9fe' },
   circular: { icon: '📋', label: 'Circular', color: '#0f766e', bg: '#ccfbf1' },
@@ -26,7 +26,6 @@ const PRIORITIES = {
   low: { label: 'Low', dot: '#10b981', text: '#059669' },
 };
 
-const CAT_KEYS = Object.keys(CATEGORIES);
 const PRI_KEYS = ['urgent', 'high', 'medium', 'low'];
 
 function fmtDate(d) {
@@ -45,8 +44,9 @@ function timeAgo(d) {
 }
 
 // ── Detail Modal ───────────────────────────────────────────────────────────────
-function DetailModal({ item, filesBase, onClose }) {
-  const cat = CATEGORIES[item.category] || CATEGORIES.announcement;
+function DetailModal({ item, filesBase, onClose, categories }) {
+  const cats = categories || DEFAULT_CATEGORIES;
+  const cat = cats[item.category] || cats.announcement;
   const pri = PRIORITIES[item.priority] || PRIORITIES.medium;
 
   useEffect(() => {
@@ -112,6 +112,7 @@ function DetailModal({ item, filesBase, onClose }) {
 export default function NewsAnnouncementsBoard({ apiBase, accentColor = '#1e3a5f', compact = false, scrollHeight, layout = 'vertical', onViewDetails }) {
   const [items, setItems] = useState([]);
   const [filtered, setFiltered] = useState([]);
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [loading, setLoading] = useState(true);
   const [filterCat, setFilterCat] = useState('all');
   const [filterPri, setFilterPri] = useState('all');
@@ -120,7 +121,6 @@ export default function NewsAnnouncementsBoard({ apiBase, accentColor = '#1e3a5f
   const [paused, setPaused] = useState(false);
   const [scrollY, setScrollY] = useState(0);
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
-  const [categoriesLoaded, setCategoriesLoaded] = useState(0);
   const [showAllAnnouncements, setShowAllAnnouncements] = useState(false);
 
   const handleItemClick = (item) => {
@@ -160,8 +160,7 @@ export default function NewsAnnouncementsBoard({ apiBase, accentColor = '#1e3a5f
               bg: c.bg || '#ede9fe'
             };
           });
-          Object.assign(CATEGORIES, newCats);
-          setCategoriesLoaded(prev => prev + 1);
+          setCategories(prev => ({ ...prev, ...newCats }));
         }
       })
       .catch(() => { });
@@ -224,7 +223,7 @@ export default function NewsAnnouncementsBoard({ apiBase, accentColor = '#1e3a5f
 
   // ── Full-size row ──────────────────────────────────────────────────────────
   const FullRow = ({ item }) => {
-    const cat = CATEGORIES[item.category] || CATEGORIES.announcement;
+    const cat = categories[item.category] || categories.announcement;
     const pri = PRIORITIES[item.priority] || PRIORITIES.medium;
     return (
       <div onClick={() => handleItemClick(item)}
@@ -251,7 +250,7 @@ export default function NewsAnnouncementsBoard({ apiBase, accentColor = '#1e3a5f
 
   // ── Compact row ────────────────────────────────────────────────────────────
   const CompactRow = ({ item }) => {
-    const cat = CATEGORIES[item.category] || CATEGORIES.announcement;
+    const cat = categories[item.category] || categories.announcement;
     const pri = PRIORITIES[item.priority] || PRIORITIES.medium;
     return (
       <div onClick={() => handleItemClick(item)}
@@ -426,8 +425,8 @@ export default function NewsAnnouncementsBoard({ apiBase, accentColor = '#1e3a5f
           )}
         </div>
 
-        {detail && <DetailModal item={detail} filesBase={filesBase} onClose={() => setDetail(null)} />}
-        {showAllAnnouncements && <ViewAllModal items={items} CATEGORIES={CATEGORIES} onClose={() => setShowAllAnnouncements(false)} onOpenDetail={handleItemClick} />}
+        {detail && <DetailModal item={detail} filesBase={filesBase} onClose={() => setDetail(null)} categories={categories} />}
+        {showAllAnnouncements && <ViewAllModal items={items} CATEGORIES={categories} onClose={() => setShowAllAnnouncements(false)} onOpenDetail={handleItemClick} />}
         <style>{`
           @keyframes annSpin  { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
           @keyframes annFadeIn { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: scale(1); } }
@@ -598,8 +597,8 @@ export default function NewsAnnouncementsBoard({ apiBase, accentColor = '#1e3a5f
           </span>
         </div>
 
-        {detail && <DetailModal item={detail} filesBase={filesBase} onClose={() => setDetail(null)} />}
-        {showAllAnnouncements && <ViewAllModal items={items} CATEGORIES={CATEGORIES} onClose={() => setShowAllAnnouncements(false)} onOpenDetail={handleItemClick} />}
+        {detail && <DetailModal item={detail} filesBase={filesBase} onClose={() => setDetail(null)} categories={categories} />}
+        {showAllAnnouncements && <ViewAllModal items={items} CATEGORIES={categories} onClose={() => setShowAllAnnouncements(false)} onOpenDetail={handleItemClick} />}
         <style>{`
           @keyframes annSpin  { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
           @keyframes annFadeIn { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: scale(1); } }
@@ -638,7 +637,7 @@ export default function NewsAnnouncementsBoard({ apiBase, accentColor = '#1e3a5f
         <select style={{ padding: '5px 8px', borderRadius: 7, border: '1px solid #e5e7eb', fontSize: 12, color: '#374151', background: '#fff', cursor: 'pointer' }}
           value={filterCat} onChange={e => setFilterCat(e.target.value)}>
           <option value="all">All Categories</option>
-          {Object.keys(CATEGORIES).map(k => <option key={k} value={k}>{CATEGORIES[k]?.icon || '📢'} {CATEGORIES[k]?.label || k}</option>)}
+          {Object.keys(categories).map(k => <option key={k} value={k}>{CATEGORIES[k]?.icon || '📢'} {CATEGORIES[k]?.label || k}</option>)}
         </select>
         <select style={{ padding: '5px 8px', borderRadius: 7, border: '1px solid #e5e7eb', fontSize: 12, color: '#374151', background: '#fff', cursor: 'pointer' }}
           value={filterPri} onChange={e => setFilterPri(e.target.value)}>
@@ -686,8 +685,8 @@ export default function NewsAnnouncementsBoard({ apiBase, accentColor = '#1e3a5f
         <span style={{ marginLeft: 'auto', fontSize: 10, color: '#d1d5db' }}>Hover to pause · Click to view</span>
       </div>
 
-      {detail && <DetailModal item={detail} filesBase={filesBase} onClose={() => setDetail(null)} />}
-      {showAllAnnouncements && <ViewAllModal items={items} CATEGORIES={CATEGORIES} onClose={() => setShowAllAnnouncements(false)} onOpenDetail={handleItemClick} />}
+      {detail && <DetailModal item={detail} filesBase={filesBase} onClose={() => setDetail(null)} categories={categories} />}
+      {showAllAnnouncements && <ViewAllModal items={items} CATEGORIES={categories} onClose={() => setShowAllAnnouncements(false)} onOpenDetail={handleItemClick} />}
       <style>{`
         @keyframes annSpin  { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes annFadeIn { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: scale(1); } }

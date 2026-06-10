@@ -147,8 +147,6 @@ function isAllowedOrigin(origin) {
     if (!origin) return true; // server-to-server calls (health checks, internal)
     if (allowedOrigins.includes(origin)) return true;
     if (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1')) return true;
-    // Only allow Netlify in non-production or if explicitly listed
-    if (process.env.NODE_ENV !== 'production' && origin.endsWith('.netlify.app')) return true;
     return false;
 }
 

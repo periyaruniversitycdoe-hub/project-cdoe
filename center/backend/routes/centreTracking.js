@@ -60,8 +60,9 @@ async function sendStatusEmail(centre, status, reason, remarks) {
 router.get('/filter-options', verifyToken, isAdmin, async (req, res) => {
     try {
         const [institutes] = await pool.execute('SELECT id, college_code, name FROM master_institutes WHERE is_active = 1 ORDER BY college_code ASC');
+        const [universityInstitutes] = await pool.execute('SELECT id, institute_code, institute_name AS name FROM institutes WHERE status = \'Active\' ORDER BY institute_name ASC');
         const [centreTypes] = await pool.execute('SELECT id, name FROM master_centre_types WHERE is_active = 1 ORDER BY name ASC');
-        res.json({ success: true, data: { institutes, centreTypes } });
+        res.json({ success: true, data: { institutes, universityInstitutes, centreTypes } });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
     }
@@ -92,7 +93,7 @@ router.get('/counters', verifyToken, isAdmin, async (req, res) => {
 // GET /api/centre-tracking  — paginated list with filters
 router.get('/', verifyToken, isAdmin, async (req, res) => {
     try {
-        const { status, search, institute_id, centre_type_id, date_from, date_to, page = 1, limit = 20 } = req.query;
+        const { status, search, institute_id, university_institute_id, centre_type_id, date_from, date_to, page = 1, limit = 20 } = req.query;
         const conditions = [];
         const vals = [];
 
@@ -103,6 +104,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
             vals.push(like, like, like, like);
         }
         if (institute_id) { conditions.push('rc.institute_id = ?'); vals.push(parseInt(institute_id)); }
+        if (university_institute_id) { conditions.push('rc.university_institute_id = ?'); vals.push(parseInt(university_institute_id)); }
         if (centre_type_id) { conditions.push('rc.centre_type_id = ?'); vals.push(parseInt(centre_type_id)); }
         if (date_from) { conditions.push('DATE(rc.created_at) >= ?'); vals.push(date_from); }
         if (date_to) { conditions.push('DATE(rc.created_at) <= ?'); vals.push(date_to); }
@@ -115,10 +117,12 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
             SELECT rc.id, rc.centre_ref_no, rc.name AS centre_name, rc.email, rc.status,
                    rc.rejection_reason, rc.approved_by, rc.approved_at, rc.created_at, rc.remark,
                    ct.name AS centre_type_name,
-                   inst.name AS institute_name, inst.college_code AS institute_code
+                   inst.name AS institute_name, inst.college_code AS institute_code,
+                   ui.institute_name AS university_institute_name, ui.institute_code AS university_institute_code
             FROM research_centres rc
-            LEFT JOIN master_centre_types ct ON rc.centre_type_id = ct.id
-            LEFT JOIN master_institutes inst  ON rc.institute_id = inst.id
+            LEFT JOIN master_centre_types ct   ON rc.centre_type_id          = ct.id
+            LEFT JOIN master_institutes   inst  ON rc.institute_id             = inst.id
+            LEFT JOIN institutes          ui    ON rc.university_institute_id  = ui.id
             ${where}
             ORDER BY rc.created_at DESC
             LIMIT ${parseInt(limit)} OFFSET ${offset}
@@ -137,6 +141,7 @@ router.get('/:id', verifyToken, isAdmin, async (req, res) => {
             SELECT rc.*,
                    ct.name AS centre_type_name,
                    rs.name AS subject_name,
+                   ui.institute_name AS university_institute_name, ui.institute_code AS university_institute_code,
                    rcat.name AS category_name,
                    inst.name AS institute_name, inst.college_code AS institute_code,
                    dist.name AS district_name
@@ -144,8 +149,9 @@ router.get('/:id', verifyToken, isAdmin, async (req, res) => {
             LEFT JOIN master_centre_types        ct   ON rc.centre_type_id = ct.id
             LEFT JOIN master_research_subjects   rs   ON rc.subject_id = rs.id
             LEFT JOIN master_research_categories rcat ON rc.category_id = rcat.id
-            LEFT JOIN master_institutes          inst ON rc.institute_id = inst.id
-            LEFT JOIN master_districts           dist ON rc.district_id = dist.id
+            LEFT JOIN master_institutes          inst ON rc.institute_id            = inst.id
+            LEFT JOIN institutes                 ui   ON rc.university_institute_id = ui.id
+            LEFT JOIN master_districts           dist ON rc.district_id             = dist.id
             WHERE rc.id = ?
         `, [req.params.id]);
         if (!row) return res.status(404).json({ success: false, message: 'Research centre not found' });

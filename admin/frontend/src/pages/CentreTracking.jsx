@@ -223,6 +223,15 @@ function ViewModal({ centre, onClose }) {
                             <InfoField label="Applied Date"         value={fmt(c.created_at)} />
                             <InfoField label="Approved / Action Date" value={fmt(c.approved_at)} />
 
+                            {/* ── University Institute (new hierarchy) ── */}
+                            {c.university_institute_name && (
+                                <>
+                                    <SectionHeading title="University Institute (New Hierarchy)" color="#4338ca" />
+                                    <InfoField label="University Institute" value={c.university_institute_name} />
+                                    {c.university_institute_code && <InfoField label="Institute Code" value={c.university_institute_code} />}
+                                </>
+                            )}
+
                             {/* ── Step 1: Institute Details (from registration form) ── */}
                             <SectionHeading title="Institute Details  —  Source of Truth for Institute Master" color="#0369a1" />
                             <InfoField label="College Code"      value={c.college_code    || c.institute_code} />
@@ -325,8 +334,8 @@ function HistoryModal({ history, centreName, onClose }) {
 export default function CentreTracking() {
     const [counters, setCounters] = useState(null);
     const [data, setData] = useState({ rows: [], total: 0 });
-    const [filterOptions, setFilterOptions] = useState({ institutes: [], centreTypes: [] });
-    const [filters, setFilters] = useState({ status: '', search: '', institute_id: '', centre_type_id: '', date_from: '', date_to: '', page: 1, limit: 20 });
+    const [filterOptions, setFilterOptions] = useState({ institutes: [], universityInstitutes: [], centreTypes: [] });
+    const [filters, setFilters] = useState({ status: '', search: '', institute_id: '', university_institute_id: '', centre_type_id: '', date_from: '', date_to: '', page: 1, limit: 20 });
     const [loading, setLoading] = useState(false);
     const [actionLoading, setActionLoading] = useState(false);
 
@@ -446,9 +455,9 @@ export default function CentreTracking() {
                             </select>
                         </div>
                         <div className="col-md-2">
-                            <select className="form-select form-select-sm" value={filters.institute_id} onChange={e => setFilter('institute_id', e.target.value)}>
-                                <option value="">All Institutes</option>
-                                {filterOptions.institutes.map(i => <option key={i.id} value={i.id}>{i.college_code} — {i.name}</option>)}
+                            <select className="form-select form-select-sm" value={filters.university_institute_id} onChange={e => setFilter('university_institute_id', e.target.value)}>
+                                <option value="">All Univ. Institutes</option>
+                                {(filterOptions.universityInstitutes || []).map(i => <option key={i.id} value={i.id}>{i.institute_code ? `${i.institute_code} — ` : ''}{i.name}</option>)}
                             </select>
                         </div>
                         <div className="col-md-2">
@@ -458,7 +467,7 @@ export default function CentreTracking() {
                             </select>
                         </div>
                         <div className="col-md-1">
-                            <button className="btn btn-sm btn-outline-secondary w-100" onClick={() => setFilters({ status: '', search: '', institute_id: '', centre_type_id: '', date_from: '', date_to: '', page: 1, limit: 20 })}>Clear</button>
+                            <button className="btn btn-sm btn-outline-secondary w-100" onClick={() => setFilters({ status: '', search: '', institute_id: '', university_institute_id: '', centre_type_id: '', date_from: '', date_to: '', page: 1, limit: 20 })}>Clear</button>
                         </div>
                     </div>
                     <div className="row g-2 mt-1">
@@ -491,7 +500,7 @@ export default function CentreTracking() {
                                     <tr>
                                         <th className="ps-3">#</th>
                                         <th>Centre ID</th>
-                                        <th>Institute</th>
+                                        <th>Univ. Institute</th>
                                         <th>Centre Name</th>
                                         <th>Centre Type</th>
                                         <th>Email</th>
@@ -510,8 +519,8 @@ export default function CentreTracking() {
                                                 <td className="ps-3 text-muted">{rowNum}</td>
                                                 <td><span className="badge bg-light text-dark border">#{rc.id}</span></td>
                                                 <td className="small">
-                                                    {rc.institute_code && <span className="badge bg-light text-dark border me-1">{rc.institute_code}</span>}
-                                                    <span className="text-muted">{rc.institute_name || '—'}</span>
+                                                    {rc.university_institute_code && <span className="badge bg-light text-dark border me-1">{rc.university_institute_code}</span>}
+                                                    <span className="text-muted">{rc.university_institute_name || rc.institute_name || '—'}</span>
                                                 </td>
                                                 <td>
                                                     <div className="fw-semibold">{rc.centre_name}</div>

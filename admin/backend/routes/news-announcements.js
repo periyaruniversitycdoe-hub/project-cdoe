@@ -113,10 +113,11 @@ const upload = multer({
 // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const PRIORITY_ORDER = "'urgent','high','medium','low'";
 
-// Shared function to build audience WHERE clause
+// Build audience WHERE clause. Returns { clause, params } — caller must append params to their
+// parameter array to keep the query fully parameterized (no string interpolation of user input).
 function audienceWhere(audience) {
-    if (!audience || audience === 'all') return `(na.audience = 'all')`;
-    return `(na.audience = 'all' OR na.audience = '${pool.escape(audience).replace(/'/g, '')}')`;
+    if (!audience || audience === 'all') return { clause: `(na.audience = 'all')`, params: [] };
+    return { clause: `(na.audience = 'all' OR na.audience = ?)`, params: [audience] };
 }
 
 // â”€â”€ ADMIN CRUD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

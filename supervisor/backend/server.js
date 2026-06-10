@@ -98,6 +98,7 @@ app.use('/api/auth/mfa', verifySupervisorToken, makeMfaRoutes(db, process.env.SU
 app.use('/api/portal', require('./routes/portal'));
 app.use('/api/dropdowns', require('./routes/dropdowns'));
 app.use('/api/notifications', require('./routes/notifications'));
+app.use('/api/permission-applications', require('./routes/permission-applications'));
 app.use('/api', require('./routes/bank'));
 
 // News & Announcements board — audience = all | supervisor

@@ -108,6 +108,8 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
   const [errors, setErrors] = useState({});
   const [dropdowns, setDropdowns] = useState({});
   const [appStatus, setAppStatus] = useState('Draft');
+  const [institutes, setInstitutes] = useState([]);
+  const [useInstituteAddress, setUseInstituteAddress] = useState(false);
 
   // ── Master form state — ALL fields from the registration form ────────────────
   const [formData, setFormData] = useState({
@@ -117,12 +119,13 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
     centre_ref_no: '',
     recognition_date: '',
     status: 'Draft',
-    // Step 1: Institute Details (master source — feeds Institute Master on approval)
+    // Step 1: University Institute (hierarchy parent) + College Details
+    university_institute_id: '',
     college_code: '',
     college_name: '',
     principal_name: '',
     principal_mobile: '',
-    hod_email: '',        // Principal / HOD email
+    hod_email: '',
     college_phone: '',
     // Step 2: Address & Contact
     address_1: '', address_2: '', address_3: '',
@@ -149,6 +152,10 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
       tables.forEach((t, i) => { data[t] = results[i].data || []; });
       setDropdowns(data);
     }).catch(() => toast.error('Failed to load dropdown data.'));
+    // Load university institutes for hierarchy dropdown
+    axios.get(`${ADMIN_API}/university-institutes/dropdown`)
+      .then(res => setInstitutes(res.data?.data || []))
+      .catch(() => {});
   }, []);
 
   // ── Load existing application data ──────────────────────────────────────────
@@ -183,7 +190,8 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
       centre_ref_no:           d.centre_ref_no   || '',
       recognition_date:        d.recognition_date ? d.recognition_date.split('T')[0] : '',
       recognition_certificate: d.recognition_certificate || null,
-      // Step 1 — prefer direct rc fields; fall back to institute join fields
+      // Step 1 — University Institute hierarchy + College details
+      university_institute_id: d.university_institute_id ? String(d.university_institute_id) : '',
       college_code:    d.college_code    || d.abbreviation    || d.institute_code || '',
       college_name:    d.college_name    || d.institute_name  || '',
       principal_name:  d.principal_name  || d.institute_principal || '',
@@ -199,6 +207,34 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
       contact_number:  d.contact_number || '',
       email:           d.centre_email || d.email || '',
     }));
+  }
+
+  // When "Use Institute Address" is toggled on, copy address fields from selected institute
+  async function handleUseInstituteAddress(checked) {
+    setUseInstituteAddress(checked);
+    if (!checked || !formData.university_institute_id) return;
+    try {
+      const res = await axios.get(`${ADMIN_API}/university-institutes/${formData.university_institute_id}`, getHeaders());
+      const inst = res.data?.data;
+      if (!inst) return;
+      // Find district_id by name from dropdowns
+      const districtMatch = dropdowns.master_districts?.find(
+        d => d.name?.toLowerCase() === (inst.district || '').toLowerCase()
+      );
+      setFormData(prev => ({
+        ...prev,
+        address_1:     inst.address_line_1 || prev.address_1,
+        address_2:     inst.address_line_2 || prev.address_2,
+        address_3:     inst.address_line_3 || prev.address_3,
+        district_id:   districtMatch ? String(districtMatch.id) : prev.district_id,
+        pincode:       inst.pincode        || prev.pincode,
+        contact_number: inst.phone_no      || prev.contact_number,
+        email:         inst.email          || prev.email,
+      }));
+      toast.success('Address copied from institute');
+    } catch {
+      toast.error('Could not load institute address');
+    }
   }
 
   const handleInput = useCallback((e) => {
@@ -391,17 +427,55 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
             </div>
           )}
 
-          {/* ══ STEP 1: Institute Details ════════════════════════════════════
-               These fields feed directly into Institute Master on approval.
-               No separate Institute data entry is required.              */}
+          {/* ══ STEP 1: Institute Details ══════════════════════════════════ */}
           {step === 1 && (
             <div style={S.grid2}>
+              {/* University Institute (hierarchy parent) */}
+              <div style={{ ...S.group, gridColumn: '1 / -1' }}>
+                <label style={S.label}>
+                  <Building size={14} color="#0891b2" /> University Institute <span style={S.required}>*</span>
+                </label>
+                <select
+                  style={S.select(errors.university_institute_id)}
+                  name="university_institute_id"
+                  value={formData.university_institute_id}
+                  onChange={e => {
+                    handleInput(e);
+                    setUseInstituteAddress(false);
+                  }}
+                  disabled={isReadOnly}
+                >
+                  <option value="">— Select Institute —</option>
+                  {institutes.map(inst => (
+                    <option key={inst.id} value={inst.id}>
+                      {inst.name} ({inst.code})
+                    </option>
+                  ))}
+                </select>
+                {errors.university_institute_id && <span style={S.errMsg}>{errors.university_institute_id}</span>}
+                <span style={S.fieldHint}>
+                  Select the university institute this research centre belongs to
+                </span>
+              </div>
+
+              {/* Use Institute Address checkbox */}
+              {formData.university_institute_id && !isReadOnly && (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 13, color: '#0369a1', fontWeight: 600 }}>
+                    <input
+                      type="checkbox"
+                      checked={useInstituteAddress}
+                      onChange={e => handleUseInstituteAddress(e.target.checked)}
+                      style={{ width: 16, height: 16 }}
+                    />
+                    ☑ Use Institute Address — automatically copy address, district, pincode, phone &amp; email from selected institute
+                  </label>
+                </div>
+              )}
+
               <div style={{ ...S.notice, gridColumn: '1 / -1' }}>
                 <AlertCircle size={17} style={{ flexShrink: 0 }} />
-                <span>
-                  Institute Master is automatically populated from the information you provide here.
-                  No separate institute data entry is required by the admin.
-                </span>
+                <span>College details below are for your affiliated college information (principal, code, contact).</span>
               </div>
 
               <div style={S.group}>

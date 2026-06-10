@@ -45,10 +45,13 @@ async function issueTokenPair(db, payload, portal, jwtSecret, reqMeta = {}) {
     );
     if (activeSessions.length >= MAX_SESSIONS) {
         const toRevoke = activeSessions.slice(0, activeSessions.length - MAX_SESSIONS + 1).map(r => r.id);
-        await db.query(
-            `UPDATE refresh_tokens SET revoked = 1, revoked_at = NOW() WHERE id IN (${toRevoke.map(() => '?').join(',')})`,
-            toRevoke
-        );
+        if (toRevoke.length > 0) {
+            const placeholders = toRevoke.map(() => '?').join(',');
+            await db.query(
+                `UPDATE refresh_tokens SET revoked = 1, revoked_at = NOW() WHERE id IN (${placeholders})`,
+                toRevoke
+            );
+        }
     }
 
     await db.query(

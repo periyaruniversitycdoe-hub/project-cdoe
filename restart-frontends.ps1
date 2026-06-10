@@ -19,7 +19,7 @@ $frontends = @(
 )
 foreach ($fe in $frontends) {
     Start-Process cmd -ArgumentList ('/c cd /d "{0}" && npm run dev' -f $fe.Dir) -WindowStyle Minimized
-    Write-Host "✅  $($fe.Name)"
+    Write-Host "  OK: $($fe.Name)"
     Start-Sleep -Milliseconds 500
 }
 Write-Host "`nFrontends restarted with updated .env tunnel URLs."

@@ -18,6 +18,7 @@ import Dashboard from './pages/Dashboard';
 import Supervisors from './pages/Supervisors';
 import Profile from './pages/Profile';
 import ApplicationForm from './pages/ApplicationForm';
+import PermissionAssignedApplications from './pages/PermissionAssignedApplications';
 import Layout from './components/Layout';
 
 function ProtectedRoute({ children }) {
@@ -49,6 +50,7 @@ export default function App() {
             <Route path="supervisors" element={<Supervisors />} />
             <Route path="profile" element={<Profile />} />
             <Route path="apply" element={<ApplicationForm />} />
+            <Route path="permission-applications" element={<PermissionAssignedApplications />} />
           </Route>
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
