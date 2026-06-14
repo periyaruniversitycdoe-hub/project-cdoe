@@ -66,16 +66,16 @@ export default function VerifyReceipt() {
   try { payload = data?.callback_payload ? (typeof data.callback_payload === 'string' ? JSON.parse(data.callback_payload) : data.callback_payload) : {}; } catch { /**/ }
 
   const orderIdVal        = data.order_id || 'N/A';
-  const transactionId     = data.gateway_transaction_id || payload.TXNID || orderIdVal;
-  const bankTransactionId = payload.BANKTXNID || data.gateway_transaction_id || orderIdVal;
+  const transactionId     = data.gateway_transaction_id || payload.TXNID || payload.txnId || orderIdVal;
+  const bankTransactionId = payload.BANKTXNID || payload.bankTxnId || data.gateway_transaction_id || orderIdVal;
   const txnAmount         = data.amount ? parseFloat(data.amount).toFixed(2) : '0.00';
   const txnStatus         = data.payment_status === 'SUCCESS' ? 'TXN_SUCCESS' : (data.payment_status || 'TXN_SUCCESS');
-  const gatewayName       = payload.GATEWAYNAME || 'SBI';
-  const responseCode      = payload.RESPCODE || '01';
-  const responseMessage   = payload.RESPMSG || 'Txn Success';
-  const bankName          = payload.BANKNAME || 'State Bank of India';
-  const merchantId        = payload.MID || 'Periya40654046259334';
-  const paymentMode       = payload.PAYMENTMODE || (data.payment_method === 'netbanking' ? 'NB' : data.payment_method === 'card' ? 'CC' : (data.payment_method || 'NB'));
+  const gatewayName       = payload.GATEWAYNAME || payload.gatewayName || 'SBI';
+  const responseCode      = payload.RESPCODE || payload.respCode || (payload.resultInfo ? payload.resultInfo.resultCode : null) || '01';
+  const responseMessage   = payload.RESPMSG || payload.respMsg || (payload.resultInfo ? payload.resultInfo.resultMsg : null) || 'Txn Success';
+  const bankName          = payload.BANKNAME || payload.bankName || 'State Bank of India';
+  const merchantId        = payload.MID || payload.mid || 'Periya40654046259334';
+  const paymentMode       = payload.PAYMENTMODE || payload.paymentMode || (data.payment_method === 'netbanking' ? 'NB' : data.payment_method === 'card' ? 'CC' : (data.payment_method || 'NB'));
 
   const rows = [
     ['Transaction ID',      transactionId],

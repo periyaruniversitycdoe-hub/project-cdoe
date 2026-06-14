@@ -65,3 +65,13 @@ Start-Sleep -Seconds 5
 
 Write-Host "All services and tunnels successfully started!" -ForegroundColor Green
 Write-Host "Please check the new PowerShell window for the public Cloudflare trycloudflare.com URLs." -ForegroundColor Yellow
+
+# Keep the script running to prevent Windows Job Object from cleaning up child processes
+try {
+    while ($true) {
+        Start-Sleep -Seconds 10
+    }
+} finally {
+    Write-Host "Stopping keep-alive loop..."
+}
+

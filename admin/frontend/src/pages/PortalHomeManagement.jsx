@@ -4,27 +4,87 @@ import toast from 'react-hot-toast';
 import {
   Home, Bell, Calendar, BookOpen, Upload, Trash2, Plus,
   Save, Eye, Edit2, ToggleLeft, ToggleRight, Download,
-  RefreshCw, X, Check, FileText, ExternalLink, Settings, Volume2
+  RefreshCw, X, Check, FileText, ExternalLink, Settings, Volume2,
+  MousePointerClick, Link2, Phone, LayoutDashboard, History,
+  ArrowUp, ArrowDown, Globe, Mail, Smartphone, MapPin
 } from 'lucide-react';
 
-const API = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api/portal-home';
+const API    = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api/portal-home';
+const HM_API = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api/home-manager';
 const token = () => localStorage.getItem('adminToken');
 const headers = () => ({ Authorization: `Bearer ${token()}` });
 
 /* ── tiny helpers ─────────────────────────────────────────────────────── */
 const TABS = [
-  { id: 'settings',      label: 'Page Settings',       Icon: Settings },
-  { id: 'announcements', label: 'Moving Announcements', Icon: Volume2  },
-  { id: 'notifications', label: 'Notifications',        Icon: Bell     },
-  { id: 'dates',         label: 'Important Dates',      Icon: Calendar },
-  { id: 'guidelines',    label: 'Guidelines',           Icon: BookOpen },
+  { id: 'settings',        label: 'Page Settings',       Icon: Settings           },
+  { id: 'announcements',   label: 'Moving Announcements', Icon: Volume2            },
+  { id: 'notifications',   label: 'Notifications',        Icon: Bell               },
+  { id: 'dates',           label: 'Important Dates',      Icon: Calendar           },
+  { id: 'declarations_guidelines', label: 'Guidelines & Declarations', Icon: FileText },
+  { id: 'action_buttons',  label: 'Action Buttons',       Icon: MousePointerClick  },
+  { id: 'quick_links',     label: 'Quick Links',          Icon: Link2              },
+  { id: 'contacts',        label: 'Contacts',             Icon: Phone              },
+  { id: 'layout',          label: 'Layout',               Icon: LayoutDashboard    },
+  { id: 'audit_logs',      label: 'Audit Logs',           Icon: History            },
 ];
 
+const CONTACT_TYPES = ['email','mobile','landline','whatsapp','website','address'];
+const CONTACT_ICONS = { email: Mail, mobile: Smartphone, landline: Phone, whatsapp: Smartphone, website: Globe, address: MapPin };
+const BTN_TYPES = ['apply_now','applicant_login','download_prospectus','instruction','custom'];
+const BTN_TYPE_LABELS = { apply_now:'Apply Now', applicant_login:'Applicant Login', download_prospectus:'Download Prospectus', instruction:'Instruction', custom:'Custom' };
+
+const DEC_API = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api/declarations';
+
+function parseBold(str) {
+  const parts = str.split('**');
+  return parts.map((part, i) => {
+    if (i % 2 === 1) {
+      return <strong key={i}>{part}</strong>;
+    }
+    return part;
+  });
+}
+
+function renderMarkdown(text) {
+  if (!text) return null;
+  const lines = text.split('\n');
+  return lines.map((line, idx) => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('### ')) {
+      return <h5 key={idx} className="fw-bold mt-3 mb-2 text-dark" style={{ fontSize: '14px' }}>{trimmed.replace('### ', '')}</h5>;
+    }
+    if (trimmed.startsWith('## ')) {
+      return <h4 key={idx} className="fw-bold mt-3 mb-2 text-dark" style={{ fontSize: '15px' }}>{trimmed.replace('## ', '')}</h4>;
+    }
+    if (trimmed.startsWith('# ')) {
+      return <h3 key={idx} className="fw-bold mt-3 mb-2 text-dark" style={{ fontSize: '16px' }}>{trimmed.replace('# ', '')}</h3>;
+    }
+    if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+      const bulletText = trimmed.replace(/^[-*]\s+/, '');
+      return (
+        <li key={idx} className="ms-3" style={{ listStyleType: 'disc', fontSize: 13, lineHeight: 1.6 }}>
+          {parseBold(bulletText)}
+        </li>
+      );
+    }
+    if (/^\d+\.\s+/.test(trimmed)) {
+      const listText = trimmed.replace(/^\d+\.\s+/, '');
+      return (
+        <li key={idx} className="ms-3" style={{ listStyleType: 'decimal', fontSize: 13, lineHeight: 1.6 }}>
+          {parseBold(listText)}
+        </li>
+      );
+    }
+    if (trimmed === '') {
+      return <div key={idx} className="my-2" />;
+    }
+    return <p key={idx} className="mb-2" style={{ fontSize: 13, lineHeight: 1.6 }}>{parseBold(trimmed)}</p>;
+  });
+}
 
 const TYPE_MAP = {
   notifications: 'notification',
   dates:         'date',
-  guidelines:    'guideline',
 };
 
 const emptyForm = (type) => ({
@@ -89,6 +149,291 @@ export default function PortalHomeManagement() {
   const [modalOpen, setModalOpen]  = useState(false);
   const [editRow, setEditRow]      = useState(null);
   const [form, setForm]            = useState(emptyForm('notification'));
+
+  // ── Declarations & Guidelines states ────────────────────────────────────
+  const [declarations, setDeclarations] = useState([]);
+  const [loadingDeclarations, setLoadingDeclarations] = useState(false);
+  const [decModalOpen, setDecModalOpen] = useState(false);
+  const [editDecRow, setEditDecRow] = useState(null);
+  const [decForm, setDecForm] = useState({ title: '', declaration_content: '', is_active: 1, display_order: 0 });
+  const [expandedDecId, setExpandedDecId] = useState(null);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const [replaceAttId, setReplaceAttId] = useState(null);
+  const attFileRef = useRef();
+  const [selectedModalFile, setSelectedModalFile] = useState(null);
+
+  const loadDeclarations = async () => {
+    setLoadingDeclarations(true);
+    try {
+      const { data } = await axios.get(DEC_API, { headers: headers() });
+      setDeclarations(data.success ? data.data : []);
+    } catch {
+      toast.error('Failed to load declarations');
+    } finally {
+      setLoadingDeclarations(false);
+    }
+  };
+
+  const handleSaveDeclaration = async () => {
+    if (!decForm.title.trim()) return toast.error('Title is required');
+    if (!decForm.declaration_content.trim()) return toast.error('Declaration content is required');
+    
+    const savingToast = toast.loading(editDecRow ? 'Updating guidelines/declarations...' : 'Creating guidelines/declarations...');
+    try {
+      let decId = editDecRow ? editDecRow.id : null;
+      if (editDecRow) {
+        await axios.put(`${DEC_API}/${editDecRow.id}`, decForm, { headers: headers() });
+      } else {
+        const { data } = await axios.post(DEC_API, decForm, { headers: headers() });
+        decId = data.id;
+      }
+      
+      if (selectedModalFile && decId) {
+        toast.loading('Uploading guidelines PDF/Document attachment...', { id: savingToast });
+        const fd = new FormData();
+        fd.append('attachment', selectedModalFile);
+        await axios.post(`${DEC_API}/${decId}/attachments`, fd, {
+          headers: { ...headers(), 'Content-Type': 'multipart/form-data' }
+        });
+      }
+      
+      toast.success(editDecRow ? 'Guidelines & Declarations updated successfully!' : 'Guidelines & Declarations created successfully!', { id: savingToast });
+      setSelectedModalFile(null);
+      setDecModalOpen(false);
+      loadDeclarations();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to save', { id: savingToast });
+    }
+  };
+
+  const handleToggleDeclaration = async (id) => {
+    try {
+      await axios.patch(`${DEC_API}/${id}/toggle`, {}, { headers: headers() });
+      toast.success('Visibility toggled!');
+      loadDeclarations();
+    } catch {
+      toast.error('Failed to toggle visibility');
+    }
+  };
+
+  const handleDeleteDeclaration = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this declaration? This will also permanently delete all associated attachments.')) return;
+    try {
+      await axios.delete(`${DEC_API}/${id}`, { headers: headers() });
+      toast.success('Declaration deleted');
+      if (expandedDecId === id) setExpandedDecId(null);
+      loadDeclarations();
+    } catch {
+      toast.error('Failed to delete declaration');
+    }
+  };
+
+  const handleMoveDeclaration = async (index, direction) => {
+    const newItems = [...declarations];
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= newItems.length) return;
+
+    const temp = newItems[index].display_order;
+    newItems[index].display_order = newItems[targetIndex].display_order;
+    newItems[targetIndex].display_order = temp;
+
+    if (newItems[index].display_order === newItems[targetIndex].display_order) {
+      newItems.forEach((item, idx) => {
+        item.display_order = idx * 10;
+      });
+    }
+
+    setDeclarations(newItems);
+
+    try {
+      const orders = newItems.map(item => ({ id: item.id, display_order: item.display_order }));
+      await axios.put(`${DEC_API}/reorder`, { orders }, { headers: headers() });
+      toast.success('Display priority updated!');
+      loadDeclarations();
+    } catch {
+      toast.error('Failed to update priority order');
+    }
+  };
+
+  const handleAttachmentUpload = async (e, decId) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('attachment', file);
+    setUploadingAttachment(true);
+    try {
+      await axios.post(`${DEC_API}/${decId}/attachments`, fd, {
+        headers: { ...headers(), 'Content-Type': 'multipart/form-data' }
+      });
+      toast.success('Attachment uploaded successfully!');
+      loadDeclarations();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Upload failed');
+    } finally {
+      setUploadingAttachment(false);
+      if (attFileRef.current) attFileRef.current.value = '';
+    }
+  };
+
+  const handleAttachmentReplace = async (e, decId, attId) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('attachment', file);
+    setUploadingAttachment(true);
+    try {
+      await axios.put(`${DEC_API}/${decId}/attachments/${attId}`, fd, {
+        headers: { ...headers(), 'Content-Type': 'multipart/form-data' }
+      });
+      toast.success('Attachment replaced successfully!');
+      loadDeclarations();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Replacement failed');
+    } finally {
+      setUploadingAttachment(false);
+      if (attFileRef.current) attFileRef.current.value = '';
+    }
+  };
+
+  const handleAttachmentDelete = async (decId, attId) => {
+    if (!window.confirm('Delete this attachment?')) return;
+    try {
+      await axios.delete(`${DEC_API}/${decId}/attachments/${attId}`, { headers: headers() });
+      toast.success('Attachment deleted');
+      loadDeclarations();
+    } catch {
+      toast.error('Failed to delete attachment');
+    }
+  };
+
+  const handleMoveAttachment = async (decId, attachments, index, direction) => {
+    const newAtts = [...attachments];
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= newAtts.length) return;
+
+    const temp = newAtts[index].display_order;
+    newAtts[index].display_order = newAtts[targetIndex].display_order;
+    newAtts[targetIndex].display_order = temp;
+
+    if (newAtts[index].display_order === newAtts[targetIndex].display_order) {
+      newAtts.forEach((item, idx) => {
+        item.display_order = idx * 10;
+      });
+    }
+
+    try {
+      const orders = newAtts.map(item => ({ id: item.id, display_order: item.display_order }));
+      await axios.put(`${DEC_API}/${decId}/attachments/reorder`, { orders }, { headers: headers() });
+      toast.success('Attachment order updated!');
+      loadDeclarations();
+    } catch {
+      toast.error('Failed to update attachment order');
+    }
+  };
+
+  const triggerReplaceAttachment = (attId) => {
+    setReplaceAttId(attId);
+    attFileRef.current?.click();
+  };
+
+  const handleFileChange = (e, decId) => {
+    if (replaceAttId) {
+      handleAttachmentReplace(e, decId, replaceAttId);
+      setReplaceAttId(null);
+    } else {
+      handleAttachmentUpload(e, decId);
+    }
+  };
+
+  // ── Home Manager states ──────────────────────────────────────────────────
+  const [actionButtons,   setActionButtons]   = useState([]);
+  const [quickLinks,      setQuickLinks]      = useState([]);
+  const [contacts,        setContacts]        = useState([]);
+  const [layoutBlocks,    setLayoutBlocks]    = useState([]);
+  const [auditLogs,       setAuditLogs]       = useState([]);
+  const [hmLoading,       setHmLoading]       = useState(false);
+
+  const [hmModal,         setHmModal]         = useState(null); // { section, row|null }
+  const [hmForm,          setHmForm]          = useState({});
+
+  const emptyBtn   = () => ({ name:'', btn_type:'custom', url:'', icon:'', bg_color:'#009688', text_color:'#ffffff', sort_order:0, is_active:1 });
+  const emptyLink  = () => ({ name:'', url:'', link_type:'internal', icon:'', color:'#6A1B9A', sort_order:0, is_active:1 });
+  const emptyContact = () => ({ contact_type:'email', label:'', value:'', sort_order:0, is_active:1 });
+
+  const loadHmSection = async (section) => {
+    setHmLoading(true);
+    try {
+      const { data } = await axios.get(`${HM_API}/${section}`, { headers: headers() });
+      if (!data.success) return;
+      if (section === 'action-buttons') setActionButtons(data.data);
+      else if (section === 'quick-links') setQuickLinks(data.data);
+      else if (section === 'contacts')    setContacts(data.data);
+      else if (section === 'layout')      setLayoutBlocks(data.data);
+      else if (section === 'audit-logs')  setAuditLogs(data.data);
+    } catch { toast.error('Failed to load data'); }
+    finally { setHmLoading(false); }
+  };
+
+  const hmSave = async () => {
+    const { section, row } = hmModal;
+    const endpoint = section === 'action_buttons' ? 'action-buttons' : section === 'quick_links' ? 'quick-links' : 'contacts';
+    try {
+      if (row) {
+        await axios.put(`${HM_API}/${endpoint}/${row.id}`, hmForm, { headers: headers() });
+        toast.success('Updated!');
+      } else {
+        await axios.post(`${HM_API}/${endpoint}`, hmForm, { headers: headers() });
+        toast.success('Created!');
+      }
+      setHmModal(null);
+      loadHmSection(endpoint);
+    } catch (err) { toast.error(err.response?.data?.message || 'Save failed'); }
+  };
+
+  const hmToggle = async (endpoint, id) => {
+    try {
+      await axios.patch(`${HM_API}/${endpoint}/${id}/toggle`, {}, { headers: headers() });
+      loadHmSection(endpoint);
+    } catch { toast.error('Toggle failed'); }
+  };
+
+  const hmDelete = async (endpoint, id) => {
+    if (!window.confirm('Delete this entry?')) return;
+    try {
+      await axios.delete(`${HM_API}/${endpoint}/${id}`, { headers: headers() });
+      toast.success('Deleted');
+      loadHmSection(endpoint);
+    } catch { toast.error('Delete failed'); }
+  };
+
+  const hmMove = async (endpoint, stateArr, setFn, index, dir) => {
+    const arr = [...stateArr];
+    const target = dir === 'up' ? index - 1 : index + 1;
+    if (target < 0 || target >= arr.length) return;
+    [arr[index].sort_order, arr[target].sort_order] = [arr[target].sort_order, arr[index].sort_order];
+    if (arr[index].sort_order === arr[target].sort_order) arr.forEach((item, i) => { item.sort_order = i * 10; });
+    setFn([...arr]);
+    try {
+      await axios.put(`${HM_API}/${endpoint}/reorder`, { orders: arr.map(r => ({ id: r.id, sort_order: r.sort_order })) }, { headers: headers() });
+      loadHmSection(endpoint);
+    } catch { toast.error('Reorder failed'); }
+  };
+
+  const saveLayout = async () => {
+    try {
+      await axios.put(`${HM_API}/layout`, { blocks: layoutBlocks.map(b => ({ block_key: b.block_key, sort_order: b.sort_order, is_active: b.is_active })) }, { headers: headers() });
+      toast.success('Layout saved!');
+    } catch { toast.error('Failed to save layout'); }
+  };
+
+  const moveLayout = (index, dir) => {
+    const arr = [...layoutBlocks];
+    const target = dir === 'up' ? index - 1 : index + 1;
+    if (target < 0 || target >= arr.length) return;
+    [arr[index], arr[target]] = [arr[target], arr[index]];
+    arr.forEach((b, i) => { b.sort_order = (i + 1) * 10; });
+    setLayoutBlocks([...arr]);
+  };
 
   // ── Dynamic Announcements tab states ────────────────────────────────────
   const [announcements, setAnnouncements] = useState([]);
@@ -249,6 +594,18 @@ export default function PortalHomeManagement() {
   useEffect(() => {
     if (activeTab === 'announcements') {
       loadAnnouncements();
+    } else if (activeTab === 'action_buttons') {
+      loadHmSection('action-buttons');
+    } else if (activeTab === 'quick_links') {
+      loadHmSection('quick-links');
+    } else if (activeTab === 'contacts') {
+      loadHmSection('contacts');
+    } else if (activeTab === 'layout') {
+      loadHmSection('layout');
+    } else if (activeTab === 'audit_logs') {
+      loadHmSection('audit-logs');
+    } else if (activeTab === 'declarations_guidelines') {
+      loadDeclarations();
     } else if (activeTab !== 'settings') {
       loadItems(activeTab);
     }
@@ -346,7 +703,7 @@ export default function PortalHomeManagement() {
     } catch { toast.error('Toggle failed'); }
   };
 
-  const tabLabel = { notifications:'Notification', dates:'Important Date', guidelines:'Guideline' };
+  const tabLabel = { notifications:'Notification', dates:'Important Date' };
 
   /* ── Render ──────────────────────────────────────────────── */
   return (
@@ -606,9 +963,256 @@ export default function PortalHomeManagement() {
           </div>
         )}
 
-        {/* ══ TABS: Notifications / Dates / Guidelines ══ */}
-        {activeTab !== 'settings' && activeTab !== 'announcements' && (
+        {/* ══ TAB: Action Buttons ══ */}
+        {activeTab === 'action_buttons' && (
+          <div>
+            <div className="d-flex justify-content-between align-items-center mb-3">
+              <div>
+                <h6 className="fw-bold mb-0" style={{ color:'#1e3c72' }}>Action Buttons</h6>
+                <p className="text-muted mb-0" style={{ fontSize:12 }}>Manage the buttons shown in the student home action bar. Drag order via ▲▼.</p>
+              </div>
+              <button onClick={() => { setHmForm(emptyBtn()); setHmModal({ section:'action_buttons', row:null }); }}
+                className="btn btn-primary btn-sm d-flex align-items-center gap-1">
+                <Plus size={14}/> Add Button
+              </button>
+            </div>
+            {hmLoading ? <div className="text-center py-4 text-muted"><RefreshCw size={20} className="animate-spin"/></div> : (
+              <div style={{ overflowX:'auto' }}>
+                <table className="table table-sm table-hover align-middle" style={{ fontSize:13 }}>
+                  <thead style={{ backgroundColor:'#f8f9fa' }}>
+                    <tr><th>Order</th><th>Name</th><th>Type</th><th>Icon</th><th>Colors</th><th>Status</th><th style={{ width:130 }}>Actions</th></tr>
+                  </thead>
+                  <tbody>
+                    {actionButtons.map((row, idx) => (
+                      <tr key={row.id}>
+                        <td>
+                          <div className="d-flex flex-column gap-0 align-items-center">
+                            <button onClick={() => hmMove('action-buttons', actionButtons, setActionButtons, idx, 'up')} disabled={idx===0}
+                              className="btn btn-link btn-xs p-0 lh-1" style={{ color:idx===0?'#ccc':'#1e3c72', border:'none', background:'none' }}>▲</button>
+                            <span className="fw-semibold text-muted" style={{ fontSize:11 }}>{idx+1}</span>
+                            <button onClick={() => hmMove('action-buttons', actionButtons, setActionButtons, idx, 'down')} disabled={idx===actionButtons.length-1}
+                              className="btn btn-link btn-xs p-0 lh-1" style={{ color:idx===actionButtons.length-1?'#ccc':'#1e3c72', border:'none', background:'none' }}>▼</button>
+                          </div>
+                        </td>
+                        <td className="fw-semibold">{row.name}</td>
+                        <td><span className="badge bg-light text-dark border" style={{ fontSize:11 }}>{BTN_TYPE_LABELS[row.btn_type] || row.btn_type}</span></td>
+                        <td style={{ fontSize:12 }}>{row.icon || '—'}</td>
+                        <td>
+                          <div className="d-flex gap-1 align-items-center">
+                            <span className="d-inline-block rounded border" style={{ width:18, height:18, backgroundColor:row.bg_color }}/>
+                            <span className="d-inline-block rounded border" style={{ width:18, height:18, backgroundColor:row.text_color }}/>
+                          </div>
+                        </td>
+                        <td><span className={`badge ${row.is_active?'bg-success':'bg-secondary'}`} style={{ fontSize:11 }}>{row.is_active?'Active':'Hidden'}</span></td>
+                        <td>
+                          <div className="d-flex gap-1">
+                            <button onClick={() => { setHmForm({ ...row }); setHmModal({ section:'action_buttons', row }); }} className="btn btn-xs btn-outline-primary" style={{ padding:'2px 7px',fontSize:12 }}><Edit2 size={12}/></button>
+                            <button onClick={() => hmToggle('action-buttons', row.id)} className="btn btn-xs btn-outline-warning" style={{ padding:'2px 7px',fontSize:12 }}>
+                              {row.is_active?<ToggleRight size={12}/>:<ToggleLeft size={12}/>}
+                            </button>
+                            <button onClick={() => hmDelete('action-buttons', row.id)} className="btn btn-xs btn-outline-danger" style={{ padding:'2px 7px',fontSize:12 }}><Trash2 size={12}/></button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {actionButtons.length === 0 && <p className="text-center text-muted py-3" style={{ fontSize:13 }}>No buttons yet.</p>}
+              </div>
+            )}
+          </div>
+        )}
 
+        {/* ══ TAB: Quick Links ══ */}
+        {activeTab === 'quick_links' && (
+          <div>
+            <div className="d-flex justify-content-between align-items-center mb-3">
+              <div>
+                <h6 className="fw-bold mb-0" style={{ color:'#1e3c72' }}>Quick Links</h6>
+                <p className="text-muted mb-0" style={{ fontSize:12 }}>Manage the Quick Links panel on the student home sidebar.</p>
+              </div>
+              <button onClick={() => { setHmForm(emptyLink()); setHmModal({ section:'quick_links', row:null }); }}
+                className="btn btn-primary btn-sm d-flex align-items-center gap-1">
+                <Plus size={14}/> Add Link
+              </button>
+            </div>
+            {hmLoading ? <div className="text-center py-4 text-muted"><RefreshCw size={20} className="animate-spin"/></div> : (
+              <div style={{ overflowX:'auto' }}>
+                <table className="table table-sm table-hover align-middle" style={{ fontSize:13 }}>
+                  <thead style={{ backgroundColor:'#f8f9fa' }}>
+                    <tr><th>Order</th><th>Name</th><th>URL</th><th>Type</th><th>Color</th><th>Status</th><th style={{ width:130 }}>Actions</th></tr>
+                  </thead>
+                  <tbody>
+                    {quickLinks.map((row, idx) => (
+                      <tr key={row.id}>
+                        <td>
+                          <div className="d-flex flex-column gap-0 align-items-center">
+                            <button onClick={() => hmMove('quick-links', quickLinks, setQuickLinks, idx, 'up')} disabled={idx===0}
+                              className="btn btn-link btn-xs p-0 lh-1" style={{ color:idx===0?'#ccc':'#1e3c72', border:'none', background:'none' }}>▲</button>
+                            <span className="fw-semibold text-muted" style={{ fontSize:11 }}>{idx+1}</span>
+                            <button onClick={() => hmMove('quick-links', quickLinks, setQuickLinks, idx, 'down')} disabled={idx===quickLinks.length-1}
+                              className="btn btn-link btn-xs p-0 lh-1" style={{ color:idx===quickLinks.length-1?'#ccc':'#1e3c72', border:'none', background:'none' }}>▼</button>
+                          </div>
+                        </td>
+                        <td className="fw-semibold" style={{ color: row.color || '#333' }}>{row.name}</td>
+                        <td style={{ fontSize:12, maxWidth:160, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{row.url || '—'}</td>
+                        <td><span className="badge bg-light text-dark border" style={{ fontSize:11 }}>{row.link_type}</span></td>
+                        <td><span className="d-inline-block rounded border" style={{ width:18, height:18, backgroundColor:row.color }}/></td>
+                        <td><span className={`badge ${row.is_active?'bg-success':'bg-secondary'}`} style={{ fontSize:11 }}>{row.is_active?'Active':'Hidden'}</span></td>
+                        <td>
+                          <div className="d-flex gap-1">
+                            <button onClick={() => { setHmForm({ ...row }); setHmModal({ section:'quick_links', row }); }} className="btn btn-xs btn-outline-primary" style={{ padding:'2px 7px',fontSize:12 }}><Edit2 size={12}/></button>
+                            <button onClick={() => hmToggle('quick-links', row.id)} className="btn btn-xs btn-outline-warning" style={{ padding:'2px 7px',fontSize:12 }}>
+                              {row.is_active?<ToggleRight size={12}/>:<ToggleLeft size={12}/>}
+                            </button>
+                            <button onClick={() => hmDelete('quick-links', row.id)} className="btn btn-xs btn-outline-danger" style={{ padding:'2px 7px',fontSize:12 }}><Trash2 size={12}/></button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {quickLinks.length === 0 && <p className="text-center text-muted py-3" style={{ fontSize:13 }}>No quick links yet.</p>}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══ TAB: Contacts ══ */}
+        {activeTab === 'contacts' && (
+          <div>
+            <div className="d-flex justify-content-between align-items-center mb-3">
+              <div>
+                <h6 className="fw-bold mb-0" style={{ color:'#1e3c72' }}>Contact Manager</h6>
+                <p className="text-muted mb-0" style={{ fontSize:12 }}>Manage contact details shown in the "Contact Us" panel on student home.</p>
+              </div>
+              <button onClick={() => { setHmForm(emptyContact()); setHmModal({ section:'contacts', row:null }); }}
+                className="btn btn-primary btn-sm d-flex align-items-center gap-1">
+                <Plus size={14}/> Add Contact
+              </button>
+            </div>
+            {hmLoading ? <div className="text-center py-4 text-muted"><RefreshCw size={20} className="animate-spin"/></div> : (
+              <div style={{ overflowX:'auto' }}>
+                <table className="table table-sm table-hover align-middle" style={{ fontSize:13 }}>
+                  <thead style={{ backgroundColor:'#f8f9fa' }}>
+                    <tr><th>Order</th><th>Type</th><th>Label</th><th>Value</th><th>Status</th><th style={{ width:130 }}>Actions</th></tr>
+                  </thead>
+                  <tbody>
+                    {contacts.map((row, idx) => {
+                      const Icon = CONTACT_ICONS[row.contact_type] || Phone;
+                      return (
+                        <tr key={row.id}>
+                          <td>
+                            <div className="d-flex flex-column gap-0 align-items-center">
+                              <button onClick={() => hmMove('contacts', contacts, setContacts, idx, 'up')} disabled={idx===0}
+                                className="btn btn-link btn-xs p-0 lh-1" style={{ color:idx===0?'#ccc':'#1e3c72', border:'none', background:'none' }}>▲</button>
+                              <span className="fw-semibold text-muted" style={{ fontSize:11 }}>{idx+1}</span>
+                              <button onClick={() => hmMove('contacts', contacts, setContacts, idx, 'down')} disabled={idx===contacts.length-1}
+                                className="btn btn-link btn-xs p-0 lh-1" style={{ color:idx===contacts.length-1?'#ccc':'#1e3c72', border:'none', background:'none' }}>▼</button>
+                            </div>
+                          </td>
+                          <td><span className="badge bg-light text-dark border d-flex align-items-center gap-1" style={{ fontSize:11, width:'fit-content' }}><Icon size={11}/> {row.contact_type}</span></td>
+                          <td>{row.label || '—'}</td>
+                          <td style={{ maxWidth:220, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{row.value}</td>
+                          <td><span className={`badge ${row.is_active?'bg-success':'bg-secondary'}`} style={{ fontSize:11 }}>{row.is_active?'Active':'Hidden'}</span></td>
+                          <td>
+                            <div className="d-flex gap-1">
+                              <button onClick={() => { setHmForm({ ...row }); setHmModal({ section:'contacts', row }); }} className="btn btn-xs btn-outline-primary" style={{ padding:'2px 7px',fontSize:12 }}><Edit2 size={12}/></button>
+                              <button onClick={() => hmToggle('contacts', row.id)} className="btn btn-xs btn-outline-warning" style={{ padding:'2px 7px',fontSize:12 }}>
+                                {row.is_active?<ToggleRight size={12}/>:<ToggleLeft size={12}/>}
+                              </button>
+                              <button onClick={() => hmDelete('contacts', row.id)} className="btn btn-xs btn-outline-danger" style={{ padding:'2px 7px',fontSize:12 }}><Trash2 size={12}/></button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {contacts.length === 0 && <p className="text-center text-muted py-3" style={{ fontSize:13 }}>No contacts yet.</p>}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══ TAB: Layout Manager ══ */}
+        {activeTab === 'layout' && (
+          <div>
+            <div className="d-flex justify-content-between align-items-center mb-3">
+              <div>
+                <h6 className="fw-bold mb-0" style={{ color:'#1e3c72' }}>Homepage Layout Manager</h6>
+                <p className="text-muted mb-0" style={{ fontSize:12 }}>Reorder and show/hide content blocks on the student home page.</p>
+              </div>
+              <button onClick={saveLayout} className="btn btn-primary btn-sm d-flex align-items-center gap-2">
+                <Save size={13}/> Save Layout
+              </button>
+            </div>
+            {hmLoading ? <div className="text-center py-4 text-muted"><RefreshCw size={20} className="animate-spin"/></div> : (
+              <div style={{ maxWidth:480 }}>
+                {layoutBlocks.map((block, idx) => (
+                  <div key={block.block_key} className="d-flex align-items-center gap-3 p-3 mb-2 rounded border"
+                    style={{ backgroundColor: block.is_active ? '#f0f4ff' : '#f9f9f9' }}>
+                    <div className="d-flex flex-column gap-0">
+                      <button onClick={() => moveLayout(idx, 'up')} disabled={idx===0}
+                        className="btn btn-link p-0 lh-1" style={{ color:idx===0?'#ccc':'#1e3c72', border:'none', background:'none' }}>
+                        <ArrowUp size={14}/>
+                      </button>
+                      <button onClick={() => moveLayout(idx, 'down')} disabled={idx===layoutBlocks.length-1}
+                        className="btn btn-link p-0 lh-1" style={{ color:idx===layoutBlocks.length-1?'#ccc':'#1e3c72', border:'none', background:'none' }}>
+                        <ArrowDown size={14}/>
+                      </button>
+                    </div>
+                    <span className="fw-semibold text-muted" style={{ fontSize:12, minWidth:16 }}>{idx+1}</span>
+                    <span className="fw-semibold flex-grow-1" style={{ fontSize:14 }}>{block.block_label}</span>
+                    <div className="form-check form-switch mb-0">
+                      <input className="form-check-input" type="checkbox" role="switch"
+                        checked={!!block.is_active}
+                        onChange={() => setLayoutBlocks(prev => prev.map(b => b.block_key === block.block_key ? { ...b, is_active: b.is_active ? 0 : 1 } : b))}/>
+                    </div>
+                    <span className={`badge ${block.is_active?'bg-success':'bg-secondary'}`} style={{ fontSize:11, minWidth:46, textAlign:'center' }}>
+                      {block.is_active?'Visible':'Hidden'}
+                    </span>
+                  </div>
+                ))}
+                {layoutBlocks.length === 0 && <p className="text-muted py-3 text-center" style={{ fontSize:13 }}>No layout blocks loaded.</p>}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══ TAB: Audit Logs ══ */}
+        {activeTab === 'audit_logs' && (
+          <div>
+            <h6 className="fw-bold mb-3" style={{ color:'#1e3c72' }}>Audit Logs</h6>
+            {hmLoading ? <div className="text-center py-4 text-muted"><RefreshCw size={20} className="animate-spin"/></div> : (
+              <div style={{ overflowX:'auto' }}>
+                <table className="table table-sm table-hover align-middle" style={{ fontSize:12 }}>
+                  <thead style={{ backgroundColor:'#f8f9fa' }}>
+                    <tr><th>Time</th><th>Action</th><th>Section</th><th>By</th><th>IP</th><th>Change</th></tr>
+                  </thead>
+                  <tbody>
+                    {auditLogs.map(log => (
+                      <tr key={log.id}>
+                        <td style={{ whiteSpace:'nowrap' }}>{new Date(log.created_at).toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</td>
+                        <td><span className={`badge ${log.action==='delete'?'bg-danger':log.action==='create'?'bg-success':log.action==='update'?'bg-primary':'bg-secondary'}`} style={{ fontSize:10 }}>{log.action}</span></td>
+                        <td>{log.section}</td>
+                        <td>{log.performed_by || '—'}</td>
+                        <td>{log.ip_address || '—'}</td>
+                        <td style={{ maxWidth:200 }}>
+                          {log.new_value && <div style={{ fontSize:11, color:'#333', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{log.new_value.slice(0,80)}</div>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {auditLogs.length === 0 && <p className="text-center text-muted py-3" style={{ fontSize:13 }}>No audit logs yet.</p>}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══ TABS: Notifications / Dates / Guidelines ══ */}
+        {['notifications','dates'].includes(activeTab) && (
           <div>
             <div className="d-flex justify-content-between align-items-center mb-3">
               <div>
@@ -618,7 +1222,6 @@ export default function PortalHomeManagement() {
                 <p className="text-muted mb-0" style={{ fontSize:12 }}>
                   {activeTab === 'notifications' && 'Shown in the ticker and Admission Notifications panel on student home.'}
                   {activeTab === 'dates'         && 'Shown in the "Important Dates" sidebar panel on student home.'}
-                  {activeTab === 'guidelines'    && 'Shown in the "Guidelines to fill the application" panel on student home.'}
                 </p>
               </div>
               <button onClick={openAdd}
@@ -656,6 +1259,184 @@ export default function PortalHomeManagement() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══ TAB: Declarations & Guidelines ══ */}
+        {activeTab === 'declarations_guidelines' && (
+          <div>
+            <div className="d-flex justify-content-between align-items-center mb-3">
+              <div>
+                <h6 className="fw-bold mb-0" style={{ color:'#1e3c72' }}>Declarations &amp; Guidelines</h6>
+                <p className="text-muted mb-0" style={{ fontSize:12 }}>
+                  Create regulations, terms, or candidate responsibilities, and link attachments to them.
+                </p>
+              </div>
+              <button onClick={() => { setSelectedModalFile(null); setDecForm({ title: '', declaration_content: '', is_active: 1, display_order: 0 }); setEditDecRow(null); setDecModalOpen(true); }}
+                className="btn btn-primary btn-sm d-flex align-items-center gap-1">
+                <Plus size={14}/> Add Declaration
+              </button>
+            </div>
+
+            {loadingDeclarations ? (
+              <div className="text-center py-5 text-muted">
+                <RefreshCw size={24} className="animate-spin mb-2"/>
+                <p>Loading declarations…</p>
+              </div>
+            ) : declarations.length === 0 ? (
+              <div className="text-center py-5 text-muted">
+                <FileText size={36} className="mb-2 opacity-25"/>
+                <p>No declarations created yet. Click "Add Declaration" to begin.</p>
+              </div>
+            ) : (
+              <div className="d-flex flex-column gap-3">
+                {declarations.map((dec, idx) => {
+                  const isExpanded = expandedDecId === dec.id;
+                  return (
+                    <div key={dec.id} className="card border rounded-3 overflow-hidden shadow-sm">
+                      <div className="card-header bg-light d-flex align-items-center justify-content-between py-2 px-3 border-bottom">
+                        <div className="d-flex align-items-center gap-2">
+                          <button
+                            onClick={() => setExpandedDecId(isExpanded ? null : dec.id)}
+                            className="btn btn-link btn-xs p-0 text-decoration-none text-dark d-flex align-items-center gap-1"
+                            style={{ border: 'none', background: 'none' }}
+                          >
+                            <span style={{ fontSize: 16 }}>{isExpanded ? '▼' : '▶'}</span>
+                          </button>
+                          <h6 className="mb-0 fw-bold text-dark" style={{ fontSize: 14 }}>{dec.title}</h6>
+                          <span className={`badge ${dec.is_active ? 'bg-success' : 'bg-secondary'}`} style={{ fontSize: 10 }}>
+                            {dec.is_active ? 'Active' : 'Inactive'}
+                          </span>
+                        </div>
+                        <div className="d-flex align-items-center gap-3">
+                          <div className="d-flex align-items-center gap-1">
+                            <button onClick={() => handleMoveDeclaration(idx, 'up')} disabled={idx === 0}
+                              className="btn btn-link btn-xs p-0 lh-1" style={{ color: idx === 0 ? '#ccc' : '#1e3c72', border: 'none', background: 'none' }}>▲</button>
+                            <span className="fw-semibold text-muted" style={{ fontSize: 11 }}>{idx + 1}</span>
+                            <button onClick={() => handleMoveDeclaration(idx, 'down')} disabled={idx === declarations.length - 1}
+                              className="btn btn-link btn-xs p-0 lh-1" style={{ color: idx === declarations.length - 1 ? '#ccc' : '#1e3c72', border: 'none', background: 'none' }}>▼</button>
+                          </div>
+                          <div className="d-flex gap-1">
+                            <button
+                              onClick={() => {
+                                setSelectedModalFile(null);
+                                setEditDecRow(dec);
+                                setDecForm({ title: dec.title, declaration_content: dec.declaration_content, is_active: dec.is_active, display_order: dec.display_order });
+                                setDecModalOpen(true);
+                              }}
+                              className="btn btn-xs btn-outline-primary"
+                              style={{ padding: '2px 7px', fontSize: 12 }}
+                            >
+                              <Edit2 size={12}/>
+                            </button>
+                            <button onClick={() => handleToggleDeclaration(dec.id)} className="btn btn-xs btn-outline-warning" style={{ padding: '2px 7px', fontSize: 12 }}>
+                              {dec.is_active ? <ToggleRight size={12}/> : <ToggleLeft size={12}/>}
+                            </button>
+                            <button onClick={() => handleDeleteDeclaration(dec.id)} className="btn btn-xs btn-outline-danger" style={{ padding: '2px 7px', fontSize: 12 }}>
+                              <Trash2 size={12}/>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {isExpanded && (
+                        <div className="card-body p-3 bg-white">
+                          <div className="row g-3">
+                            <div className="col-12 col-lg-7 border-end pe-3">
+                              <h6 className="fw-bold mb-2 text-primary" style={{ fontSize: 13 }}>Content Preview</h6>
+                              <div className="p-3 border rounded bg-light" style={{ maxHeight: 220, overflowY: 'auto', borderRadius: 6 }}>
+                                {renderMarkdown(dec.declaration_content)}
+                              </div>
+                            </div>
+                            <div className="col-12 col-lg-5 ps-3">
+                              <div className="d-flex align-items-center justify-content-between mb-2">
+                                <h6 className="fw-bold mb-0 text-primary" style={{ fontSize: 13 }}>Attachments</h6>
+                                <button
+                                  onClick={() => attFileRef.current?.click()}
+                                  disabled={uploadingAttachment}
+                                  className="btn btn-xs btn-outline-success d-flex align-items-center gap-1"
+                                >
+                                  {uploadingAttachment ? <RefreshCw size={11} className="animate-spin"/> : <Upload size={11}/>}
+                                  Upload
+                                </button>
+                              </div>
+                              <input
+                                type="file"
+                                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                                ref={attFileRef}
+                                style={{ display: 'none' }}
+                                onChange={(e) => handleFileChange(e, dec.id)}
+                              />
+
+                              <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+                                {dec.attachments?.length === 0 ? (
+                                  <p className="text-muted text-center py-4 my-2 border rounded border-dashed" style={{ fontSize: 12 }}>
+                                    No attachments linked to this declaration.
+                                  </p>
+                                ) : (
+                                  <table className="table table-sm table-hover align-middle mb-0" style={{ fontSize: 12 }}>
+                                    <thead>
+                                      <tr>
+                                        <th>Order</th>
+                                        <th>File</th>
+                                        <th style={{ width: 100 }}>Actions</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {dec.attachments?.map((att, aIdx) => (
+                                        <tr key={att.id}>
+                                          <td>
+                                            <div className="d-flex flex-column gap-0 align-items-center">
+                                              <button onClick={() => handleMoveAttachment(dec.id, dec.attachments, aIdx, 'up')} disabled={aIdx === 0}
+                                                className="btn btn-link btn-xs p-0 lh-1" style={{ color: aIdx === 0 ? '#ccc' : '#1e3c72', border: 'none', background: 'none', fontSize: 8 }}>▲</button>
+                                              <button onClick={() => handleMoveAttachment(dec.id, dec.attachments, aIdx, 'down')} disabled={aIdx === dec.attachments.length - 1}
+                                                className="btn btn-link btn-xs p-0 lh-1" style={{ color: aIdx === dec.attachments.length - 1 ? '#ccc' : '#1e3c72', border: 'none', background: 'none', fontSize: 8 }}>▼</button>
+                                            </div>
+                                          </td>
+                                          <td>
+                                            <div className="fw-semibold text-truncate" style={{ maxWidth: 120 }} title={att.original_name}>{att.original_name}</div>
+                                            <div className="text-muted" style={{ fontSize: 10 }}>{(att.file_size / 1024 / 1024).toFixed(2)} MB</div>
+                                          </td>
+                                          <td>
+                                            <div className="d-flex gap-1">
+                                              <a
+                                                href={(import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api/declarations/attachments/download/' + att.id}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="btn btn-xs btn-outline-secondary p-1"
+                                              >
+                                                <Download size={10}/>
+                                              </a>
+                                              <button
+                                                onClick={() => triggerReplaceAttachment(att.id)}
+                                                className="btn btn-xs btn-outline-primary p-1"
+                                                title="Replace file"
+                                              >
+                                                <Upload size={10}/>
+                                              </button>
+                                              <button
+                                                onClick={() => handleAttachmentDelete(dec.id, att.id)}
+                                                className="btn btn-xs btn-outline-danger p-1"
+                                              >
+                                                <Trash2 size={10}/>
+                                              </button>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -857,6 +1638,240 @@ export default function PortalHomeManagement() {
               className="btn btn-sm btn-outline-secondary">Cancel</button>
             <button onClick={handleSaveAnnouncement} className="btn btn-sm btn-primary d-flex align-items-center gap-1">
               <Check size={13}/> {editAnnouncementRow ? 'Update' : 'Create'} &amp; Publish
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* ══ Home Manager Modal — Action Button ══ */}
+      {hmModal?.section === 'action_buttons' && (
+        <Modal title={`${hmModal.row ? 'Edit' : 'Add'} Action Button`} onClose={() => setHmModal(null)}>
+          <div className="mb-3">
+            <label className="form-label fw-semibold" style={{ fontSize:13 }}>Button Name <span className="text-danger">*</span></label>
+            <input type="text" className="form-control form-control-sm" value={hmForm.name||''} onChange={e => setHmForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Apply Now"/>
+          </div>
+          <div className="mb-3">
+            <label className="form-label fw-semibold" style={{ fontSize:13 }}>Button Type</label>
+            <select className="form-select form-select-sm" value={hmForm.btn_type||'custom'} onChange={e => setHmForm(f=>({...f,btn_type:e.target.value}))}>
+              {BTN_TYPES.map(t => <option key={t} value={t}>{BTN_TYPE_LABELS[t]}</option>)}
+            </select>
+          </div>
+          {hmForm.btn_type === 'custom' && (
+            <div className="mb-3">
+              <label className="form-label fw-semibold" style={{ fontSize:13 }}>URL</label>
+              <input type="text" className="form-control form-control-sm" value={hmForm.url||''} onChange={e => setHmForm(f=>({...f,url:e.target.value}))} placeholder="https://..."/>
+            </div>
+          )}
+          <div className="mb-3">
+            <label className="form-label fw-semibold" style={{ fontSize:13 }}>Lucide Icon Name</label>
+            <input type="text" className="form-control form-control-sm" value={hmForm.icon||''} onChange={e => setHmForm(f=>({...f,icon:e.target.value}))} placeholder="e.g. GraduationCap"/>
+            <div className="form-text">Exact Lucide icon name (PascalCase). Leave blank for no icon.</div>
+          </div>
+          <div className="row g-2 mb-3">
+            <div className="col-6">
+              <label className="form-label fw-semibold" style={{ fontSize:13 }}>Background Color</label>
+              <div className="d-flex gap-1">
+                <input type="color" className="form-control form-control-color form-control-sm border p-0" style={{ width:34,height:28 }} value={hmForm.bg_color||'#009688'} onChange={e => setHmForm(f=>({...f,bg_color:e.target.value}))}/>
+                <input type="text" className="form-control form-control-sm" style={{ fontSize:12 }} value={hmForm.bg_color||'#009688'} onChange={e => setHmForm(f=>({...f,bg_color:e.target.value}))}/>
+              </div>
+            </div>
+            <div className="col-6">
+              <label className="form-label fw-semibold" style={{ fontSize:13 }}>Text Color</label>
+              <div className="d-flex gap-1">
+                <input type="color" className="form-control form-control-color form-control-sm border p-0" style={{ width:34,height:28 }} value={hmForm.text_color||'#ffffff'} onChange={e => setHmForm(f=>({...f,text_color:e.target.value}))}/>
+                <input type="text" className="form-control form-control-sm" style={{ fontSize:12 }} value={hmForm.text_color||'#ffffff'} onChange={e => setHmForm(f=>({...f,text_color:e.target.value}))}/>
+              </div>
+            </div>
+          </div>
+          <div className="mb-3">
+            <div className="p-2 rounded text-center" style={{ backgroundColor:hmForm.bg_color||'#009688' }}>
+              <span style={{ color:hmForm.text_color||'#fff', fontWeight:'bold', fontSize:13 }}>{hmForm.name||'Button Preview'}</span>
+            </div>
+          </div>
+          <div className="row g-2 mb-4">
+            <div className="col-6">
+              <label className="form-label fw-semibold" style={{ fontSize:13 }}>Sort Order</label>
+              <input type="number" className="form-control form-control-sm" value={hmForm.sort_order??0} onChange={e => setHmForm(f=>({...f,sort_order:parseInt(e.target.value)||0}))}/>
+            </div>
+            <div className="col-6 d-flex align-items-end">
+              <div className="form-check">
+                <input type="checkbox" className="form-check-input" id="btn_active" checked={!!hmForm.is_active} onChange={e => setHmForm(f=>({...f,is_active:e.target.checked?1:0}))}/>
+                <label className="form-check-label" htmlFor="btn_active" style={{ fontSize:13 }}>Active</label>
+              </div>
+            </div>
+          </div>
+          <div className="d-flex justify-content-end gap-2">
+            <button onClick={() => setHmModal(null)} className="btn btn-sm btn-outline-secondary">Cancel</button>
+            <button onClick={hmSave} className="btn btn-sm btn-primary d-flex align-items-center gap-1"><Check size={13}/> {hmModal.row?'Update':'Create'}</button>
+          </div>
+        </Modal>
+      )}
+
+      {/* ══ Home Manager Modal — Quick Link ══ */}
+      {hmModal?.section === 'quick_links' && (
+        <Modal title={`${hmModal.row ? 'Edit' : 'Add'} Quick Link`} onClose={() => setHmModal(null)}>
+          <div className="mb-3">
+            <label className="form-label fw-semibold" style={{ fontSize:13 }}>Link Name <span className="text-danger">*</span></label>
+            <input type="text" className="form-control form-control-sm" value={hmForm.name||''} onChange={e => setHmForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Apply Now (New Application)"/>
+          </div>
+          <div className="mb-3">
+            <label className="form-label fw-semibold" style={{ fontSize:13 }}>URL</label>
+            <input type="text" className="form-control form-control-sm" value={hmForm.url||''} onChange={e => setHmForm(f=>({...f,url:e.target.value}))} placeholder="/register or https://..."/>
+          </div>
+          <div className="row g-2 mb-3">
+            <div className="col-6">
+              <label className="form-label fw-semibold" style={{ fontSize:13 }}>Link Type</label>
+              <select className="form-select form-select-sm" value={hmForm.link_type||'internal'} onChange={e => setHmForm(f=>({...f,link_type:e.target.value}))}>
+                <option value="internal">Internal (same portal)</option>
+                <option value="external">External (new tab)</option>
+              </select>
+            </div>
+            <div className="col-6">
+              <label className="form-label fw-semibold" style={{ fontSize:13 }}>Color</label>
+              <div className="d-flex gap-1">
+                <input type="color" className="form-control form-control-color form-control-sm border p-0" style={{ width:34,height:28 }} value={hmForm.color||'#6A1B9A'} onChange={e => setHmForm(f=>({...f,color:e.target.value}))}/>
+                <input type="text" className="form-control form-control-sm" style={{ fontSize:12 }} value={hmForm.color||'#6A1B9A'} onChange={e => setHmForm(f=>({...f,color:e.target.value}))}/>
+              </div>
+            </div>
+          </div>
+          <div className="row g-2 mb-4">
+            <div className="col-6">
+              <label className="form-label fw-semibold" style={{ fontSize:13 }}>Sort Order</label>
+              <input type="number" className="form-control form-control-sm" value={hmForm.sort_order??0} onChange={e => setHmForm(f=>({...f,sort_order:parseInt(e.target.value)||0}))}/>
+            </div>
+            <div className="col-6 d-flex align-items-end">
+              <div className="form-check">
+                <input type="checkbox" className="form-check-input" id="link_active" checked={!!hmForm.is_active} onChange={e => setHmForm(f=>({...f,is_active:e.target.checked?1:0}))}/>
+                <label className="form-check-label" htmlFor="link_active" style={{ fontSize:13 }}>Active</label>
+              </div>
+            </div>
+          </div>
+          <div className="d-flex justify-content-end gap-2">
+            <button onClick={() => setHmModal(null)} className="btn btn-sm btn-outline-secondary">Cancel</button>
+            <button onClick={hmSave} className="btn btn-sm btn-primary d-flex align-items-center gap-1"><Check size={13}/> {hmModal.row?'Update':'Create'}</button>
+          </div>
+        </Modal>
+      )}
+
+      {/* ══ Home Manager Modal — Contact ══ */}
+      {hmModal?.section === 'contacts' && (
+        <Modal title={`${hmModal.row ? 'Edit' : 'Add'} Contact`} onClose={() => setHmModal(null)}>
+          <div className="mb-3">
+            <label className="form-label fw-semibold" style={{ fontSize:13 }}>Contact Type</label>
+            <select className="form-select form-select-sm" value={hmForm.contact_type||'email'} onChange={e => setHmForm(f=>({...f,contact_type:e.target.value}))}>
+              {CONTACT_TYPES.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase()+t.slice(1)}</option>)}
+            </select>
+          </div>
+          <div className="mb-3">
+            <label className="form-label fw-semibold" style={{ fontSize:13 }}>Label</label>
+            <input type="text" className="form-control form-control-sm" value={hmForm.label||''} onChange={e => setHmForm(f=>({...f,label:e.target.value}))} placeholder="e.g. Email, Phone, Office Address"/>
+          </div>
+          <div className="mb-3">
+            <label className="form-label fw-semibold" style={{ fontSize:13 }}>Value <span className="text-danger">*</span></label>
+            <input type="text" className="form-control form-control-sm" value={hmForm.value||''} onChange={e => setHmForm(f=>({...f,value:e.target.value}))} placeholder="e.g. admissions@periyaruniversity.ac.in"/>
+          </div>
+          <div className="row g-2 mb-4">
+            <div className="col-6">
+              <label className="form-label fw-semibold" style={{ fontSize:13 }}>Sort Order</label>
+              <input type="number" className="form-control form-control-sm" value={hmForm.sort_order??0} onChange={e => setHmForm(f=>({...f,sort_order:parseInt(e.target.value)||0}))}/>
+            </div>
+            <div className="col-6 d-flex align-items-end">
+              <div className="form-check">
+                <input type="checkbox" className="form-check-input" id="contact_active" checked={!!hmForm.is_active} onChange={e => setHmForm(f=>({...f,is_active:e.target.checked?1:0}))}/>
+                <label className="form-check-label" htmlFor="contact_active" style={{ fontSize:13 }}>Active</label>
+              </div>
+            </div>
+          </div>
+          <div className="d-flex justify-content-end gap-2">
+            <button onClick={() => setHmModal(null)} className="btn btn-sm btn-outline-secondary">Cancel</button>
+            <button onClick={hmSave} className="btn btn-sm btn-primary d-flex align-items-center gap-1"><Check size={13}/> {hmModal.row?'Update':'Create'}</button>
+          </div>
+        </Modal>
+      )}
+
+      {/* ══ Declarations Modal ══ */}
+      {decModalOpen && (
+        <Modal
+          title={`${editDecRow ? 'Edit' : 'Add'} Declaration`}
+          onClose={() => setDecModalOpen(false)}
+        >
+          <div className="mb-3">
+            <label className="form-label fw-semibold" style={{ fontSize: 13 }}>Title <span className="text-danger">*</span></label>
+            <input
+              type="text"
+              className="form-control form-control-sm"
+              placeholder="e.g. Terms & Conditions"
+              value={decForm.title}
+              onChange={(e) => setDecForm(prev => ({ ...prev, title: e.target.value }))}
+            />
+          </div>
+
+          <div className="mb-3">
+            <label className="form-label fw-semibold" style={{ fontSize: 13 }}>Content (Markdown Supported) <span className="text-danger">*</span></label>
+            <textarea
+              className="form-control form-control-sm"
+              rows={6}
+              placeholder="Use ### for headings, - for bullets, 1. for numbering, **text** for bold."
+              value={decForm.declaration_content}
+              onChange={(e) => setDecForm(prev => ({ ...prev, declaration_content: e.target.value }))}
+            />
+          </div>
+
+          <div className="mb-3">
+            <label className="form-label fw-semibold" style={{ fontSize: 13 }}>Upload Guidelines Document (PDF, Word, or Image) <span className="text-muted">(Optional)</span></label>
+            <input
+              type="file"
+              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+              className="form-control form-control-sm"
+              onChange={(e) => setSelectedModalFile(e.target.files?.[0] || null)}
+            />
+            <div className="form-text" style={{ fontSize: 11 }}>
+              Uploading a file here will link it to this guideline. Max 10MB.
+            </div>
+            {selectedModalFile && (
+              <div className="mt-2 text-success fw-semibold" style={{ fontSize: 12 }}>
+                ✓ Selected: {selectedModalFile.name} ({(selectedModalFile.size / 1024 / 1024).toFixed(2)} MB)
+              </div>
+            )}
+          </div>
+
+          <div className="row g-2 mb-3">
+            <div className="col-6">
+              <label className="form-label fw-semibold" style={{ fontSize: 13 }}>Sort Order</label>
+              <input
+                type="number"
+                className="form-control form-control-sm"
+                value={decForm.display_order}
+                onChange={(e) => setDecForm(prev => ({ ...prev, display_order: parseInt(e.target.value) || 0 }))}
+              />
+            </div>
+            <div className="col-6 d-flex align-items-end">
+              <div className="form-check mb-2">
+                <input
+                  type="checkbox"
+                  id="dec_active"
+                  className="form-check-input"
+                  checked={!!decForm.is_active}
+                  onChange={(e) => setDecForm(prev => ({ ...prev, is_active: e.target.checked ? 1 : 0 }))}
+                />
+                <label htmlFor="dec_active" className="form-check-label" style={{ fontSize: 13 }}>Active (Go Live)</label>
+              </div>
+            </div>
+          </div>
+
+          {decForm.declaration_content && (
+            <div className="mb-3">
+              <label className="form-label fw-semibold" style={{ fontSize: 13 }}>Live Preview</label>
+              <div className="p-3 border rounded bg-light" style={{ maxHeight: 150, overflowY: 'auto' }}>
+                {renderMarkdown(decForm.declaration_content)}
+              </div>
+            </div>
+          )}
+
+          <div className="d-flex justify-content-end gap-2">
+            <button onClick={() => setDecModalOpen(false)} className="btn btn-sm btn-outline-secondary">Cancel</button>
+            <button onClick={handleSaveDeclaration} className="btn btn-sm btn-primary d-flex align-items-center gap-1">
+              <Check size={13}/> {editDecRow ? 'Update' : 'Create'} &amp; Publish
             </button>
           </div>
         </Modal>

@@ -637,7 +637,7 @@ export default function NewsAnnouncementsBoard({ apiBase, accentColor = '#1e3a5f
         <select style={{ padding: '5px 8px', borderRadius: 7, border: '1px solid #e5e7eb', fontSize: 12, color: '#374151', background: '#fff', cursor: 'pointer' }}
           value={filterCat} onChange={e => setFilterCat(e.target.value)}>
           <option value="all">All Categories</option>
-          {Object.keys(categories).map(k => <option key={k} value={k}>{CATEGORIES[k]?.icon || '📢'} {CATEGORIES[k]?.label || k}</option>)}
+          {Object.keys(categories).map(k => <option key={k} value={k}>{categories[k]?.icon || '📢'} {categories[k]?.label || k}</option>)}
         </select>
         <select style={{ padding: '5px 8px', borderRadius: 7, border: '1px solid #e5e7eb', fontSize: 12, color: '#374151', background: '#fff', cursor: 'pointer' }}
           value={filterPri} onChange={e => setFilterPri(e.target.value)}>

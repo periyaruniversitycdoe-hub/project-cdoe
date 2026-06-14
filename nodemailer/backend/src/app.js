@@ -10,7 +10,7 @@ const app = express();
 const corsOptions = {
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
   methods: ['POST'], // We only need POST for this module
-  allowedHeaders: ['Content-Type', 'bypass-tunnel-reminder'],
+  allowedHeaders: ['Content-Type'],
 };
 
 app.use(cors(corsOptions));

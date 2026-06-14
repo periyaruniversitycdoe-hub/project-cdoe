@@ -18,21 +18,37 @@ const path = require('path');
 const fs   = require('fs');
 const { sendTransacEmail } = require('../../backend/src/services/emailService');
 
-function getBackendBaseUrl() {
-  const studentApiUrl = process.env.VITE_STUDENT_API_URL || process.env.STUDENT_API_URL;
-  if (studentApiUrl) {
-    return studentApiUrl.replace(/\/student\/?$/, '');
-  }
-  return 'http://localhost:5000';
-}
-
-const logoUrl = `${getBackendBaseUrl()}/student/uploads/settings/pu_logo.png`;
-
 const ADMIN_EMAIL  = process.env.ADMIN_NOTIFICATION_EMAIL || process.env.ADMIN_EMAIL || null;
+
+// Root project directory (two levels up from shared/credential/)
+const PROJECT_ROOT = path.join(__dirname, '../..');
+const LOGO_CID     = 'uni_logo@periyar';
+
+// Returns { filename, path, cid, mimeType } or null
+async function getLogoAttachment(db) {
+    const tryFile = (absPath) => {
+        if (!fs.existsSync(absPath)) return null;
+        const ext  = path.extname(absPath).toLowerCase().replace('.', '');
+        const mime = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
+        return { filename: path.basename(absPath), path: absPath, cid: LOGO_CID, mimeType: mime };
+    };
+
+    try {
+        if (db) {
+            const [rows] = await db.query('SELECT logo_url FROM university_settings LIMIT 1');
+            if (rows && rows[0] && rows[0].logo_url) {
+                const att = tryFile(path.join(PROJECT_ROOT, rows[0].logo_url.replace(/^\//, '')));
+                if (att) return att;
+            }
+        }
+    } catch (_) {}
+
+    return tryFile(path.join(PROJECT_ROOT, 'uploads/settings/pu_logo.png'));
+}
 
 // ── HTML Templates ─────────────────────────────────────────────────────────────
 
-function userCredentialTemplate({ name, email, password, portalType, loginUrl }) {
+function userCredentialTemplate({ name, email, password, portalType, loginUrl, logoCid }) {
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -48,7 +64,7 @@ function userCredentialTemplate({ name, email, password, portalType, loginUrl })
       <!-- Header -->
       <tr>
         <td style="background:linear-gradient(135deg,#1a3c5e 0%,#2d6a9f 100%);padding:28px 36px;text-align:center;">
-          <img src="${logoUrl}" alt="Periyar University" style="height:64px;width:auto;object-fit:contain;margin-bottom:12px;display:block;margin-left:auto;margin-right:auto;" />
+          ${logoCid ? `<img src="cid:${logoCid}" alt="Periyar University" style="height:64px;width:auto;object-fit:contain;margin-bottom:12px;display:block;margin-left:auto;margin-right:auto;" />` : ''}
           <div style="font-size:22px;font-weight:700;color:#ffffff;letter-spacing:0.5px;">Periyar University</div>
           <div style="font-size:13px;color:rgba(255,255,255,0.8);margin-top:4px;">PhD Portal — Account Created</div>
         </td>
@@ -207,22 +223,29 @@ async function notify({ db, name, email, password, portalType, loginUrl = '' }) 
     // 1. Ensure table exists
     await ensureTable(db);
 
+    let finalLoginUrl = loginUrl;
+    if (portalType === 'Student' && finalLoginUrl && !finalLoginUrl.endsWith('/login')) {
+        finalLoginUrl = finalLoginUrl.replace(/\/$/, '') + '/login';
+    }
+
     // 2. Log to database
     let emailSent = 0;
     await db.query(
         'INSERT INTO credential_logs (user_name, email, plain_password, portal_type, login_url, email_sent) VALUES (?, ?, ?, ?, ?, 0)',
-        [name, email, password, portalType, loginUrl || null]
+        [name, email, password, portalType, finalLoginUrl || null]
     );
 
     const now = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
 
     // 3. Send credential email to user
     try {
-        const html        = userCredentialTemplate({ name, email, password, portalType, loginUrl });
+        const logoAtt = await getLogoAttachment(db);
+        const html    = userCredentialTemplate({ name, email, password, portalType, loginUrl: finalLoginUrl, logoCid: logoAtt ? logoAtt.cid : null });
         await sendTransacEmail({
             to:          email,
             subject:     `Your ${portalType} Portal Account Details — Periyar University`,
             html,
+            attachments: logoAtt ? [logoAtt] : [],
         });
         emailSent = 1;
         console.log(`[CredentialSvc] ✅ Credential email sent to ${email} (${portalType})`);
@@ -256,7 +279,7 @@ async function notify({ db, name, email, password, portalType, loginUrl = '' }) 
 
 // ── Password-change email template ────────────────────────────────────────────
 
-function passwordChangedTemplate({ name, email, portalType, changedAt, ipAddress, loginUrl }) {
+function passwordChangedTemplate({ name, email, portalType, changedAt, ipAddress, loginUrl, logoCid }) {
     return `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"/><title>Password Changed</title></head>
@@ -266,7 +289,7 @@ function passwordChangedTemplate({ name, email, portalType, changedAt, ipAddress
     <table width="540" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);">
       <tr>
         <td style="background:linear-gradient(135deg,#1a3c5e,#d97706);padding:28px 36px;text-align:center;">
-          <img src="${logoUrl}" alt="Periyar University" style="height:60px;width:auto;object-fit:contain;margin-bottom:12px;display:block;margin-left:auto;margin-right:auto;" />
+          ${logoCid ? `<img src="cid:${logoCid}" alt="Periyar University" style="height:60px;width:auto;object-fit:contain;margin-bottom:12px;display:block;margin-left:auto;margin-right:auto;" />` : ''}
           <div style="font-size:20px;font-weight:700;color:#fff;">Periyar University</div>
           <div style="font-size:12px;color:rgba(255,255,255,0.8);margin-top:4px;">PhD Portal — Password Changed</div>
         </td>
@@ -348,15 +371,20 @@ async function notifyPasswordChange({ db, email, newPassword, portalType, ipAddr
         [email, portalType]
     );
     const name     = rows[0]?.user_name || email;
-    const loginUrl = rows[0]?.login_url || '';
+    let loginUrl = rows[0]?.login_url || '';
+    if (portalType === 'Student' && loginUrl && !loginUrl.endsWith('/login')) {
+        loginUrl = loginUrl.replace(/\/$/, '') + '/login';
+    }
 
     // Send email to user
     try {
-        const html       = passwordChangedTemplate({ name, email, portalType, changedAt: now, ipAddress, loginUrl });
+        const logoAtt = await getLogoAttachment(db);
+        const html    = passwordChangedTemplate({ name, email, portalType, changedAt: now, ipAddress, loginUrl, logoCid: logoAtt ? logoAtt.cid : null });
         await sendTransacEmail({
             to:          email,
             subject:     `Your ${portalType} Portal Password Was Changed — Periyar University`,
             html,
+            attachments: logoAtt ? [logoAtt] : [],
         });
         console.log(`[CredentialSvc] ✅ Password-change email sent to ${email} (${portalType})`);
     } catch (mailErr) {

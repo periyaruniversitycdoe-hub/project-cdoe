@@ -1,10 +1,19 @@
-﻿const { safeError } = require('../../../shared/security/safeError');
-'use strict';
+﻿'use strict';
 
 const express = require('express');
+const http = require('http');
 const router = express.Router();
 const pool = require('../config/db');
 const { verifyToken, isAdmin } = require('../middleware/auth');
+const { safeError } = require('../../../shared/security/safeError');
+
+function notifyStudentHomeData() {
+    try {
+        const req = http.request({ hostname: '127.0.0.1', port: 5000, path: '/internal/home-data-invalidate', method: 'POST', headers: { 'Content-Length': '0', 'Content-Type': 'application/json' } });
+        req.on('error', () => {});
+        req.end();
+    } catch (_) {}
+}
 
 // Auto-create table on load (idempotent)
 (async () => {
@@ -49,6 +58,7 @@ router.post('/', verifyToken, isAdmin, async (req, res) => {
              VALUES (?, ?, ?, ?, ?, ?)`,
             [title, content || null, type, priority, is_active, published_at || new Date()]
         );
+        notifyStudentHomeData();
         res.status(201).json({ success: true, message: 'Notification created', id: result.insertId });
     } catch (err) {
         res.status(500).json({ success: false, message: safeError(err) });
@@ -65,6 +75,7 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
              WHERE id=?`,
             [title, content || null, type, priority, is_active, published_at, req.params.id]
         );
+        notifyStudentHomeData();
         res.json({ success: true, message: 'Notification updated' });
     } catch (err) {
         res.status(500).json({ success: false, message: safeError(err) });
@@ -75,6 +86,7 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
 router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
     try {
         await pool.query('DELETE FROM portal_notifications WHERE id = ?', [req.params.id]);
+        notifyStudentHomeData();
         res.json({ success: true, message: 'Notification deleted' });
     } catch (err) {
         res.status(500).json({ success: false, message: safeError(err) });
@@ -88,6 +100,7 @@ router.patch('/:id/toggle', verifyToken, isAdmin, async (req, res) => {
             'UPDATE portal_notifications SET is_active = NOT is_active WHERE id = ?',
             [req.params.id]
         );
+        notifyStudentHomeData();
         res.json({ success: true, message: 'Status toggled' });
     } catch (err) {
         res.status(500).json({ success: false, message: safeError(err) });

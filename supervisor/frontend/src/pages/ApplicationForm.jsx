@@ -112,15 +112,20 @@ const S = {
 
 const REQUIRED_STEP0 = ['name', 'gender', 'designation_id', 'eligibility_dept_id', 'program_offered_id'];
 const REQUIRED_STEP1 = ['mobile', 'home_address_1', 'home_district_id', 'home_pincode'];
-const REQUIRED_STEP2 = ['dob', 'date_of_joining', 'max_candidates', 'max_full_time', 'max_part_time'];
+const REQUIRED_STEP2_BASE = ['dob', 'date_of_joining', 'max_candidates'];
 const REQUIRED_STEP3 = ['bank_holder_name', 'bank_name', 'account_number', 'ifsc_code'];
 
-function validate(step, formData) {
+function validate(step, formData, opts = {}) {
+  const { ftRequired = true, ptRequired = true } = opts;
   const errors = {};
   const req =
     step === 0 ? REQUIRED_STEP0 :
       step === 1 ? REQUIRED_STEP1 :
-        step === 2 ? REQUIRED_STEP2 :
+        step === 2 ? [
+          ...REQUIRED_STEP2_BASE,
+          ...(ftRequired ? ['max_full_time'] : []),
+          ...(ptRequired ? ['max_part_time'] : []),
+        ] :
           step === 3 ? REQUIRED_STEP3 : [];
   req.forEach(f => { if (!formData[f] || String(formData[f]).trim() === '') errors[f] = 'This field is required'; });
 
@@ -155,6 +160,7 @@ export default function ApplicationForm({ isAdminMode = false, adminSupervisorId
   const [dropdowns, setDropdowns] = useState({});
   const [errors, setErrors] = useState({});
   const [placeholders, setPlaceholders] = useState({ max_full_time: '', max_part_time: '' });
+  const [capacityConfig, setCapacityConfig] = useState({ ft_max: 0, pt_max: 0, ftRequired: true, ptRequired: true });
   const [appStatus, setAppStatus] = useState('Draft');
   const [formData, setFormData] = useState({
     name: '', gender: 'Male', designation_id: '',
@@ -251,7 +257,7 @@ export default function ApplicationForm({ isAdminMode = false, adminSupervisorId
   const isReadOnly = ['Active', 'Approved'].includes(appStatus);
 
   useEffect(() => {
-    const tables = ['master_designations', 'master_departments', 'master_institutes', 'master_districts', 'master_disciplines', 'research_centres'];
+    const tables = ['master_designations', 'departments', 'master_institutes', 'master_districts', 'master_disciplines', 'research_centres'];
     Promise.all(tables.map(t => axios.get(`${API}/dropdowns/${t}`))).then(results => {
       const data = {};
       tables.forEach((t, i) => data[t] = results[i].data || []);
@@ -347,15 +353,23 @@ export default function ApplicationForm({ isAdminMode = false, adminSupervisorId
     const capacityUrl = isAdminMode
       ? `${ADMIN_API}/supervisors/capacity/${formData.designation_id}`
       : `${API}/portal/capacity/${formData.designation_id}`;
-    const capacityConfig = isAdminMode ? { headers: adminHeaders() } : {};
-    axios.get(capacityUrl, capacityConfig).then(res => {
+    const axiosConfig = isAdminMode ? { headers: adminHeaders() } : {};
+    axios.get(capacityUrl, axiosConfig).then(res => {
       if (res.data.success) {
         const {
           max_candidates,
           current_vacancy,
           max_full_time,
           max_part_time,
+          full_time_required,
+          part_time_required,
         } = res.data.data;
+        setCapacityConfig({
+          ft_max:      max_full_time || 0,
+          pt_max:      max_part_time || 0,
+          ftRequired:  !!full_time_required,
+          ptRequired:  !!part_time_required,
+        });
         setPlaceholders({
           max_full_time: String(max_full_time),
           max_part_time: String(max_part_time)
@@ -363,7 +377,7 @@ export default function ApplicationForm({ isAdminMode = false, adminSupervisorId
         setFormData(prev => ({
           ...prev,
           max_candidates,
-          current_vacancy,   // = max_candidates − scholars (0 for now)
+          current_vacancy,
           max_full_time: (prev.max_full_time !== undefined && prev.max_full_time !== '') ? prev.max_full_time : '',
           max_part_time: (prev.max_part_time !== undefined && prev.max_part_time !== '') ? prev.max_part_time : '',
         }));
@@ -371,18 +385,33 @@ export default function ApplicationForm({ isAdminMode = false, adminSupervisorId
     }).catch(() => { });
   }, [formData.designation_id]);
 
-  // LIVE CAPACITY VALIDATION
+  // LIVE CAPACITY VALIDATION — checks per-field designation limits + combined total
   useEffect(() => {
-    const ft = parseInt(formData.max_full_time) || 0;
-    const pt = parseInt(formData.max_part_time) || 0;
+    const ftStr = formData.max_full_time;
+    const ptStr = formData.max_part_time;
+    const ft = ftStr !== '' && ftStr !== undefined ? parseInt(ftStr) || 0 : null;
+    const pt = ptStr !== '' && ptStr !== undefined ? parseInt(ptStr) || 0 : null;
     const max = parseInt(formData.max_candidates) || 0;
 
-    if (ft + pt > max) {
-      setErrors(prev => ({ ...prev, capacity: `Total capacity (${ft + pt}) cannot exceed designation limit of ${max}` }));
-    } else {
-      setErrors(prev => { const n = { ...prev }; delete n.capacity; return n; });
-    }
-  }, [formData.max_full_time, formData.max_part_time, formData.max_candidates]);
+    setErrors(prev => {
+      const n = { ...prev };
+      delete n.capacity;
+      // Clear stale bound errors so they don't linger after designation change
+      if (typeof n.max_full_time === 'string' && n.max_full_time.startsWith('Exceeds designation')) delete n.max_full_time;
+      if (typeof n.max_part_time === 'string' && n.max_part_time.startsWith('Exceeds designation')) delete n.max_part_time;
+
+      if (ft !== null && capacityConfig.ft_max > 0 && ft > capacityConfig.ft_max) {
+        n.max_full_time = `Exceeds designation Full-Time limit of ${capacityConfig.ft_max}`;
+      }
+      if (pt !== null && capacityConfig.pt_max > 0 && pt > capacityConfig.pt_max) {
+        n.max_part_time = `Exceeds designation Part-Time limit of ${capacityConfig.pt_max}`;
+      }
+      if (ft !== null && pt !== null && max > 0 && ft + pt > max) {
+        n.capacity = `Total capacity (${ft + pt}) cannot exceed designation limit of ${max}`;
+      }
+      return n;
+    });
+  }, [formData.max_full_time, formData.max_part_time, formData.max_candidates, capacityConfig]);
 
   const handleIFSCChange = async (e) => {
     const value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 11);
@@ -503,8 +532,9 @@ export default function ApplicationForm({ isAdminMode = false, adminSupervisorId
 
   const saveApplication = async (isFinal = false) => {
     if (isReadOnly && isFinal) return;
+    const capOpts = { ftRequired: capacityConfig.ftRequired, ptRequired: capacityConfig.ptRequired };
     if (isFinal) {
-      const allErrors = { ...validate(0, formData), ...validate(1, formData), ...validate(2, formData), ...validate(3, formData) };
+      const allErrors = { ...validate(0, formData), ...validate(1, formData), ...validate(2, formData, capOpts), ...validate(3, formData) };
       if (Object.keys(allErrors).length > 0) {
         toast.error('Please fill all required fields before submitting.');
         setErrors(allErrors);
@@ -512,7 +542,7 @@ export default function ApplicationForm({ isAdminMode = false, adminSupervisorId
       }
     } else {
       // Step 4 (Disciplines) has no required fields — always allow draft save
-      const errs = step < 4 ? validate(step, formData) : {};
+      const errs = step < 4 ? validate(step, formData, step === 2 ? capOpts : undefined) : {};
       if (Object.keys(errs).length > 0) {
         setErrors(errs);
         toast.error('Please fix the highlighted errors.');
@@ -557,7 +587,7 @@ export default function ApplicationForm({ isAdminMode = false, adminSupervisorId
   };
 
   const goNext = async () => {
-    const errs = validate(step, formData);
+    const errs = validate(step, formData, step === 2 ? { ftRequired: capacityConfig.ftRequired, ptRequired: capacityConfig.ptRequired } : undefined);
     if (Object.keys(errs).length > 0) { setErrors(errs); toast.error('Please fix all required fields.'); return; }
     setErrors({});
     // Await the save so if it fails we don't silently advance to next step
@@ -589,7 +619,14 @@ export default function ApplicationForm({ isAdminMode = false, adminSupervisorId
     if (!id) return '—';
     return list?.find(d => String(d.id) === String(id))?.[nameKey] || '—';
   };
-  const REQUIRED_ALL = [...REQUIRED_STEP0, ...REQUIRED_STEP1, ...REQUIRED_STEP2, ...REQUIRED_STEP3];
+  const REQUIRED_ALL = [
+    ...REQUIRED_STEP0,
+    ...REQUIRED_STEP1,
+    ...REQUIRED_STEP2_BASE,
+    ...(capacityConfig.ftRequired ? ['max_full_time'] : []),
+    ...(capacityConfig.ptRequired ? ['max_part_time'] : []),
+    ...REQUIRED_STEP3,
+  ];
   const filledCount = REQUIRED_ALL.filter(f => formData[f] && String(formData[f]).trim() !== '').length;
   const completePct = Math.round((filledCount / REQUIRED_ALL.length) * 100);
 
@@ -697,7 +734,7 @@ export default function ApplicationForm({ isAdminMode = false, adminSupervisorId
                   <label style={S.label}>Department</label>
                   <select style={S.select(false)} name="department_id" value={formData.department_id} onChange={handleInput} disabled={isReadOnly}>
                     <option value="">— Select Department —</option>
-                    {dropdowns.master_departments?.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                    {dropdowns.departments?.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                   </select>
                 </div>
                 <div style={S.group}>
@@ -757,7 +794,7 @@ export default function ApplicationForm({ isAdminMode = false, adminSupervisorId
                   {errors.eligibility_dept_id && <span style={S.errMsg}>{errors.eligibility_dept_id}</span>}
                 </div>
                 <div style={S.group}>
-                  <label style={S.label}>Offered Course<span style={S.required}>*</span></label>
+                  <label style={S.label}>Approved Course<span style={S.required}>*</span></label>
                   <select
                     style={S.select(errors.program_offered_id)}
                     name="program_offered_id"
@@ -765,7 +802,7 @@ export default function ApplicationForm({ isAdminMode = false, adminSupervisorId
                     onChange={handleInput}
                     disabled={isReadOnly || !formData.eligibility_dept_id}
                   >
-                    <option value="">— Select Offered Course —</option>
+                    <option value="">— Select Approved Course —</option>
                     {offeredCourses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                   {errors.program_offered_id && <span style={S.errMsg}>{errors.program_offered_id}</span>}
@@ -888,12 +925,38 @@ export default function ApplicationForm({ isAdminMode = false, adminSupervisorId
                 <input style={S.input(errors.current_vacancy)} name="current_vacancy" type="number" min={0} value={formData.current_vacancy} onChange={handleInput} readOnly={isReadOnly} />
               </div>
               <div style={S.group}>
-                <label style={S.label}>Max Full-Time Scholars<span style={S.required}>*</span></label>
-                <input style={S.input(errors.capacity || errors.max_full_time)} name="max_full_time" type="number" min={0} value={formData.max_full_time} onChange={handleInput} readOnly={isReadOnly} />
+                <label style={S.label}>
+                  Ongoing full time scholars count
+                  {capacityConfig.ftRequired && <span style={S.required}>*</span>}
+                </label>
+                <input
+                  style={S.input(errors.capacity || errors.max_full_time)}
+                  name="max_full_time" type="number" min={0}
+                  max={capacityConfig.ft_max > 0 ? capacityConfig.ft_max : undefined}
+                  placeholder={capacityConfig.ft_max > 0 ? `0 – ${capacityConfig.ft_max}` : '0'}
+                  value={formData.max_full_time} onChange={handleInput} readOnly={isReadOnly}
+                />
+                {capacityConfig.ft_max > 0 && !errors.max_full_time && (
+                  <span style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>Designation FT limit: {capacityConfig.ft_max}</span>
+                )}
+                {errors.max_full_time && <span style={S.errMsg}>{errors.max_full_time}</span>}
               </div>
               <div style={S.group}>
-                <label style={S.label}>Max Part-Time Scholars<span style={S.required}>*</span></label>
-                <input style={S.input(errors.capacity || errors.max_part_time)} name="max_part_time" type="number" min={0} value={formData.max_part_time} onChange={handleInput} readOnly={isReadOnly} />
+                <label style={S.label}>
+                  Ongoing part time scholars count
+                  {capacityConfig.ptRequired && <span style={S.required}>*</span>}
+                </label>
+                <input
+                  style={S.input(errors.capacity || errors.max_part_time)}
+                  name="max_part_time" type="number" min={0}
+                  max={capacityConfig.pt_max > 0 ? capacityConfig.pt_max : undefined}
+                  placeholder={capacityConfig.pt_max > 0 ? `0 – ${capacityConfig.pt_max}` : '0'}
+                  value={formData.max_part_time} onChange={handleInput} readOnly={isReadOnly}
+                />
+                {capacityConfig.pt_max > 0 && !errors.max_part_time && (
+                  <span style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>Designation PT limit: {capacityConfig.pt_max}</span>
+                )}
+                {errors.max_part_time && <span style={S.errMsg}>{errors.max_part_time}</span>}
               </div>
               {errors.capacity && (
                 <div style={{ gridColumn: '1 / -1', color: '#ef4444', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1151,11 +1214,11 @@ export default function ApplicationForm({ isAdminMode = false, adminSupervisorId
                     { label: 'Full Name', value: formData.name },
                     { label: 'Gender', value: formData.gender },
                     { label: 'Designation', value: lookup(dropdowns.master_designations, formData.designation_id) },
-                    { label: 'Department', value: lookup(dropdowns.master_departments, formData.department_id) },
+                    { label: 'Department', value: lookup(dropdowns.departments, formData.department_id) },
                     { label: 'University Institute', value: lookup(institutes, formData.university_institute_id, 'institute_name') },
                     { label: 'Research Center', value: lookup(researchCenters, formData.research_center_id) },
                     { label: 'Programme Department', value: lookup(eligibilityDepts, formData.eligibility_dept_id) || formData.eligibility_dept_name },
-                    { label: 'Offered Course', value: lookup(offeredCourses, formData.program_offered_id) || formData.program_offered_name },
+                    { label: 'Approved Course', value: lookup(offeredCourses, formData.program_offered_id) || formData.program_offered_name },
                     { label: 'Area of Specialization', value: formData.area_of_specialization },
                   ],
                 },
@@ -1180,8 +1243,8 @@ export default function ApplicationForm({ isAdminMode = false, adminSupervisorId
                     { label: 'Date of Superannuation', value: formData.date_of_superannuation },
                     { label: 'Recognition Ref. No.', value: formData.recognition_ref_no },
                     { label: 'Max Candidates (Designation)', value: formData.max_candidates },
-                    { label: 'Max Full-Time Scholars', value: formData.max_full_time },
-                    { label: 'Max Part-Time Scholars', value: formData.max_part_time },
+                    { label: 'Ongoing full time scholars count', value: formData.max_full_time },
+                    { label: 'Ongoing part time scholars count', value: formData.max_part_time },
                     { label: 'DOB Evidence', value: files.dob_evidence ? `✓ ${files.dob_evidence.name}` : null },
                     { label: 'Recognition Certificate', value: files.recognition_certificate ? `✓ ${files.recognition_certificate.name}` : null },
                   ],

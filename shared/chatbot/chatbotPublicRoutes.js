@@ -164,6 +164,23 @@ module.exports = function createChatbotPublicRoutes({ portalKey = 'public', jwtS
                  VALUES (?,?,?,?,?,?,?,?,'new','private')`,
                 [ref, uid, utype, uname, uemail, portalKey, question.trim(), category_id||null]
             );
+
+            // Notify admin of new chatbot query (non-blocking, respects admin rules)
+            const { notifyAdminDB } = require('../notification/notifyAdminDB');
+            const portalLabels = { student: 'Student', supervisor: 'Supervisor', center: 'Centre', public: 'Guest' };
+            const pLabel  = portalLabels[portalKey] || portalKey;
+            const sender  = uname || uemail || 'User';
+            const preview = question.trim().length > 100 ? question.trim().slice(0, 100) + '…' : question.trim();
+            notifyAdminDB(db, {
+                event_key:   `${portalKey}.chatbot.query`,
+                title:       `New Chatbot Query — ${pLabel}`,
+                message:     `${sender}: "${preview}"`,
+                type:        'info',
+                source_type: 'chatbot',
+                source_id:   String(r.insertId),
+                link:        '/chatbot-management',
+            });
+
             res.json({
                 success: true,
                 auto_answered: false,

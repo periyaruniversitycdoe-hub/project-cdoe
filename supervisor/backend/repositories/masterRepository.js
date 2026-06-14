@@ -2,7 +2,7 @@ const pool = require('../../../admin/backend/config/db');
 
 const MASTER_TABLES = {
     designations:         { table: 'master_designations',         hasAbbrev: false },
-    departments:          { table: 'master_departments',          hasAbbrev: false },
+    departments:          { table: 'departments',                 hasAbbrev: false },
     institutes:           { table: 'master_institutes',           hasAbbrev: true  },
     districts:            { table: 'master_districts',            hasAbbrev: false },
     centre_types:         { table: 'master_centre_types',         hasAbbrev: false },
@@ -16,6 +16,36 @@ function getConfig(type) {
     if (!cfg) throw Object.assign(new Error(`Invalid master type: ${type}`), { status: 400 });
     return cfg;
 }
+
+// ── Self-healing column migration ────────────────────────────────────────────
+(async () => {
+    const columns = [
+        { col: 'full_time_max_capacity', def: 'INT NOT NULL DEFAULT 0' },
+        { col: 'part_time_max_capacity', def: 'INT NOT NULL DEFAULT 0' },
+        { col: 'full_time_required',     def: 'TINYINT(1) NOT NULL DEFAULT 0' },
+        { col: 'part_time_required',     def: 'TINYINT(1) NOT NULL DEFAULT 0' },
+    ];
+    for (const { col, def } of columns) {
+        try {
+            await pool.query(`ALTER TABLE master_designations ADD COLUMN ${col} ${def}`);
+        } catch (e) {
+            if (!e.message.includes('Duplicate column')) {
+                console.error(`designation_capacity column check (${col}):`, e.message);
+            }
+        }
+    }
+    // Back-fill defaults where still 0 and max_capacity is set
+    await pool.query(`
+        UPDATE master_designations
+           SET full_time_max_capacity = max_capacity,
+               part_time_max_capacity = FLOOR(max_capacity / 2)
+         WHERE full_time_max_capacity = 0
+           AND part_time_max_capacity = 0
+           AND max_capacity > 0
+    `).catch(() => {});
+})();
+
+// ── Generic helpers ──────────────────────────────────────────────────────────
 
 async function findAll(type, activeOnly = false) {
     const { table } = getConfig(type);
@@ -32,12 +62,15 @@ async function findById(type, id) {
     return row || null;
 }
 
-async function create(type, { name, abbreviation, max_capacity }) {
+async function create(type, { name, abbreviation, max_capacity, full_time_max_capacity, part_time_max_capacity, full_time_required, part_time_required }) {
     const { table, hasAbbrev } = getConfig(type);
     if (type === 'designations') {
         const [result] = await pool.execute(
-            `INSERT INTO ${table} (name, max_capacity) VALUES (?, ?)`,
-            [name, max_capacity || 0]
+            `INSERT INTO ${table}
+             (name, max_capacity, full_time_max_capacity, part_time_max_capacity, full_time_required, part_time_required)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [name, max_capacity || 0, full_time_max_capacity || 0, part_time_max_capacity || 0,
+             full_time_required ? 1 : 0, part_time_required ? 1 : 0]
         );
         return result.insertId;
     }
@@ -54,13 +87,14 @@ async function create(type, { name, abbreviation, max_capacity }) {
     return result.insertId;
 }
 
-async function update(type, id, { name, abbreviation, max_capacity, is_active }) {
+async function update(type, id, { name, abbreviation, max_capacity, full_time_max_capacity, part_time_max_capacity, full_time_required, part_time_required, is_active }) {
     const { table, hasAbbrev } = getConfig(type);
     const sets = ['name = ?', 'is_active = ?'];
     const vals = [name, is_active ?? 1];
     if (type === 'designations') {
-        sets.push('max_capacity = ?');
-        vals.push(max_capacity || 0);
+        sets.push('max_capacity = ?', 'full_time_max_capacity = ?', 'part_time_max_capacity = ?', 'full_time_required = ?', 'part_time_required = ?');
+        vals.push(max_capacity || 0, full_time_max_capacity || 0, part_time_max_capacity || 0,
+                  full_time_required ? 1 : 0, part_time_required ? 1 : 0);
     } else if (hasAbbrev) {
         sets.push('abbreviation = ?');
         vals.push(abbreviation || null);
@@ -82,7 +116,7 @@ async function remove(type, id) {
 
 async function logDesignationAudit(designationId, designationName, action, fieldChanged, oldValue, newValue, adminUser) {
     await pool.execute(
-        `INSERT INTO supervisor_designation_audit_logs 
+        `INSERT INTO supervisor_designation_audit_logs
          (designation_id, designation_name, action, field_changed, old_value, new_value, admin_user)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [

@@ -79,7 +79,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
           a.subject,
           a.status                                            AS app_status,
           a.payment_status,
-          a.final_submitted,
+          a.application_submitted AS final_submitted,
           a.entrance_exam_status,
           a.qualification_status,
           a.entrance_mark,

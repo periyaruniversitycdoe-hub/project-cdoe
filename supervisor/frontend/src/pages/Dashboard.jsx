@@ -247,7 +247,7 @@ export default function Dashboard() {
               {profile?.program_offered_name ? (
                 <>
                   <div style={S.infoRow}><span style={S.infoKey}>Programme Department</span><span style={S.infoVal}>{profile.eligibility_dept_name || '—'}</span></div>
-                  <div style={S.infoRow}><span style={S.infoKey}>Offered Course</span><span style={S.infoVal}>{profile.program_offered_name}</span></div>
+                   <div style={S.infoRow}><span style={S.infoKey}>Approved Course</span><span style={S.infoVal}>{profile.program_offered_name}</span></div>
                 </>
               ) : (
                 <div style={S.noLink}>

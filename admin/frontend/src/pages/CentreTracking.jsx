@@ -218,6 +218,7 @@ function ViewModal({ centre, onClose }) {
                             <SectionHeading title="Centre Information" color="#0891b2" />
                             <InfoField label="Centre ID"            value={`#${c.id}`} />
                             <InfoField label="Centre Type"          value={c.centre_type_name} />
+                            <InfoField label="Recognized Department" value={c.department_name} />
                             <InfoField label="Recognition Ref. No." value={c.centre_ref_no} />
                             <InfoField label="Recognition Date"     value={fmt(c.recognition_date)} />
                             <InfoField label="Applied Date"         value={fmt(c.created_at)} />
@@ -236,6 +237,18 @@ function ViewModal({ centre, onClose }) {
                             <SectionHeading title="Institute Details  —  Source of Truth for Institute Master" color="#0369a1" />
                             <InfoField label="College Code"      value={c.college_code    || c.institute_code} />
                             <InfoField label="College Name"      value={c.college_name    || c.institute_name} />
+                            {c.mapped_departments && c.mapped_departments.length > 0 && (
+                                <div className="col-12">
+                                    <div className="small text-muted fw-semibold mb-1">Recognized Departments</div>
+                                    <div className="d-flex flex-wrap gap-1">
+                                        {c.mapped_departments.map(dept => (
+                                            <span key={dept.id} className="badge rounded-pill" style={{ background: '#e0f2fe', color: '#0369a1', fontWeight: 500, fontSize: 12, padding: '4px 10px' }}>
+                                                {dept.name}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                             <InfoField label="Principal / HOD"   value={c.principal_name  || c.institute_principal} />
                             <InfoField label="Principal Mobile"  value={c.principal_mobile|| c.institute_principal_mobile} />
                             <InfoField label="Principal Email"   value={c.hod_email       || c.institute_email} />

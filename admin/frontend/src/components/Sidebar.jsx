@@ -9,6 +9,21 @@ import {
   Home, ClipboardList, MessageCircle, GitFork
 } from 'lucide-react';
 import { useSession } from '../contexts/SessionContext';
+import { useNotifications } from '../contexts/NotificationContext';
+
+// Map sidebar path → source_type for badge display
+const PATH_BADGE = {
+  '/applications':          'application',
+  '/payment-management':    'payment',
+  '/supervisors':           'supervisor',
+  '/research-centres':      'center',
+  '/counselling':           'counselling',
+  '/hall-ticket':           'hall_ticket',
+  '/results-management':    'result',
+  '/students':              'student',
+  '/chatbot-management':    'chatbot',
+  '/credential-management': 'password_reset',
+};
 
 const menuStructure = [
   {
@@ -43,6 +58,7 @@ const menuStructure = [
       { icon: IndianRupee,     label: 'Community Fees',        path: '/community-fees' },
       { icon: ListTree,        label: 'Part-Time Configs',     path: '/part-time-configurations' },
       { icon: ListTree,        label: 'Dropdown Management',   path: '/dropdowns' },
+      { icon: BookOpen,        label: 'Academic Hierarchy',    path: '/academic-hierarchy' },
       { icon: GraduationCap,  label: 'Eligibility Mgmt',      path: '/eligibility' },
       { icon: Settings,        label: 'University Settings',   path: '/settings' },
       { icon: UploadCloud,     label: 'Upload Settings',       path: '/uploads' },
@@ -86,6 +102,7 @@ const menuStructure = [
 
 const Sidebar = ({ isOpen, onClose }) => {
   const { activeSession } = useSession();
+  const { sourceCounts }  = useNotifications();
   const [settings, setSettings] = React.useState(null);
 
   React.useEffect(() => {
@@ -96,7 +113,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     )
       .then(r => r.json())
       .then(res => setSettings(res.success ? res.data : res))
-      .catch(err => { if (err.name !== 'AbortError') { /* network error — logo stays null */ } });
+      .catch(err => { if (err.name !== 'AbortError') {} });
     return () => ac.abort();
   }, []);
 
@@ -113,10 +130,10 @@ const Sidebar = ({ isOpen, onClose }) => {
     <div className={`admin-sidebar ${isOpen ? 'sidebar-open' : ''}`}>
       <div className="sidebar-logo" style={{ padding: '15px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <img 
-            src={settings?.logo?.startsWith('/uploads') ? `${import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001'}${settings.logo}` : settings?.logo || '/images/pu_logo.png'} 
-            alt="University Logo" 
-            style={{ width: 35, height: 35, objectFit: 'contain' }} 
+          <img
+            src={settings?.logo?.startsWith('/uploads') ? `${import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001'}${settings.logo}` : settings?.logo || '/images/pu_logo.png'}
+            alt="University Logo"
+            style={{ width: 35, height: 35, objectFit: 'contain' }}
           />
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <h3 style={{ fontSize: 16, marginBottom: 0, lineHeight: 1.2 }}>ERP ADMIN</h3>
@@ -140,28 +157,16 @@ const Sidebar = ({ isOpen, onClose }) => {
         }}
       >
         <div className="d-flex align-items-center gap-1 mb-1">
-          <span
-            style={{
-              width: 7, height: 7, borderRadius: '50%',
-              background: activeSession ? '#10b981' : '#ef4444',
-              display: 'inline-block', flexShrink: 0,
-            }}
-          />
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: activeSession ? '#10b981' : '#ef4444', display: 'inline-block', flexShrink: 0 }} />
           <span className="fw-bold text-truncate" style={{ color: activeSession ? '#ffffff' : '#fca5a5' }}>
             {activeSession ? `${activeSession.month} ${activeSession.year}` : 'No Active Session'}
           </span>
         </div>
         {activeSession && (
           <div className="d-flex gap-2" style={{ paddingLeft: 12 }}>
-            <span style={{ color: activeSession.registration_open ? '#4ade80' : '#9ca3af', fontSize: 10 }}>
-              {activeSession.registration_open ? '● Reg' : '○ Reg'}
-            </span>
-            <span style={{ color: activeSession.application_open ? '#4ade80' : '#9ca3af', fontSize: 10 }}>
-              {activeSession.application_open ? '● App' : '○ App'}
-            </span>
-            <span style={{ color: activeSession.result_published ? '#4ade80' : '#9ca3af', fontSize: 10 }}>
-              {activeSession.result_published ? '● Res' : '○ Res'}
-            </span>
+            <span style={{ color: activeSession.registration_open ? '#4ade80' : '#9ca3af', fontSize: 10 }}>{activeSession.registration_open ? '● Reg' : '○ Reg'}</span>
+            <span style={{ color: activeSession.application_open  ? '#4ade80' : '#9ca3af', fontSize: 10 }}>{activeSession.application_open  ? '● App' : '○ App'}</span>
+            <span style={{ color: activeSession.result_published  ? '#4ade80' : '#9ca3af', fontSize: 10 }}>{activeSession.result_published  ? '● Res' : '○ Res'}</span>
           </div>
         )}
       </div>
@@ -170,43 +175,41 @@ const Sidebar = ({ isOpen, onClose }) => {
         {menuStructure.map((group, gIdx) => (
           <div key={gIdx} style={{ marginBottom: group.group ? '15px' : '5px' }}>
             {group.group && (
-              <div 
-                style={{ 
-                  color: '#9ca3af', 
-                  fontSize: '0.65rem', 
-                  fontWeight: '700', 
-                  letterSpacing: '0.8px', 
-                  padding: '5px 20px', 
-                  marginBottom: '2px',
-                  textTransform: 'uppercase'
-                }}
-              >
+              <div style={{ color: '#9ca3af', fontSize: '0.65rem', fontWeight: '700', letterSpacing: '0.8px', padding: '5px 20px', marginBottom: '2px', textTransform: 'uppercase' }}>
                 {group.group}
               </div>
             )}
-            {group.items.map((item) => (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                end={item.path === '/'}
-                className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-                onClick={onClose}
-              >
-                <item.icon size={18} />
-                <span style={{ flex: 1 }}>{item.label}</span>
-                <ChevronRight size={14} className="chevron" />
-              </NavLink>
-            ))}
+            {group.items.map((item) => {
+              const badgeSrc  = PATH_BADGE[item.path];
+              const badgeCnt  = badgeSrc ? (sourceCounts[badgeSrc] || 0) : 0;
+              return (
+                <NavLink
+                  key={item.path}
+                  to={item.path}
+                  end={item.path === '/'}
+                  className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+                  onClick={onClose}
+                >
+                  <item.icon size={18} />
+                  <span style={{ flex: 1 }}>{item.label}</span>
+                  {badgeCnt > 0 && (
+                    <span
+                      className="badge rounded-pill bg-danger"
+                      style={{ fontSize: 9, padding: '2px 5px', minWidth: 16, lineHeight: '14px' }}
+                    >
+                      {badgeCnt > 99 ? '99+' : badgeCnt}
+                    </span>
+                  )}
+                  <ChevronRight size={14} className="chevron" />
+                </NavLink>
+              );
+            })}
           </div>
         ))}
       </div>
 
       <div className="sidebar-logout">
-        <button
-          onClick={handleLogout}
-          className="nav-link border-0 bg-transparent w-100 text-start"
-          style={{ color: '#e7505a' }}
-        >
+        <button onClick={handleLogout} className="nav-link border-0 bg-transparent w-100 text-start" style={{ color: '#e7505a' }}>
           <LogOut size={18} />
           <span>Logout</span>
         </button>

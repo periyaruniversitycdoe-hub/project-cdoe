@@ -236,11 +236,11 @@ router.get('/applications/:id', verifyToken, isAdmin, async (req, res) => {
 
         // Education records
         const [school] = await pool.execute(
-            'SELECT * FROM school_education WHERE user_id = ?', [row.user_id]);
+            'SELECT se.*, eb.board_name FROM school_education se LEFT JOIN education_boards eb ON se.board_id = eb.id WHERE se.user_id = ?', [row.user_id]);
         const [higher] = await pool.execute(
             'SELECT * FROM higher_education WHERE user_id = ?', [row.user_id]);
         const [exp] = await pool.execute(
-            'SELECT * FROM experience_details WHERE user_id = ?', [row.user_id]);
+            'SELECT ed.*, et.type_name AS employment_type FROM experience_details ed LEFT JOIN employment_types et ON ed.employment_type_id = et.id WHERE ed.user_id = ?', [row.user_id]);
         const [docs] = await pool.execute(
             'SELECT * FROM application_documents WHERE user_id = ?', [row.user_id]);
         const [quals] = await pool.execute(

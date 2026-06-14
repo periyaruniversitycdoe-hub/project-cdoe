@@ -7,7 +7,6 @@ const api = axios.create({
   baseURL: API_URL,
   withCredentials: true,
   timeout: 30000,
-  headers: { 'bypass-tunnel-reminder': 'true' },
 })
 
 api.interceptors.request.use((config) => {

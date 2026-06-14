@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Download, Info, LogIn, GraduationCap, Bell, Calendar, BookOpen, X } from 'lucide-react';
+import * as LucideIcons from 'lucide-react';
+import { Bell, X } from 'lucide-react';
 import useAuthStore from '../store/authStore';
 
 const API      = (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api';
@@ -40,6 +41,53 @@ function AnnBadge({ ann }) {
   );
 }
 
+function parseBold(str) {
+  const parts = str.split('**');
+  return parts.map((part, i) => {
+    if (i % 2 === 1) {
+      return <strong key={i}>{part}</strong>;
+    }
+    return part;
+  });
+}
+
+function renderMarkdown(text) {
+  if (!text) return null;
+  const lines = text.split('\n');
+  return lines.map((line, idx) => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('### ')) {
+      return <h5 key={idx} className="fw-bold mt-3 mb-2 text-dark" style={{ fontSize: '14px' }}>{trimmed.replace('### ', '')}</h5>;
+    }
+    if (trimmed.startsWith('## ')) {
+      return <h4 key={idx} className="fw-bold mt-3 mb-2 text-dark" style={{ fontSize: '15px' }}>{trimmed.replace('## ', '')}</h4>;
+    }
+    if (trimmed.startsWith('# ')) {
+      return <h3 key={idx} className="fw-bold mt-3 mb-2 text-dark" style={{ fontSize: '16px' }}>{trimmed.replace('# ', '')}</h3>;
+    }
+    if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+      const bulletText = trimmed.replace(/^[-*]\s+/, '');
+      return (
+        <li key={idx} className="ms-3" style={{ listStyleType: 'disc', fontSize: 13, lineHeight: 1.6 }}>
+          {parseBold(bulletText)}
+        </li>
+      );
+    }
+    if (/^\d+\.\s+/.test(trimmed)) {
+      const listText = trimmed.replace(/^\d+\.\s+/, '');
+      return (
+        <li key={idx} className="ms-3" style={{ listStyleType: 'decimal', fontSize: 13, lineHeight: 1.6 }}>
+          {parseBold(listText)}
+        </li>
+      );
+    }
+    if (trimmed === '') {
+      return <div key={idx} className="my-2" />;
+    }
+    return <p key={idx} className="mb-2" style={{ fontSize: 13, lineHeight: 1.6 }}>{parseBold(trimmed)}</p>;
+  });
+}
+
 export default function StudentHome() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuthStore();
@@ -51,6 +99,11 @@ export default function StudentHome() {
   const [loading,        setLoading]        = useState(true);
   const [showInstructions, setShowInstructions] = useState(false);
   const [announcements,  setAnnouncements]  = useState([]);
+  const [actionButtons,  setActionButtons]  = useState([]);
+  const [quickLinks,     setQuickLinks]     = useState([]);
+  const [contacts,       setContacts]       = useState([]);
+  const [layoutBlocks,   setLayoutBlocks]   = useState([]);
+  const [declarations,   setDeclarations]   = useState([]);
 
   // ── Smart auth: already logged-in → straight to dashboard ──────────
   useEffect(() => {
@@ -59,12 +112,14 @@ export default function StudentHome() {
 
   // ── Fetch all live data ─────────────────────────────────────────────
   const fetchAll = useCallback(async () => {
-    const [settingsRes, notifRes, sessionRes, homeRes, annRes] = await Promise.allSettled([
+    const [settingsRes, notifRes, sessionRes, homeRes, annRes, hmRes, decRes] = await Promise.allSettled([
       axios.get(`${API}/settings`),
       axios.get(`${API}/portal-notifications`),
       axios.get(`${API}/active-session`),
       axios.get(`${API}/portal-home/settings`),
       axios.get(`${API}/portal-home/announcements`),
+      axios.get(`${API}/home-manager/homepage`),
+      axios.get(`${API}/declarations/public`),
     ]);
     if (settingsRes.status === 'fulfilled' && settingsRes.value.data.success)
       setSettings(settingsRes.value.data.data);
@@ -76,6 +131,15 @@ export default function StudentHome() {
       setHomeSettings(homeRes.value.data.data || {});
     if (annRes.status === 'fulfilled' && annRes.value.data.success)
       setAnnouncements(annRes.value.data.data || []);
+    if (hmRes.status === 'fulfilled' && hmRes.value.data.success) {
+      const hm = hmRes.value.data.data;
+      setActionButtons(hm.action_buttons || []);
+      setQuickLinks(hm.quick_links || []);
+      setContacts(hm.contacts || []);
+      setLayoutBlocks(hm.layout || []);
+    }
+    if (decRes.status === 'fulfilled' && decRes.value.data.success)
+      setDeclarations(decRes.value.data.data || []);
     setLoading(false);
   }, []);
 
@@ -86,6 +150,14 @@ export default function StudentHome() {
     return () => clearInterval(interval);
   }, [fetchAll]);
 
+  // SSE: immediately refetch when admin changes notifications/declarations
+  useEffect(() => {
+    const base = import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000';
+    const es = new EventSource(`${base}/api/home-data/events`);
+    es.addEventListener('home-data-updated', fetchAll);
+    return () => es.close();
+  }, [fetchAll]);
+
   // ── Helpers ─────────────────────────────────────────────────────────
   const logoUrl  = (p) => !p ? '/images/pu_logo.png' : p.startsWith('/uploads') ? (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + p : p;
   const logo2Url = (p) => !p ? null : p.startsWith('/uploads') ? (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + p : p;
@@ -93,7 +165,6 @@ export default function StudentHome() {
   const registrationOpen = sessionStatus?.registration_open;
   const admissionNotifs  = notifications.filter(n => n.type === 'notification');
   const importantDates   = notifications.filter(n => n.type === 'date');
-  const guidelines       = notifications.filter(n => n.type === 'guideline');
 
   const yr      = new Date().getFullYear();
   const yrRange = `${yr} - ${String(yr + 1).slice(-2)}`;
@@ -103,6 +174,26 @@ export default function StudentHome() {
   const statusText     = homeSettings.admission_status_text || null;
   const showProspectus = !!homeSettings.show_prospectus_btn;
   const prospectusUrl  = `${API}/portal-home/prospectus/download`;
+
+  // Resolve a lucide icon by name string (falls back to a simple arrow span)
+  const resolveIcon = (iconName, size = 15) => {
+    if (!iconName) return null;
+    const Icon = LucideIcons[iconName];
+    return Icon ? <Icon size={size} /> : null;
+  };
+
+  // Handle dynamic action button click
+  const handleBtnClick = (btn) => {
+    if (btn.btn_type === 'apply_now')            navigate('/register');
+    else if (btn.btn_type === 'applicant_login') navigate('/login');
+    else if (btn.btn_type === 'download_prospectus') window.open(prospectusUrl, '_blank');
+    else if (btn.btn_type === 'instruction')     setShowInstructions(true);
+    else if (btn.url)                            window.open(btn.url, '_blank');
+  };
+
+  // Compute which layout blocks are active, in order
+  const activeBlocks = layoutBlocks.filter(b => b.is_active).map(b => b.block_key);
+  const isBlockVisible = (key) => activeBlocks.length === 0 || activeBlocks.includes(key);
 
   /* ── inline style objects ──────────────────────────────────────────── */
   const S = {
@@ -187,29 +278,39 @@ export default function StudentHome() {
 
           <span style={S.admTitle}>Admission for the year {yrRange}</span>
 
-          {/* 4 action buttons */}
+          {/* Dynamic action buttons from Home Manager */}
           <div style={S.btnRow}>
-            {showProspectus && (
-              <a href={prospectusUrl} download style={{ textDecoration: 'none' }}>
-                <button style={S.btn('#009688')}>
-                  <Download size={15} /> Download Prospectus
+            {actionButtons.length > 0 ? actionButtons.map(btn => {
+              const isProspectus = btn.btn_type === 'download_prospectus';
+              const disabled = isProspectus && !showProspectus;
+              return (
+                <button
+                  key={btn.id}
+                  style={{ ...S.btn(btn.bg_color || '#009688'), color: btn.text_color || '#fff', ...(disabled ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
+                  onClick={() => !disabled && handleBtnClick(btn)}
+                  disabled={disabled}
+                >
+                  {resolveIcon(btn.icon)} {btn.name}
                 </button>
-              </a>
+              );
+            }) : (
+              /* Fallback static buttons when table not yet seeded */
+              <>
+                <button style={{ ...S.btn('#009688'), opacity: showProspectus ? 1 : 0.55, cursor: showProspectus ? 'pointer' : 'not-allowed' }}
+                  onClick={() => showProspectus && window.open(prospectusUrl, '_blank')} disabled={!showProspectus}>
+                  {resolveIcon('Download')} Download Prospectus
+                </button>
+                <button style={S.btn('#FF8F00')} onClick={() => setShowInstructions(true)}>
+                  {resolveIcon('Info')} Instruction
+                </button>
+                <button style={S.btn('#6A1B9A')} onClick={() => navigate('/register')}>
+                  {resolveIcon('GraduationCap')} Apply Now ➜
+                </button>
+                <button style={S.btn('#2E7D32')} onClick={() => navigate('/login')}>
+                  {resolveIcon('LogIn')} Applicant Login ✓
+                </button>
+              </>
             )}
-            {!showProspectus && (
-              <button style={{ ...S.btn('#009688'), opacity: 0.55, cursor: 'not-allowed' }} disabled>
-                <Download size={15} /> Download Prospectus
-              </button>
-            )}
-            <button style={S.btn('#FF8F00')} onClick={() => setShowInstructions(true)}>
-              <Info size={15} /> Instruction
-            </button>
-            <button style={S.btn('#6A1B9A')} onClick={() => navigate('/register')}>
-              <GraduationCap size={15} /> Apply Now ➜
-            </button>
-            <button style={S.btn('#2E7D32')} onClick={() => navigate('/login')}>
-              <LogIn size={15} /> Applicant Login ✓
-            </button>
           </div>
 
           {/* Status row / Dynamic Marquee */}
@@ -330,7 +431,7 @@ export default function StudentHome() {
           <div style={{ minWidth: 0 }}>
 
             {/* Admission Notifications */}
-            <div style={S.panel}>
+            {isBlockVisible('admission_notifications') && <div style={S.panel}>
               <div style={S.panelHead('#00008B')}>📢 &nbsp;Admission Notifications</div>
               <div style={S.panelBody}>
                 {admissionNotifs.length === 0 ? (
@@ -352,45 +453,131 @@ export default function StudentHome() {
                   </div>
                 ))}
               </div>
-            </div>
+            </div>}
 
-            {/* Guidelines to fill the application */}
-            <div style={S.panel}>
-              <div style={{ backgroundColor: '#f5f5f5', borderBottom: '1px solid #aaa', padding: '9px 14px', borderRadius: '3px 3px 0 0', textAlign: 'center' }}>
-                <strong style={{ fontSize: '15px', textDecoration: 'underline' }}>
-                  Guidelines to fill the application
-                </strong>
+            {/* Guidelines & Declarations (Merged) */}
+            {isBlockVisible('guidelines') && (
+              <div style={S.panel}>
+                <div style={S.panelHead('#00008B')}>📝 &nbsp;Guidelines &amp; Declarations</div>
+                <div style={declarations.length === 0 ? S.panelBody : {}}>
+                  {declarations.length === 0 ? (
+                    <p style={{ color: '#777', fontSize: '13px', textAlign: 'center', margin: '10px 0', fontStyle: 'italic' }}>
+                      Guidelines will be published shortly. Please check back soon.
+                    </p>
+                  ) : (
+                    <div className="declarations-scroll-container" style={{ height: '500px', overflowY: 'auto', scrollBehavior: 'smooth', position: 'relative' }}>
+                      {declarations.map((dec) => (
+                        <div key={dec.id} style={{ borderBottom: '1px solid #ddd', backgroundColor: '#fff', position: 'relative' }}>
+                          <div style={{
+                            position: 'sticky',
+                            top: 0,
+                            backgroundColor: '#f8f9fa',
+                            borderBottom: '2px solid #00008B',
+                            padding: '10px 15px',
+                            fontWeight: 'bold',
+                            fontSize: '14px',
+                            color: '#00008B',
+                            zIndex: 10,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+                          }}>
+                            <span>📌</span> {dec.title}
+                          </div>
+                          
+                          <div style={{ padding: '15px 20px' }}>
+                            <div className="declaration-markdown-content" style={{ color: '#333' }}>
+                              {renderMarkdown(dec.declaration_content)}
+                            </div>
+
+                            {dec.attachments && dec.attachments.length > 0 && (
+                              <div style={{ marginTop: '16px', borderTop: '1px dashed #ccc', paddingTop: '12px' }}>
+                                <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#555', marginBottom: '8px' }}>
+                                  📎 Linked Attachments:
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '10px' }}>
+                                  {dec.attachments.map((att) => {
+                                    const isPdf = att.file_type?.includes('pdf') || att.original_name?.toLowerCase().endsWith('.pdf');
+                                    const isDoc = att.file_type?.includes('word') || att.original_name?.toLowerCase().endsWith('.doc') || att.original_name?.toLowerCase().endsWith('.docx');
+                                    const isImg = att.file_type?.includes('image') || /\.(jpg|jpeg|png)$/i.test(att.original_name);
+                                    
+                                    const downloadUrl = `${API}/declarations/attachments/download/${att.id}`;
+                                    
+                                    return (
+                                      <div key={att.id} style={{
+                                        border: '1px solid #e0e0e0',
+                                        borderRadius: '6px',
+                                        padding: '10px',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        justifyContent: 'space-between',
+                                        backgroundColor: '#fafafa',
+                                        fontSize: '12px'
+                                      }}>
+                                        <div>
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', color: '#333', marginBottom: '4px' }}>
+                                            {resolveIcon(isPdf ? 'FileText' : isImg ? 'Image' : 'FileText', 14)}
+                                            <span className="text-truncate" style={{ maxWidth: '160px', display: 'inline-block' }} title={att.original_name}>{att.original_name}</span>
+                                          </div>
+                                          <div style={{ color: '#666', fontSize: '10px' }}>
+                                            Size: {(att.file_size / 1024 / 1024).toFixed(2)} MB
+                                          </div>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
+                                          <a href={downloadUrl} target="_blank" rel="noreferrer" style={{
+                                            flex: 1,
+                                            textAlign: 'center',
+                                            padding: '4px 8px',
+                                            backgroundColor: '#00008B',
+                                            color: '#fff',
+                                            borderRadius: '4px',
+                                            textDecoration: 'none',
+                                            fontWeight: 'bold',
+                                            fontSize: '11px',
+                                            cursor: 'pointer'
+                                          }}>
+                                            Download
+                                          </a>
+                                          {(isPdf || isImg) && (
+                                            <a href={downloadUrl} target="_blank" rel="noreferrer" style={{
+                                              flex: 1,
+                                              textAlign: 'center',
+                                              padding: '4px 8px',
+                                              backgroundColor: '#fff',
+                                              color: '#00008B',
+                                              border: '1px solid #00008B',
+                                              borderRadius: '4px',
+                                              textDecoration: 'none',
+                                              fontWeight: 'bold',
+                                              fontSize: '11px',
+                                              cursor: 'pointer'
+                                            }}>
+                                              Preview
+                                            </a>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
-              <div style={S.panelBody}>
-                {guidelines.length > 0 ? (
-                  <ol style={{ paddingLeft: '20px', lineHeight: '2.1', fontSize: '14px', margin: 0 }}>
-                    {guidelines.map(g => (
-                      <li key={g.id}><strong>{g.title}</strong>{g.content ? ` — ${g.content}` : ''}</li>
-                    ))}
-                  </ol>
-                ) : (
-                  <ol style={{ paddingLeft: '20px', lineHeight: '2.2', fontSize: '14px', margin: 0 }}>
-                    <li>Read all instructions carefully before filling the application form.</li>
-                    <li>Candidates must possess a <strong>Master's Degree</strong> with min. 55% marks (50% for SC/ST/OBC).</li>
-                    <li>NET / SLET / GATE qualified candidates are eligible for direct admission.</li>
-                    <li>Part-Time applicants must submit proof of employment (min. 2 years continuous service).</li>
-                    <li>Fill all mandatory fields. Incomplete applications will not be considered.</li>
-                    <li>Upload clear scanned copies of all required documents (PDF / JPG / PNG, max 5 MB).</li>
-                    <li>The application fee once paid is <strong>non-refundable</strong>.</li>
-                    <li>Verify all details carefully before final submission — no edits after submission.</li>
-                    <li>Print the submitted form and payment receipt for future reference.</li>
-                    <li>Refer to the official <strong>Prospectus</strong> for full eligibility criteria and fee structure.</li>
-                  </ol>
-                )}
-              </div>
-            </div>
+            )}
           </div>
 
           {/* ── RIGHT ───────────────────────────────────────────── */}
           <div style={{ maxWidth: '340px', width: '100%' }}>
 
             {/* Important Dates */}
-            <div style={S.panel}>
+            {isBlockVisible('important_dates') && <div style={S.panel}>
               <div style={S.panelHead('#B71C1C')}>📅 &nbsp;Important Dates</div>
               <div style={S.panelBody}>
                 {importantDates.length === 0 ? (
@@ -407,37 +594,66 @@ export default function StudentHome() {
                   </div>
                 ))}
               </div>
-            </div>
+            </div>}
 
-            {/* Quick Links */}
+            {/* Quick Links — dynamic */}
+            {isBlockVisible('quick_links') && (
             <div style={S.panel}>
               <div style={S.panelHead('#2E7D32')}>🔗 &nbsp;Quick Links</div>
               <div style={{ padding: '6px 0' }}>
-                {[
-                  { label: 'Apply Now (New Application)', action: () => navigate('/register'),        color: '#6A1B9A' },
-                  { label: 'Existing Applicant Login',    action: () => navigate('/login'),           color: '#2E7D32' },
-                  { label: 'Forgot Password',             action: () => navigate('/forgot-password'), color: '#E65100' },
-                  showProspectus && { label: 'Download Prospectus', action: () => window.open(prospectusUrl, '_blank'), color: '#009688' },
-                ].filter(Boolean).map(({ label, action, color }) => (
-                  <div key={label} onClick={action}
-                    style={{ padding: '9px 14px', borderBottom: '1px solid #f0f0f0', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color, fontWeight: '600', transition: 'background .12s' }}
-                    onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f5f5f5')}
-                    onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
-                    <span style={{ fontSize: '11px' }}>▶</span> {label}
-                  </div>
-                ))}
+                {quickLinks.length > 0 ? quickLinks.map(link => {
+                  const handleClick = () => {
+                    if (!link.url) return;
+                    if (link.link_type === 'external') window.open(link.url, '_blank');
+                    else navigate(link.url);
+                  };
+                  return (
+                    <div key={link.id} onClick={handleClick}
+                      style={{ padding: '9px 14px', borderBottom: '1px solid #f0f0f0', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: link.color || '#6A1B9A', fontWeight: '600', transition: 'background .12s' }}
+                      onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f5f5f5')}
+                      onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
+                      <span style={{ fontSize: '11px' }}>▶</span> {link.name}
+                    </div>
+                  );
+                }) : (
+                  /* Fallback */
+                  [
+                    { label: 'Apply Now (New Application)', action: () => navigate('/register'),        color: '#6A1B9A' },
+                    { label: 'Existing Applicant Login',    action: () => navigate('/login'),           color: '#2E7D32' },
+                    { label: 'Forgot Password',             action: () => navigate('/forgot-password'), color: '#E65100' },
+                    showProspectus && { label: 'Download Prospectus', action: () => window.open(prospectusUrl, '_blank'), color: '#009688' },
+                  ].filter(Boolean).map(({ label, action, color }) => (
+                    <div key={label} onClick={action}
+                      style={{ padding: '9px 14px', borderBottom: '1px solid #f0f0f0', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color, fontWeight: '600', transition: 'background .12s' }}
+                      onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f5f5f5')}
+                      onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
+                      <span style={{ fontSize: '11px' }}>▶</span> {label}
+                    </div>
+                  ))
+                )}
               </div>
             </div>
+            )}
 
-            {/* Contact */}
+            {/* Contact — dynamic */}
+            {isBlockVisible('contact') && (
             <div style={S.panel}>
               <div style={S.panelHead('#37474F')}>📞 &nbsp;Contact Us</div>
               <div style={{ ...S.panelBody, fontSize: '13px', lineHeight: '1.9' }}>
-                <div><strong>Email:</strong>&nbsp;{settings?.contact_email || 'admissions@periyaruniversity.ac.in'}</div>
-                <div><strong>Phone:</strong>&nbsp;{settings?.contact_phone || '0427-2345766'}</div>
-                <div><strong>Address:</strong>&nbsp;{settings?.header_line3 || 'Salem – 636 011, Tamil Nadu, India'}</div>
+                {contacts.length > 0 ? contacts.map(c => (
+                  <div key={c.id}>
+                    <strong>{c.label || c.contact_type}:</strong>&nbsp;{c.value}
+                  </div>
+                )) : (
+                  <>
+                    <div><strong>Email:</strong>&nbsp;{settings?.contact_email || 'admissions@periyaruniversity.ac.in'}</div>
+                    <div><strong>Phone:</strong>&nbsp;{settings?.contact_phone || '0427-2345766'}</div>
+                    <div><strong>Address:</strong>&nbsp;{settings?.header_line3 || 'Salem – 636 011, Tamil Nadu, India'}</div>
+                  </>
+                )}
               </div>
             </div>
+            )}
           </div>
         </div>
       </main>

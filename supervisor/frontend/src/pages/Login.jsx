@@ -1,15 +1,26 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useSettings } from '../context/SettingsContext';
 import toast from 'react-hot-toast';
 import { Eye, EyeOff, GraduationCap, Lock, Mail } from 'lucide-react';
 
 export default function Login() {
   const { login } = useAuth();
+  const { settings } = useSettings();
   const navigate = useNavigate();
   const [form, setForm] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [showPwd, setShowPwd] = useState(false);
+
+  const uniName = settings.university_name_en || settings.university_name_english || 'Periyar University';
+  const uploadsBase = import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001';
+  const logoSrc = settings.logo || settings.logo_url
+    ? (settings.logo || settings.logo_url).startsWith('http')
+      ? (settings.logo || settings.logo_url)
+      : `${uploadsBase}${settings.logo || settings.logo_url}`
+    : null;
+  const copyrightText = settings.copyright_text || `© ${new Date().getFullYear()} ${uniName}`;
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -32,10 +43,12 @@ export default function Login() {
         {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: 36 }}>
           <div style={{ width: 72, height: 72, borderRadius: 20, background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(10px)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16, border: '1px solid rgba(255,255,255,0.2)' }}>
-            <GraduationCap size={36} color="#fff" />
+            {logoSrc
+              ? <img src={logoSrc} alt="Logo" style={{ width: 52, height: 52, objectFit: 'contain' }} />
+              : <GraduationCap size={36} color="#fff" />}
           </div>
           <h1 style={{ fontSize: 24, fontWeight: 800, color: '#fff', margin: 0 }}>Supervisor Portal</h1>
-          <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', marginTop: 6 }}>Periyar University — PhD Research Management</p>
+          <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', marginTop: 6 }}>{uniName} — PhD Research Management</p>
         </div>
 
         {/* Card */}
@@ -90,7 +103,7 @@ export default function Login() {
         </div>
 
         <p style={{ textAlign: 'center', color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 24 }}>
-          © 2025 Periyar University · PhD ERP System
+          {copyrightText}
         </p>
       </div>
     </div>

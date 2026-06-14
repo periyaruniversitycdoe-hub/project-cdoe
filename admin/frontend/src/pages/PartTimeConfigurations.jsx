@@ -77,7 +77,7 @@ const PartTimeConfigurations = () => {
   const viewGlobalDoc = () => {
     if (!globalDoc) return;
     setPreviewType(globalDoc.document_type);
-    setPreviewUrl(`(import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api/part-time-configurations/global-guidance/preview?token=${localStorage.getItem('adminToken')}`);
+    setPreviewUrl(`${API}/global-guidance/preview?token=${localStorage.getItem('adminToken')}`);
   };
 
   const saveCategoryEdit = async () => {

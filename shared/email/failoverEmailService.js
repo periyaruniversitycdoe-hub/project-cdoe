@@ -187,6 +187,17 @@ async function _sendViaBrevo({ to, subject, html, text, attachments }) {
 
     if (attachments && attachments.length > 0) {
         payload.attachment = attachments.map(att => {
+            // Inline CID attachment (used for embedded images like logos)
+            if (att.cid) {
+                let content = att.content;
+                if (!content && att.path) {
+                    try {
+                        const rp = path.resolve(att.path);
+                        if (fs.existsSync(rp)) content = fs.readFileSync(rp).toString('base64');
+                    } catch (_) {}
+                }
+                if (content) return { content, name: att.filename || 'image.png', contentId: att.cid };
+            }
             if (att.content && att.filename) return { content: att.content, name: att.filename };
             if (att.path) {
                 try {

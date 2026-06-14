@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import React, { useState, useEffect, useRef } from 'react';
+import { useForm, Controller } from 'react-hook-form';
 import axios from 'axios';
 import useAuthStore from '../store/authStore';
 import toast from 'react-hot-toast';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import Header from '../components/Header';
-import { Save, Send, ChevronRight, ChevronLeft, CheckCircle, ArrowLeft, Eye, ChevronDown, ChevronUp } from 'lucide-react';
+import { Save, Send, ChevronRight, ChevronLeft, CheckCircle, ArrowLeft, Eye, ChevronDown, ChevronUp, XCircle } from 'lucide-react';
+import SearchableSelect from '../components/SearchableSelect';
 
 const API       = import.meta.env.VITE_API_URL || (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '/api';
 const ADMIN_API = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
@@ -184,7 +185,19 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
   const token = isImpersonating ? propStudentToken : storeToken;
   const adminToken = isAdminMode ? (localStorage.getItem('adminToken') || '') : null;
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [step, setStep] = useState(0);
+
+  useEffect(() => {
+    const stepParam = searchParams.get('step');
+    if (stepParam !== null) {
+      const stepIdx = parseInt(stepParam, 10);
+      if (!isNaN(stepIdx) && stepIdx >= 0 && stepIdx < STEPS.length) {
+        setStep(stepIdx);
+      }
+    }
+  }, [searchParams]);
+
   const [partTimeMapping, setPartTimeMapping] = useState({});
   const [dropdowns, setDropdowns] = useState({});
   const [photos, setPhotos] = useState({});
@@ -223,7 +236,7 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
     integrated: false
   });
 
-  const { register, handleSubmit, watch, getValues, reset, setValue, clearErrors, formState: { errors } } = useForm({
+  const { register, handleSubmit, watch, getValues, reset, setValue, clearErrors, control, formState: { errors } } = useForm({
     defaultValues: {
       user_id: user?.id,
       department_id: '',
@@ -254,17 +267,18 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
       has_integrated: false,
       diploma: {
         level: 'Diploma', degree_id: '', specialization_id: '', specialization_other: '', institution_name: '',
-        university_name: '', university_type_id: '', passing_month: '', passing_year: '',
+        university_name: '', university_type_id: '', passing_month: '', passing_year: '', start_year: '', completion_year: '',
         score_type: 'Percentage', score_value: ''
       },
       mphil: {
         level: 'M.Phil', degree_id: '', degree_name: '', specialization_id: '', institution_name: '',
-        university_name: '', university_type_id: '', passing_month: '', passing_year: '',
-        score_type: 'Percentage', score_value: ''
+        university_name: '', university_type_id: '', passing_month: '', passing_year: '', start_year: '', completion_year: '',
+        score_type: 'Percentage', score_value: '', cgpa_scale: '',
+        faculty_id: '', faculty_name: '', discipline_id: '', discipline_name: '', specialization_master_id: '', specialization_master_name: ''
       },
       integrated: {
         level: 'Integrated', degree_id: '', degree_name: '', degree_name_other: '', specialization_id: '', institution_name: '',
-        university_name: '', university_type_id: '', passing_month: '', passing_year: '',
+        university_name: '', university_type_id: '', passing_month: '', passing_year: '', start_year: '', completion_year: '',
         score_type: 'Percentage', score_value: '', registration_number: '', upload_mode: 'Consolidated'
       },
       id_type: 'Aadhaar No',
@@ -274,13 +288,15 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
         { level: 'HSC', institution_name: '', board_id: '', other_board_name: '', passing_month: '', passing_year: '', percentage: '' }
       ],
       higher_education: [
-        { level: 'UG', degree_id: '', specialization_id: '', specialization_other: '', institution_name: '', university_name: '', university_type_id: '', passing_month: '', passing_year: '', score_type: 'Percentage', score_value: '' },
-        { level: 'PG', degree_id: '', degree_name: '', specialization_id: '', institution_name: '', university_name: '', university_type_id: '', passing_month: '', passing_year: '', score_type: 'Percentage', score_value: '' }
+        { level: 'UG', degree_id: '', specialization_id: '', specialization_other: '', institution_name: '', university_name: '', university_type_id: '', passing_month: '', passing_year: '', start_year: '', completion_year: '', score_type: 'Percentage', score_value: '', cgpa_scale: '', faculty_id: '', faculty_name: '', discipline_id: '', discipline_name: '', specialization_master_id: '', specialization_master_name: '' },
+        { level: 'PG', degree_id: '', degree_name: '', specialization_id: '', institution_name: '', university_name: '', university_type_id: '', passing_month: '', passing_year: '', start_year: '', completion_year: '', score_type: 'Percentage', score_value: '', cgpa_scale: '', faculty_id: '', faculty_name: '', discipline_id: '', discipline_name: '', specialization_master_id: '', specialization_master_name: '' }
       ],
       experience_details: [],
+      declarationAccepted: false,
     }
   });
 
+  const declarationAccepted = watch('declarationAccepted');
   const selectedDeptId      = watch('department_id');
   const selectedProgId      = watch('program_offered_id');
   const category            = watch('category');
@@ -299,13 +315,15 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
   const isPhysicallyChallenged = watch('is_physically_challenged');
 
   // Module 2: watch timeline fields for real-time validation
-  const sslcPassingYear      = watch('school_education.0.passing_year');
-  const hscPassingYear       = watch('school_education.1.passing_year');
-  const ugStartYear          = watch('higher_education.0.start_year');
-  const ugPassingYear        = watch('higher_education.0.passing_year');
-  const pgStartYear          = watch('higher_education.1.start_year');
-  const pgPassingYear        = watch('higher_education.1.passing_year');
-  const integratedStartYear  = watch('integrated.start_year');
+  const sslcPassingYear           = watch('school_education.0.passing_year');
+  const hscPassingYear            = watch('school_education.1.passing_year');
+  const ugStartYear               = watch('higher_education.0.start_year');
+  const ugCompletionYear          = watch('higher_education.0.completion_year');
+  const pgStartYear               = watch('higher_education.1.start_year');
+  const pgCompletionYear          = watch('higher_education.1.completion_year');
+  const mphilPassingYear          = watch('mphil.passing_year');
+  const integratedStartYear       = watch('integrated.start_year');
+  const integratedCompletionYear  = watch('integrated.completion_year');
   const ugMarkType          = watch('ug_mark_statement_type');
   const pgMarkType          = watch('pg_mark_statement_type');
   const diplomaMarkType     = watch('diploma_mark_statement_type');
@@ -326,32 +344,67 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
   // Real-time Community Consolidation & Eligibility Engine watches
   const selectedCommunityName = watch('community');
   const pgScoreVal = watch('higher_education.1.score_value');
+  const pgScoreType = watch('higher_education.1.score_type');
+  const pgCgpaScale = watch('higher_education.1.cgpa_scale');
   const integratedScoreVal = watch('integrated.score_value');
+  const integratedScoreType = watch('integrated.score_type');
 
   const selectedCommunityObj = (dropdowns.communities || []).find(c => c.name === selectedCommunityName);
   const isValidationApplicable = hasPg || hasIntegrated;
 
   const getEligibilityInfo = () => {
     if (!isValidationApplicable || !selectedCommunityObj || selectedCommunityObj.pg_min_mark == null) {
-      return { isEligible: true, requiredPercentage: null, enteredPercentage: null };
+      return { isEligible: true, requiredValue: null, enteredValue: null, isCgpa: false, normalizedValue: null, cgpaScaleUsed: null };
     }
 
     const minRequired = parseFloat(selectedCommunityObj.pg_min_mark);
-    const scoreVal = hasPg ? pgScoreVal : integratedScoreVal;
-    const score = parseFloat(scoreVal);
+    const scoreVal  = hasPg ? pgScoreVal  : integratedScoreVal;
+    const scoreType = hasPg ? pgScoreType : integratedScoreType;
+    const score     = parseFloat(scoreVal);
+    const isCgpa    = scoreType === 'CGPA';
 
-    if (isNaN(score)) {
-      return { isEligible: true, requiredPercentage: minRequired, enteredPercentage: null };
+    if (isCgpa) {
+      const minCgpa = minRequired / 10;
+
+      if (hasPg) {
+        // Use normalized CGPA (scale-aware) for PG eligibility
+        const scale         = parseFloat(pgCgpaScale);
+        const normalizedVal = (!isNaN(score) && !isNaN(scale) && scale > 0)
+          ? parseFloat(((score / scale) * 10).toFixed(2))
+          : NaN;
+        if (isNaN(score)) {
+          return { isEligible: true, requiredValue: minCgpa, enteredValue: null, isCgpa: true, normalizedValue: null, cgpaScaleUsed: isNaN(scale) ? null : scale };
+        }
+        return {
+          isEligible: !isNaN(normalizedVal) ? normalizedVal >= minCgpa : score >= minCgpa,
+          requiredValue: minCgpa,
+          enteredValue: score,
+          normalizedValue: !isNaN(normalizedVal) ? normalizedVal : null,
+          cgpaScaleUsed: isNaN(scale) ? null : scale,
+          isCgpa: true
+        };
+      }
+
+      // Integrated — no scale support (not in scope)
+      if (isNaN(score)) {
+        return { isEligible: true, requiredValue: minCgpa, enteredValue: null, isCgpa: true, normalizedValue: null, cgpaScaleUsed: null };
+      }
+      return { isEligible: score >= minCgpa, requiredValue: minCgpa, enteredValue: score, isCgpa: true, normalizedValue: null, cgpaScaleUsed: null };
     }
 
-    return {
-      isEligible: score >= minRequired,
-      requiredPercentage: minRequired,
-      enteredPercentage: score
-    };
+    if (isNaN(score)) {
+      return { isEligible: true, requiredValue: minRequired, enteredValue: null, isCgpa: false, normalizedValue: null, cgpaScaleUsed: null };
+    }
+
+    return { isEligible: score >= minRequired, requiredValue: minRequired, enteredValue: score, isCgpa: false, normalizedValue: null, cgpaScaleUsed: null };
   };
 
-  const { isEligible, requiredPercentage, enteredPercentage } = getEligibilityInfo();
+  const { isEligible, requiredValue, enteredValue, isCgpa, normalizedValue, cgpaScaleUsed } = getEligibilityInfo();
+
+  // Academic Hierarchy state (Faculty → Discipline → Specialization)
+  const [allFaculties,       setAllFaculties]       = useState([]);
+  const [allDisciplines,     setAllDisciplines]     = useState([]);
+  const [allSpecializations, setAllSpecializations] = useState([]);
 
   const [ptCategories, setPtCategories] = useState([]);
   const [ptRoles, setPtRoles] = useState([]);
@@ -365,8 +418,48 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
   // Module 1: Exam Centre Configuration (dynamic preference count)
   const [examCentreConfig, setExamCentreConfig] = useState({ max_preferences: 2, status: 'active' });
 
+  // Module 3: Academic Timeline Engine — admin-configured rules
+  const [timelineRules, setTimelineRules] = useState({ transitions: [], durations: [] });
+
   // Module 2: Academic Timeline Validation errors
   const [timelineErrors, setTimelineErrors] = useState({});
+
+  // ── Module 3: Dynamic Year Filtering ──────────────────────────────────────
+  // Returns a subset of YEAR_OPTIONS clamped to [minYear, maxYear].
+  // When a bound is null the corresponding edge is unclamped.
+  const getFilteredYears = (minYear, maxYear) =>
+    YEAR_OPTIONS.filter(y => (minYear == null || y >= minYear) && (maxYear == null || y <= maxYear));
+
+  const tlRule  = (key) => timelineRules.transitions.find(t => t.transition_key === key && t.status === 'active');
+  const durRule = (key) => timelineRules.durations.find(d => d.course_key    === key && d.status === 'active');
+
+  const gapBounds = (prevYear, ruleKey) => {
+    const r = tlRule(ruleKey);
+    if (!r || !prevYear) return [null, null];
+    const base = parseInt(prevYear);
+    return [
+      base + parseInt(r.min_gap_years),
+      parseInt(r.max_gap_years) > 0 ? base + parseInt(r.max_gap_years) : null,
+    ];
+  };
+  const durBounds = (startYear, ruleKey) => {
+    const r = durRule(ruleKey);
+    if (!r || !startYear) return [null, null];
+    const base = parseInt(startYear);
+    return [
+      base + parseInt(r.min_duration),
+      parseInt(r.max_duration) > 0 ? base + parseInt(r.max_duration) : null,
+    ];
+  };
+
+  const hscYearOptions   = getFilteredYears(...gapBounds(sslcPassingYear,     'sslc_hsc'));
+  const ugStartOptions   = getFilteredYears(...gapBounds(hscPassingYear,      'hsc_ug'));
+  const ugEndOptions     = getFilteredYears(...durBounds(ugStartYear,         'ug'));
+  const pgStartOptions   = getFilteredYears(...gapBounds(ugCompletionYear,    'ug_pg'));
+  const pgEndOptions     = getFilteredYears(...durBounds(pgStartYear,         'pg'));
+  const mphilYearOptions = getFilteredYears(...gapBounds(pgCompletionYear,    'pg_mphil'));
+  const intStartOptions  = getFilteredYears(...gapBounds(hscPassingYear,      'hsc_ug'));
+  const intEndOptions    = getFilteredYears(...durBounds(integratedStartYear, 'integrated'));
 
   // Module 1: Load admin-configured exam centre preference count
   useEffect(() => {
@@ -375,44 +468,87 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
       .catch(() => {}); // fallback to default 2
   }, []);
 
-  // Module 2: Real-time Academic Timeline Validation Engine
+  // Module 3: Load admin-configured academic timeline rules once
+  useEffect(() => {
+    axios.get(`${API}/timeline-rules`)
+      .then(r => { if (r.data.success && r.data.data) setTimelineRules(r.data.data); })
+      .catch(() => {}); // fallback to empty — built-in logic takes over
+  }, []);
+
+  // Academic Hierarchy: load Faculty / Discipline / Specialization once
+  useEffect(() => {
+    axios.get(`${API}/academic-hierarchy/all`)
+      .then(r => {
+        if (r.data.success && r.data.data) {
+          setAllFaculties(r.data.data.faculties || []);
+          setAllDisciplines(r.data.data.disciplines || []);
+          setAllSpecializations(r.data.data.specializations || []);
+        }
+      })
+      .catch(() => {}); // graceful fallback — dropdowns remain empty
+  }, []);
+
+  // Module 2 + 3: Real-time Academic Timeline Validation Engine (admin-rule-driven)
   useEffect(() => {
     const errs = {};
     const yr = (v) => parseInt(v);
     const ok = (v) => v && !isNaN(parseInt(v));
+    const tlRule = (key) => timelineRules.transitions.find(t => t.transition_key === key && t.status === 'active');
+    const durRule = (key) => timelineRules.durations.find(d => d.course_key === key && d.status === 'active');
 
-    if (ok(sslcPassingYear) && ok(hscPassingYear)) {
-      if (yr(hscPassingYear) <= yr(sslcPassingYear)) {
-        errs.hsc = '+2 completion year must be greater than 10th completion year.';
+    const checkGap = (from, to, ruleKey, errKey, label) => {
+      if (!ok(from) || !ok(to)) return;
+      const diff = yr(to) - yr(from);
+      const rule = tlRule(ruleKey);
+      if (rule) {
+        const min = parseInt(rule.min_gap_years), max = parseInt(rule.max_gap_years);
+        if (diff < min)
+          errs[errKey] = `Invalid Academic Timeline: ${label} gap must be at least ${min} year(s).`;
+        else if (max > 0 && diff > max)
+          errs[errKey] = `Invalid Academic Timeline: ${label} gap must be at most ${max} year(s).`;
+      } else {
+        if (yr(to) < yr(from))
+          errs[errKey] = `Invalid Academic Timeline: ${label} year cannot go backward.`;
       }
-    }
-    if (ok(hscPassingYear) && ok(ugStartYear)) {
-      if (yr(ugStartYear) < yr(hscPassingYear)) {
-        errs.ugStart = 'UG start year cannot be earlier than +2 completion year.';
+    };
+
+    const checkDuration = (start, end, ruleKey, errKey, label) => {
+      if (!ok(start) || !ok(end)) return;
+      const span = yr(end) - yr(start);
+      const rule = durRule(ruleKey);
+      if (rule) {
+        const min = parseInt(rule.min_duration), max = parseInt(rule.max_duration);
+        if (span < min)
+          errs[errKey] = `Invalid Academic Timeline: ${label} must be at least ${min} year(s).`;
+        else if (max > 0 && span > max)
+          errs[errKey] = `Invalid Academic Timeline: ${label} must be at most ${max} year(s).`;
+      } else {
+        if (yr(end) <= yr(start))
+          errs[errKey] = `Invalid Academic Timeline: ${label} completion year must be after start year.`;
       }
-    }
-    if (ok(ugStartYear) && ok(ugPassingYear)) {
-      if (yr(ugPassingYear) <= yr(ugStartYear)) {
-        errs.ugEnd = 'UG completion year must be greater than UG start year.';
-      }
-    }
-    if (ok(ugPassingYear) && ok(pgStartYear)) {
-      if (yr(pgStartYear) < yr(ugPassingYear)) {
-        errs.pgStart = 'PG start year cannot be earlier than UG completion year.';
-      }
-    }
-    if (ok(pgStartYear) && ok(pgPassingYear)) {
-      if (yr(pgPassingYear) <= yr(pgStartYear)) {
-        errs.pgEnd = 'PG completion year must be greater than PG start year.';
-      }
-    }
-    if (ok(hscPassingYear) && ok(integratedStartYear)) {
-      if (yr(integratedStartYear) < yr(hscPassingYear)) {
-        errs.intStart = 'Integrated course start year cannot be earlier than +2 completion year.';
-      }
-    }
+    };
+
+    // Transition gap checks
+    checkGap(sslcPassingYear,   hscPassingYear,         'sslc_hsc', 'hsc',      '10th → +2');
+    checkGap(hscPassingYear,    ugStartYear,            'hsc_ug',   'ugStart',  '+2 → UG start');
+    checkGap(ugCompletionYear,  pgStartYear,            'ug_pg',    'pgStart',  'UG → PG start');
+    checkGap(pgCompletionYear,  mphilPassingYear,       'pg_mphil', 'mphil',    'PG → M.Phil');
+    checkGap(hscPassingYear,    integratedStartYear,    'hsc_ug',   'intStart', '+2 → Integrated start');
+
+    // Course duration checks (start → completion)
+    checkDuration(ugStartYear,        ugCompletionYear,        'ug',         'ugEnd',  'UG');
+    checkDuration(pgStartYear,        pgCompletionYear,        'pg',         'pgEnd',  'PG');
+    checkDuration(integratedStartYear, integratedCompletionYear, 'integrated', 'intEnd', 'Integrated');
+
     setTimelineErrors(errs);
-  }, [sslcPassingYear, hscPassingYear, ugStartYear, ugPassingYear, pgStartYear, pgPassingYear, integratedStartYear]);
+  }, [
+    sslcPassingYear, hscPassingYear,
+    ugStartYear, ugCompletionYear,
+    pgStartYear, pgCompletionYear,
+    mphilPassingYear,
+    integratedStartYear, integratedCompletionYear,
+    timelineRules,
+  ]);
 
   // Fetch dynamic part-time categories and global guidance on mount
   useEffect(() => {
@@ -433,9 +569,34 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
     setPreviewUrl(`${API}/part-time/global-guidance/preview?token=${token}`);
   };
 
-  const partTimeCategoryVal    = watch('part_time_category_id');
-  const partTimeDesignationVal = watch('part_time_designation_id');
-  const partTimeAreaVal        = watch('part_time_area');
+  const partTimeCategoryVal       = watch('part_time_category_id');
+  const partTimeDesignationVal    = watch('part_time_designation_id');
+  const partTimeAreaVal           = watch('part_time_area');
+  const partTimeCategoryText      = watch('part_time_category');
+  const partTimeDesignationText   = watch('part_time_designation');
+  const partTimeOthersSpec        = watch('part_time_others_specialization');
+
+  // Self-heal/map category text to ID when options load
+  useEffect(() => {
+    if (partTimeCategoryText && ptCategories.length > 0) {
+      const match = ptCategories.find(c => c.name === partTimeCategoryText);
+      if (match) {
+        setValue('part_time_category_id', match.id);
+      }
+    }
+  }, [partTimeCategoryText, ptCategories, setValue]);
+
+  // Self-heal/map designation text to ID when options load
+  useEffect(() => {
+    if (partTimeDesignationText && ptRoles.length > 0) {
+      const match = ptRoles.find(r => r.name === partTimeDesignationText);
+      if (match) {
+        setValue('part_time_designation_id', match.id);
+      } else {
+        setValue('part_time_designation_id', 'Others');
+      }
+    }
+  }, [partTimeDesignationText, ptRoles, setValue]);
 
   // Fetch roles when category changes & sync Name for DB
   useEffect(() => {
@@ -448,50 +609,51 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
       });
     } else {
       setPtRoles([]);
-      setValue('part_time_category', '');
     }
-    setValue('part_time_designation_id', '');
-    setValue('part_time_designation', '');
-    setValue('part_time_area', '');
-    setValue('part_time_area_id', '');
-    setValue('part_time_district', '');
-    setPtDistricts([]);
   }, [partTimeCategoryVal, ptCategories, setValue]);
 
   // Fetch areas when role changes & sync Role Name for DB
   useEffect(() => {
     if (partTimeDesignationVal) {
-      const role = ptRoles.find(r => String(r.id) === String(partTimeDesignationVal));
-      if (role) setValue('part_time_designation', role.name);
+      if (partTimeDesignationVal !== 'Others') {
+        const role = ptRoles.find(r => String(r.id) === String(partTimeDesignationVal));
+        if (role) setValue('part_time_designation', role.name);
+      }
 
-      axios.get(`${API}/part-time/roles/${partTimeDesignationVal}/areas`).then(res => {
+      let fetchRoleId = partTimeDesignationVal;
+      if (partTimeDesignationVal === 'Others') {
+        // Use the DB-seeded "Others" role's areas (Tamil Nadu + Karnataka)
+        const othersRole = ptRoles.find(r => r.name === 'Others');
+        if (othersRole) {
+          fetchRoleId = othersRole.id;
+        } else {
+          setPtAreas([]);
+          return;
+        }
+      }
+
+      axios.get(`${API}/part-time/roles/${fetchRoleId}/areas`).then(res => {
         if (res.data.success) setPtAreas(res.data.data);
       });
     } else {
       setPtAreas([]);
-      setValue('part_time_designation', '');
     }
-    setValue('part_time_area', '');
-    setValue('part_time_area_id', '');
-    setValue('part_time_district', '');
-    setPtDistricts([]);
   }, [partTimeDesignationVal, ptRoles, setValue]);
 
   // Fetch districts when working-area/state is selected
   useEffect(() => {
     if (!partTimeAreaVal) {
       setPtDistricts([]);
-      setValue('part_time_district', '');
       setValue('part_time_area_id', '');
       return;
     }
     const area = ptAreas.find(a => a.name === partTimeAreaVal);
     if (!area) return;
     setValue('part_time_area_id', area.id);
+
     axios.get(`${API}/part-time/areas/${area.id}/districts`).then(res => {
       if (res.data.success) setPtDistricts(res.data.data || []);
     }).catch(() => setPtDistricts([]));
-    setValue('part_time_district', '');
   }, [partTimeAreaVal, ptAreas, setValue]);
 
   // Fetch session to know if application_open
@@ -667,6 +829,7 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
       setValue('part_time_category', '');
       setValue('part_time_designation_id', '');
       setValue('part_time_designation', '');
+      setValue('part_time_others_specialization', '');
       setValue('part_time_area', '');
       setValue('part_time_area_id', '');
       setValue('part_time_district', '');
@@ -725,10 +888,15 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
               headers: { Authorization: `Bearer ${token}` }
             });
         const data = res.data;
+        const cleanDocPath = (p) => {
+          if (!p) return '';
+          const idx = p.indexOf('uploads/');
+          return idx !== -1 ? p.substring(idx) : p;
+        };
         setAppStatus(data.status);
 
         if (data.qualified_exams && typeof data.qualified_exams === 'string') {
-          try { data.qualified_exams = JSON.parse(data.qualified_exams); } catch(e) {}
+          try { data.qualified_exams = JSON.parse(data.qualified_exams); } catch { console.warn("Failed to parse qualified_exams"); }
         }
 
         // Restore normalized student_qualifications selections + pass dates
@@ -736,12 +904,22 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
           const ids = new Set(data.student_qualifications.map(q => q.qualification_id));
           setSelectedQualIds(ids);
           const dates = {};
+          const qualDocs = {};
           data.student_qualifications.forEach(q => {
             if (q.qual_month || q.qual_year) {
               dates[q.qualification_id] = { month: q.qual_month || '', year: q.qual_year ? String(q.qual_year) : '' };
             }
+            if (q.certificate_path) {
+              qualDocs[`qual_cert_${q.qualification_id}`] = {
+                preview: `${import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000'}/${cleanDocPath(q.certificate_path)}`,
+                isExisting: true
+              };
+            }
           });
           if (Object.keys(dates).length > 0) setQualDates(dates);
+          if (Object.keys(qualDocs).length > 0) {
+            setPhotos(prev => ({ ...prev, ...qualDocs }));
+          }
         }
 
         if (data.dob) {
@@ -768,7 +946,40 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
         if (data.has_mphil === undefined || data.has_mphil === null) data.has_mphil = false;
         if (data.has_integrated === undefined || data.has_integrated === null) data.has_integrated = false;
 
+        // Restore level-specific mark statement types and awaiting flags
+        const ugRow = data.higher_education?.find(h => h.level === 'UG');
+        if (ugRow) {
+          data.ug_mark_statement_type = ugRow.mark_statement_type || 'Individual Mark Statement';
+          data.ug_is_awaiting_final_sem = ugRow.is_awaiting_final_sem ? 1 : 0;
+        }
+        const pgRow = data.higher_education?.find(h => h.level === 'PG');
+        if (pgRow) {
+          data.pg_mark_statement_type = pgRow.mark_statement_type || 'Individual Mark Statement';
+          data.pg_is_awaiting_final_sem = pgRow.is_awaiting_final_sem ? 1 : 0;
+        }
+        const diplomaRow = data.higher_education?.find(h => h.level === 'Diploma') || data.diploma;
+        if (diplomaRow) {
+          data.diploma_mark_statement_type = diplomaRow.mark_statement_type || 'Individual Mark Statement';
+          data.diploma_is_awaiting_final_sem = diplomaRow.is_awaiting_final_sem ? 1 : 0;
+        }
+        const mphilRow = data.higher_education?.find(h => h.level === 'M.Phil') || data.mphil;
+        if (mphilRow) {
+          data.mphil_mark_statement_type = mphilRow.mark_statement_type || 'Individual Mark Statement';
+          data.mphil_is_awaiting_final_sem = mphilRow.is_awaiting_final_sem ? 1 : 0;
+        }
+        const integratedRow = data.higher_education?.find(h => h.level === 'Integrated') || data.integrated;
+        if (integratedRow) {
+          data.integrated_mark_statement_type = integratedRow.mark_statement_type || 'Individual Mark Statement';
+          data.integrated_is_awaiting_final_sem = integratedRow.is_awaiting_final_sem ? 1 : 0;
+        }
+
         reset(data);
+
+        if (data.part_time_area_id) {
+          axios.get(`${API}/part-time/areas/${data.part_time_area_id}/districts`).then(res => {
+            if (res.data.success) setPtDistricts(res.data.data || []);
+          }).catch(() => {});
+        }
 
         // Pre-load districts for existing work experience entries
         if (data.experience_details && data.experience_details.length > 0) {
@@ -801,7 +1012,7 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
         if (data.documents) {
           data.documents.forEach(doc => {
             docs[doc.document_type] = {
-              preview: `${import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000'}/${doc.file_path}`,
+              preview: `${import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000'}/${cleanDocPath(doc.file_path)}`,
               isExisting: true
             };
           });
@@ -1259,14 +1470,14 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
   };
 
   // ── Helpers ──────────────────────────────────────────────────────────────
-  const stateOptions = () =>
-    (states.length > 0 ? states : FALLBACK_STATES.map(s => ({ id: s, state_name: s })))
-      .map(s => <option key={s.id} value={s.state_name}>{s.state_name}</option>);
+  // const stateOptions = () =>
+  //   (states.length > 0 ? states : FALLBACK_STATES.map(s => ({ id: s, state_name: s })))
+  //     .map(s => <option key={s.id} value={s.state_name}>{s.state_name}</option>);
 
-  const districtOptions = (districts) =>
-    districts.length > 0
-      ? districts.map(d => <option key={d.id} value={d.district_name}>{d.district_name}</option>)
-      : FALLBACK_DISTRICTS.map(d => <option key={d} value={d}>{d}</option>);
+  // const districtOptions = (districts) =>
+  //   districts.length > 0
+  //     ? districts.map(d => <option key={d.id} value={d.district_name}>{d.district_name}</option>)
+  //     : FALLBACK_DISTRICTS.map(d => <option key={d} value={d}>{d}</option>);
 
   // ── STEP 1 ───────────────────────────────────────────────────────────────
   const Step1 = () => (
@@ -1310,35 +1521,42 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
                 <label className="form-label fw-semibold">
                   Department <span className="text-danger">*</span>
                 </label>
-                <select
-                  className="form-select form-select-sm"
-                  {...register('department_id')}
-                  disabled={isSubmitted}
-                >
-                  <option value="">Select Department</option>
-                  {departments.map(d => (
-                    <option key={d.id} value={d.id}>{d.name}</option>
-                  ))}
-                </select>
+                <Controller
+                  control={control}
+                  name="department_id"
+                  render={({ field: { onChange, value } }) => (
+                    <SearchableSelect
+                      options={departments}
+                      value={value}
+                      onChange={onChange}
+                      placeholder="Select Department"
+                      disabled={isSubmitted}
+                      error={!!errors.department_id}
+                    />
+                  )}
+                />
               </div>
               <div className="col-md-6">
                 <label className="form-label fw-semibold">
                   Programme Offered <span className="text-danger">*</span>
                 </label>
-                <select
-                  className="form-select form-select-sm"
-                  {...register('program_offered_id')}
-                  disabled={isSubmitted || !selectedDeptId || loadingPrograms}
-                >
-                  <option value="">
-                    {!selectedDeptId ? 'Select Department first' : loadingPrograms ? 'Loading…' : 'Select Programme'}
-                  </option>
-                  {programs.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
+                <Controller
+                  control={control}
+                  name="program_offered_id"
+                  render={({ field: { onChange, value } }) => (
+                    <SearchableSelect
+                      options={programs}
+                      value={value}
+                      onChange={onChange}
+                      placeholder={!selectedDeptId ? 'Select Department first' : loadingPrograms ? 'Loading…' : 'Select Programme'}
+                      disabled={isSubmitted || !selectedDeptId || loadingPrograms}
+                      error={!!errors.program_offered_id}
+                    />
+                  )}
+                />
               </div>
             </div>
+
 
             {/* Eligibility hints — shown after programme is selected */}
             {selectedProgId && (
@@ -1346,7 +1564,7 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
                 <div className="col-md-12">
                   {loadingHints ? (
                     <div className="text-muted small">Loading eligibility…</div>
-                  ) : (eligibilityHints.pg.length > 0 || eligibilityHints.mphil.length > 0 || eligibilityHints.integrated.length > 0) ? (
+                  ) : (eligibilityHints.pg.length > 0 || eligibilityHints.mphil.length > 0) ? (
                     <div className="p-3 rounded-3" style={{ background: '#f0f9ff', border: '1px solid #bae6fd' }}>
                       <div className="fw-semibold mb-2" style={{ fontSize: 12, color: '#0369a1' }}>
                         Eligibility for the selected programme:
@@ -1382,21 +1600,6 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
                             </div>
                           </div>
                         )}
-                        {eligibilityHints.integrated.length > 0 && (
-                          <div className="col-md-4">
-                            <div className="fw-semibold text-primary mb-1" style={{ fontSize: 11 }}>
-                              Eligible Integrated Courses ({eligibilityHints.integrated.length})
-                            </div>
-                            <div style={{ maxHeight: 120, overflowY: 'auto' }}>
-                              {eligibilityHints.integrated.map((c, i) => (
-                                <div key={i} className="d-flex align-items-center gap-1 mb-1">
-                                  <span style={{ width: 5, height: 5, background: '#3b82f6', borderRadius: '50%', flexShrink: 0 }} />
-                                  <span style={{ fontSize: 11 }}>{c}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
                       </div>
                     </div>
                   ) : null}
@@ -1408,7 +1611,25 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
             <div className="row g-3 mb-3">
               <div className="col-md-6">
                 <label className="form-label fw-semibold">Category under which registration is sought <span className="text-danger">*</span></label>
-                <select className="form-select form-select-sm" {...register('category')} disabled={isSubmitted}>
+                <select
+                  className="form-select form-select-sm"
+                  {...register('category')}
+                  onChange={(e) => {
+                    register('category').onChange(e);
+                    if (e.target.value !== 'Part Time') {
+                      setValue('part_time_category_id', '');
+                      setValue('part_time_category', '');
+                      setValue('part_time_designation_id', '');
+                      setValue('part_time_designation', '');
+                      setValue('part_time_others_specialization', '');
+                      setValue('part_time_area', '');
+                      setValue('part_time_area_id', '');
+                      setValue('part_time_district', '');
+                      setPtDistricts([]);
+                    }
+                  }}
+                  disabled={isSubmitted}
+                >
                   <option value="">Select</option>
                   {(dropdowns.categories || FALLBACK_CATEGORIES).map(i => <option key={i.id} value={i.name}>{i.name}</option>)}
                 </select>
@@ -1438,22 +1659,87 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
                   </div>
                   <div className="col-md-6">
                     <label className="form-label fw-semibold">Part-Time Category <span className="text-danger">*</span></label>
-                    <select className="form-select form-select-sm" {...register('part_time_category_id')} disabled={isSubmitted}>
+                    <select
+                      className="form-select form-select-sm"
+                      {...register('part_time_category_id')}
+                      onChange={(e) => {
+                        register('part_time_category_id').onChange(e);
+                        if (!e.target.value) {
+                          setValue('part_time_category', '');
+                        }
+                        setValue('part_time_designation_id', '');
+                        setValue('part_time_designation', '');
+                        setValue('part_time_others_specialization', '');
+                        setValue('part_time_area', '');
+                        setValue('part_time_area_id', '');
+                        setValue('part_time_district', '');
+                        setPtDistricts([]);
+                      }}
+                      disabled={isSubmitted}
+                    >
                       <option value="">Select Part-Time Category</option>
                       {ptCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                   </div>
                   <div className="col-md-6">
                     <label className="form-label fw-semibold">Role / Designation <span className="text-danger">*</span></label>
-                    <select className="form-select form-select-sm" {...register('part_time_designation_id')} disabled={isSubmitted}>
+                    <select
+                      className="form-select form-select-sm"
+                      {...register('part_time_designation_id')}
+                      onChange={(e) => {
+                        register('part_time_designation_id').onChange(e);
+                        if (!e.target.value) {
+                          setValue('part_time_designation', '');
+                          setValue('part_time_others_specialization', '');
+                        } else if (e.target.value === 'Others') {
+                          setValue('part_time_designation', '');
+                        } else {
+                          setValue('part_time_others_specialization', '');
+                        }
+                        setValue('part_time_area', '');
+                        setValue('part_time_area_id', '');
+                        setValue('part_time_district', '');
+                        setPtDistricts([]);
+                      }}
+                      disabled={isSubmitted}
+                    >
                       <option value="">Select Designation</option>
-                      {ptRoles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                      {ptRoles.filter(r => r.name !== 'Others').map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                      {selectedPtCat && (selectedPtCat.name === 'School Teacher' || selectedPtCat.name === 'Non Teacher') && (
+                        <option value="Others">Others</option>
+                      )}
                     </select>
                   </div>
+                  {partTimeDesignationVal === 'Others' && (
+                    <div className="col-md-6">
+                      <label className="form-label fw-semibold">Others Specialization <span className="text-danger">*</span></label>
+                      <input
+                        type="text"
+                        className="form-control form-control-sm"
+                        placeholder="Enter your specialization (e.g. Physics Teacher)"
+                        {...register('part_time_others_specialization', {
+                          required: partTimeDesignationVal === 'Others' ? 'Please enter your specialization' : false
+                        })}
+                        disabled={isSubmitted}
+                      />
+                    </div>
+                  )}
                   <div className="col-md-6">
                     <label className="form-label fw-semibold">Working State <span className="text-danger">*</span></label>
-                    <select className="form-select form-select-sm" {...register('part_time_area')} disabled={isSubmitted || !partTimeDesignationVal}>
-                      <option value="">{!partTimeDesignationVal ? 'Select Designation first' : 'Select Working State'}</option>
+                    <select
+                      className="form-select form-select-sm"
+                      {...register('part_time_area')}
+                      onChange={(e) => {
+                        register('part_time_area').onChange(e);
+                        setValue('part_time_district', '');
+                      }}
+                      disabled={isSubmitted || !partTimeDesignationVal || (partTimeDesignationVal === 'Others' && !partTimeOthersSpec?.trim())}
+                    >
+                      <option value="">{
+                        !partTimeDesignationVal ? 'Select Designation first' :
+                        (partTimeDesignationVal === 'Others' && !partTimeOthersSpec?.trim()) ? 'Enter Others Specialization first' :
+                        'Select Working State'
+                      }</option>
                       {ptAreas.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
                     </select>
                   </div>
@@ -1575,11 +1861,24 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
                         <strong>Selected Community:</strong> <span className="text-dark fw-bold">{selectedCommunityObj.name}</span>
                       </div>
                       <div className="small text-secondary mb-1.5">
-                        <strong>Minimum Required PG Percentage:</strong>{' '}
+                        <strong>Minimum Required PG {isCgpa ? 'CGPA' : 'Percentage'}:</strong>{' '}
                         <span className="text-dark fw-bold">
-                          {selectedCommunityObj.pg_min_mark != null ? `${selectedCommunityObj.pg_min_mark}%` : 'N/A'}
+                          {selectedCommunityObj.pg_min_mark != null
+                            ? isCgpa
+                              ? `${(parseFloat(selectedCommunityObj.pg_min_mark) / 10).toFixed(2)} / 10`
+                              : `${selectedCommunityObj.pg_min_mark}%`
+                            : 'N/A'}
                         </span>
                       </div>
+                      {isCgpa && normalizedValue != null && (
+                        <div className="small text-secondary mb-1.5">
+                          <strong>Your Normalized CGPA:</strong>{' '}
+                          <span className={`fw-bold ${isEligible ? 'text-success' : 'text-danger'}`}>
+                            {normalizedValue.toFixed(2)} / 10
+                          </span>
+                          {cgpaScaleUsed && <span className="text-muted ms-1">({cgpaScaleUsed}-point scale)</span>}
+                        </div>
+                      )}
                       <div className="small text-secondary">
                         <strong>Application Fee:</strong>{' '}
                         {isPhysicallyChallenged === 'Yes' ? (
@@ -1654,17 +1953,37 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
           </div>
           <div className="col-md-6">
             <label className="form-label fw-semibold">State <span className="text-danger">*</span></label>
-            <select className="form-select form-select-sm" {...register('state')} disabled={isSubmitted}>
-              <option value="">Select State</option>
-              {stateOptions()}
-            </select>
+            <Controller
+              control={control}
+              name="state"
+              render={({ field: { onChange, value } }) => (
+                <SearchableSelect
+                  options={states.length > 0 ? states.map(s => ({ id: s.state_name, name: s.state_name })) : FALLBACK_STATES.map(s => ({ id: s, name: s }))}
+                  value={value}
+                  onChange={onChange}
+                  placeholder="Select State"
+                  disabled={isSubmitted}
+                  error={!!errors.state}
+                />
+              )}
+            />
           </div>
           <div className="col-md-6">
             <label className="form-label fw-semibold">District <span className="text-danger">*</span></label>
-            <select className="form-select form-select-sm" {...register('district', { required: true })} disabled={isSubmitted}>
-              <option value="">Select District</option>
-              {districtOptions(commDistricts)}
-            </select>
+            <Controller
+              control={control}
+              name="district"
+              render={({ field: { onChange, value } }) => (
+                <SearchableSelect
+                  options={commDistricts.length > 0 ? commDistricts.map(d => ({ id: d.district_name, name: d.district_name })) : FALLBACK_DISTRICTS.map(d => ({ id: d, name: d }))}
+                  value={value}
+                  onChange={onChange}
+                  placeholder="Select District"
+                  disabled={isSubmitted}
+                  error={!!errors.district}
+                />
+              )}
+            />
             {errors.district && <small className="text-danger d-block">Required</small>}
           </div>
           <div className="col-md-6">
@@ -1704,17 +2023,37 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
           </div>
           <div className="col-md-6">
             <label className="form-label fw-semibold">State <span className="text-danger">*</span></label>
-            <select className="form-select form-select-sm" {...register('perm_state')} disabled={isSubmitted || !!permSameAsComm}>
-              <option value="">Select State</option>
-              {stateOptions()}
-            </select>
+            <Controller
+              control={control}
+              name="perm_state"
+              render={({ field: { onChange, value } }) => (
+                <SearchableSelect
+                  options={states.length > 0 ? states.map(s => ({ id: s.state_name, name: s.state_name })) : FALLBACK_STATES.map(s => ({ id: s, name: s }))}
+                  value={value}
+                  onChange={onChange}
+                  placeholder="Select State"
+                  disabled={isSubmitted || !!permSameAsComm}
+                  error={!!errors.perm_state}
+                />
+              )}
+            />
           </div>
           <div className="col-md-6">
             <label className="form-label fw-semibold">District <span className="text-danger">*</span></label>
-            <select className="form-select form-select-sm" {...register('perm_district')} disabled={isSubmitted || !!permSameAsComm}>
-              <option value="">Select District</option>
-              {districtOptions(permDistricts)}
-            </select>
+            <Controller
+              control={control}
+              name="perm_district"
+              render={({ field: { onChange, value } }) => (
+                <SearchableSelect
+                  options={permDistricts.length > 0 ? permDistricts.map(d => ({ id: d.district_name, name: d.district_name })) : FALLBACK_DISTRICTS.map(d => ({ id: d, name: d }))}
+                  value={value}
+                  onChange={onChange}
+                  placeholder="Select District"
+                  disabled={isSubmitted || !!permSameAsComm}
+                  error={!!errors.perm_district}
+                />
+              )}
+            />
           </div>
           <div className="col-md-6">
             <label className="form-label fw-semibold">Pincode <span className="text-danger">*</span></label>
@@ -1807,8 +2146,8 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
 
   // ── STEP 3: Academic Details ──────────────────────────────────────────
   const Step3 = () => {
-    const schoolData = watch('school_education') || [];
-    const higherData = watch('higher_education') || [];
+    // const schoolData = watch('school_education') || [];
+    // const higherData = watch('higher_education') || [];
 
     const sslcVal = watch('school_education.0') || {};
     const isSslcComplete = !!(sslcVal.institution_name?.trim() && sslcVal.board_id && sslcVal.passing_month && sslcVal.passing_year && sslcVal.percentage);
@@ -1820,16 +2159,16 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
     const isDiplomaComplete = !!(diplomaVal.institution_name?.trim() && diplomaVal.degree_id && diplomaVal.passing_month && diplomaVal.passing_year && diplomaVal.score_value);
 
     const ugVal = watch('higher_education.0') || {};
-    const isUgComplete = !!(ugVal.institution_name?.trim() && ugVal.degree_id && ugVal.passing_month && ugVal.passing_year && ugVal.score_value);
+    const isUgComplete = !!(ugVal.institution_name?.trim() && (ugVal.degree_id || ugVal.degree_name) && ugVal.passing_month && ugVal.start_year && ugVal.completion_year && ugVal.score_value);
 
     const pgVal = watch('higher_education.1') || {};
-    const isPgComplete = !!(pgVal.institution_name?.trim() && pgVal.degree_id && pgVal.passing_month && pgVal.passing_year && pgVal.score_value);
+    const isPgComplete = !!(pgVal.institution_name?.trim() && (pgVal.degree_id || pgVal.degree_name) && pgVal.passing_month && pgVal.start_year && pgVal.completion_year && pgVal.score_value);
 
     const mphilVal = watch('mphil') || {};
     const isMphilComplete = !!(mphilVal.institution_name?.trim() && mphilVal.degree_name && mphilVal.passing_month && mphilVal.passing_year && mphilVal.score_value);
 
     const integratedVal = watch('integrated') || {};
-    const isIntegratedComplete = !!(integratedVal.institution_name?.trim() && integratedVal.degree_id && integratedVal.passing_month && integratedVal.passing_year && integratedVal.score_value && integratedVal.registration_number);
+    const isIntegratedComplete = !!(integratedVal.institution_name?.trim() && (integratedVal.degree_id || integratedVal.degree_name) && integratedVal.passing_month && integratedVal.start_year && integratedVal.completion_year && integratedVal.score_value && integratedVal.registration_number);
 
     const hasSslc = watch('has_sslc') !== false;
     const hasHsc = watch('has_hsc') !== false;
@@ -1887,7 +2226,7 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
               )}
             </div>
             <div className="col-md-2">
-              <label className="form-label small fw-bold">Passing Month {isRequired && <span className="text-danger">*</span>}</label>
+              <label className="form-label small fw-bold">Completion Month {isRequired && <span className="text-danger">*</span>}</label>
               <select className={`form-select form-select-sm ${getFieldError('passing_month') ? 'is-invalid' : ''}`} 
                 {...register(`${prefix}.passing_month`, rules)} disabled={isSubmitted}>
                 <option value="">Month</option>
@@ -1901,7 +2240,7 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
                 className={`form-select form-select-sm ${getFieldError('passing_year') || (level === 'HSC' && timelineErrors.hsc) ? 'is-invalid' : ''}`}
                 {...register(`${prefix}.passing_year`, rules)} disabled={isSubmitted}>
                 <option value="">Year</option>
-                {YEAR_OPTIONS.map(y => <option key={y} value={y}>{y}</option>)}
+                {(level === 'HSC' ? hscYearOptions : YEAR_OPTIONS).map(y => <option key={y} value={y}>{y}</option>)}
               </select>
               {renderError('passing_year')}
               {level === 'HSC' && timelineErrors.hsc && (
@@ -1926,6 +2265,7 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
       // eligibleCourses: string[] from eligibility hints (PG/M.Phil only)
       // hideSpecialization: true for PG/M.Phil — course name replaces degree+specialization pair
       const isEligibilityMode = hideSpecialization;
+      const isUgPgInt = degreeLevel === 'UG' || degreeLevel === 'PG' || degreeLevel === 'Integrated';
       const semArr   = semLevel === 'ug' ? ugSemesters : semLevel === 'pg' ? pgSemesters
                      : semLevel === 'diploma' ? diplomaSemesters : semLevel === 'integrated' ? integratedSemesters : mphilSemesters;
       const markType = semLevel === 'ug' ? ugMarkType  : semLevel === 'pg' ? pgMarkType
@@ -1959,6 +2299,18 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
       const isConsAllowed = !activeSetting || activeSetting.consolidated_enabled !== 0;
       const isSemAllowed = !activeSetting || activeSetting.semester_wise_enabled !== 0;
 
+      // CGPA Scale support — only for UG, PG, and M.Phil
+      const isCgpaScaleSupported = degreeLevel === 'UG' || degreeLevel === 'PG' || degreeLevel === 'M.Phil';
+      const currentScoreType     = watch(`${prefix}.score_type`);
+      const showCgpaScale        = isCgpaScaleSupported && currentScoreType === 'CGPA';
+      const _cgpaScaleRaw        = watch(`${prefix}.cgpa_scale`);
+      const _cgpaEnteredRaw      = watch(`${prefix}.score_value`);
+      const _cgpaScale           = parseFloat(_cgpaScaleRaw);
+      const _cgpaEntered         = parseFloat(_cgpaEnteredRaw);
+      const normalizedCgpaDisplay = (showCgpaScale && !isNaN(_cgpaScale) && _cgpaScale > 0 && !isNaN(_cgpaEntered))
+        ? ((_cgpaEntered / _cgpaScale) * 10).toFixed(2)
+        : null;
+
       return (
         <div className="mb-4 pb-3 border-bottom text-start">
           <input type="hidden" value={degreeLevel || label.split(' ')[0]} {...register(`${prefix}.level`)} />
@@ -1968,39 +2320,205 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
           </div>
           <div className="row g-3">
             {semLevel === 'mphil' ? (
-              /* ── M.Phil centralized Course Master dropdown ── */
-              <div className="col-md-6">
-                <label className="form-label small fw-bold">
-                  M.Phil Course {isRequired && <span className="text-danger">*</span>}
-                </label>
-                <select
-                  className={`form-select form-select-sm ${getFieldError('degree_name') ? 'is-invalid' : ''}`}
-                  {...register(`${prefix}.degree_name`, rules)}
-                  disabled={isSubmitted}
-                >
-                  <option value="">Select M.Phil Course</option>
-                  {(dropdowns.mphil_courses || []).map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                </select>
-                {renderError('degree_name')}
-              </div>
+              /* ── M.Phil: Faculty → Discipline → Specialization ── */
+              (() => {
+                const mFacultyId  = watch(`${prefix}.faculty_id`);
+                const mDiscId     = watch(`${prefix}.discipline_id`);
+                const mDiscs      = allDisciplines.filter(d => String(d.faculty_id) === String(mFacultyId));
+                const mSpecs      = allSpecializations.filter(s => String(s.discipline_id) === String(mDiscId));
+                return (
+                  <>
+                    <div className="col-md-4">
+                      <label className="form-label small fw-bold">Faculty {isRequired && <span className="text-danger">*</span>}</label>
+                      <Controller
+                        control={control}
+                        name={`${prefix}.faculty_id`}
+                        rules={rules}
+                        render={({ field: { onChange, value } }) => (
+                          <SearchableSelect
+                            options={allFaculties}
+                            value={value}
+                            onChange={v => {
+                              onChange(v);
+                              const fac = allFaculties.find(f => String(f.id) === String(v));
+                              setValue(`${prefix}.faculty_name`, fac?.name || '');
+                              setValue(`${prefix}.discipline_id`, '');
+                              setValue(`${prefix}.discipline_name`, '');
+                              setValue(`${prefix}.specialization_master_id`, '');
+                              setValue(`${prefix}.specialization_master_name`, '');
+                              setValue(`${prefix}.degree_name`, '');
+                            }}
+                            placeholder="Select Faculty"
+                            disabled={isSubmitted}
+                            error={!!getFieldError('faculty_id')}
+                          />
+                        )}
+                      />
+                      {renderError('faculty_id')}
+                    </div>
+                    <div className="col-md-4">
+                      <label className="form-label small fw-bold">Discipline {isRequired && <span className="text-danger">*</span>}</label>
+                      <Controller
+                        control={control}
+                        name={`${prefix}.discipline_id`}
+                        rules={rules}
+                        render={({ field: { onChange, value } }) => (
+                          <SearchableSelect
+                            options={mDiscs}
+                            value={value}
+                            onChange={v => {
+                              onChange(v);
+                              const disc = mDiscs.find(d => String(d.id) === String(v));
+                              setValue(`${prefix}.discipline_name`, disc?.name || '');
+                              setValue(`${prefix}.specialization_master_id`, '');
+                              setValue(`${prefix}.specialization_master_name`, '');
+                              setValue(`${prefix}.degree_name`, disc?.name || '');
+                            }}
+                            placeholder={mFacultyId ? 'Select Discipline' : 'Select Faculty first'}
+                            disabled={isSubmitted || !mFacultyId}
+                            error={!!getFieldError('discipline_id')}
+                          />
+                        )}
+                      />
+                      {renderError('discipline_id')}
+                    </div>
+                    <div className="col-md-4">
+                      <label className="form-label small fw-bold">Specialization {isRequired && <span className="text-danger">*</span>}</label>
+                      <Controller
+                        control={control}
+                        name={`${prefix}.specialization_master_id`}
+                        rules={rules}
+                        render={({ field: { onChange, value } }) => (
+                          <SearchableSelect
+                            options={mSpecs}
+                            value={value}
+                            onChange={v => {
+                              onChange(v);
+                              const sp = mSpecs.find(s => String(s.id) === String(v));
+                              setValue(`${prefix}.specialization_master_name`, sp?.name || '');
+                              setValue(`${prefix}.degree_name`, sp?.name || watch(`${prefix}.discipline_name`) || '');
+                            }}
+                            placeholder={mDiscId ? 'Select Specialization' : 'Select Discipline first'}
+                            disabled={isSubmitted || !mDiscId}
+                            error={!!getFieldError('specialization_master_id')}
+                          />
+                        )}
+                      />
+                      {renderError('specialization_master_id')}
+                    </div>
+                  </>
+                );
+              })()
             ) : isEligibilityMode ? (
-              /* ── Eligibility-driven course name (PG / M.Phil / Integrated) ── */
+              /* ── PG / Integrated: Faculty→Discipline→Specialization + Eligibility course ── */
               <>
+                {/* PG Academic Hierarchy — Faculty → Discipline → Specialization */}
+                {degreeLevel === 'PG' && (() => {
+                  const pgFacultyId = watch(`${prefix}.faculty_id`);
+                  const pgDiscId    = watch(`${prefix}.discipline_id`);
+                  const pgDiscs     = allDisciplines.filter(d => String(d.faculty_id) === String(pgFacultyId));
+                  const pgSpecs     = allSpecializations.filter(s => String(s.discipline_id) === String(pgDiscId));
+                  return (
+                    <>
+                      <div className="col-md-4">
+                        <label className="form-label small fw-bold">Faculty {isRequired && <span className="text-danger">*</span>}</label>
+                        <Controller
+                          control={control}
+                          name={`${prefix}.faculty_id`}
+                          rules={rules}
+                          render={({ field: { onChange, value } }) => (
+                            <SearchableSelect
+                              options={allFaculties}
+                              value={value}
+                              onChange={v => {
+                                onChange(v);
+                                const fac = allFaculties.find(f => String(f.id) === String(v));
+                                setValue(`${prefix}.faculty_name`, fac?.name || '');
+                                setValue(`${prefix}.discipline_id`, '');
+                                setValue(`${prefix}.discipline_name`, '');
+                                setValue(`${prefix}.specialization_master_id`, '');
+                                setValue(`${prefix}.specialization_master_name`, '');
+                              }}
+                              placeholder="Select Faculty"
+                              disabled={isSubmitted}
+                              error={!!getFieldError('faculty_id')}
+                            />
+                          )}
+                        />
+                        {renderError('faculty_id')}
+                      </div>
+                      <div className="col-md-4">
+                        <label className="form-label small fw-bold">Discipline {isRequired && <span className="text-danger">*</span>}</label>
+                        <Controller
+                          control={control}
+                          name={`${prefix}.discipline_id`}
+                          rules={rules}
+                          render={({ field: { onChange, value } }) => (
+                            <SearchableSelect
+                              options={pgDiscs}
+                              value={value}
+                              onChange={v => {
+                                onChange(v);
+                                const disc = pgDiscs.find(d => String(d.id) === String(v));
+                                setValue(`${prefix}.discipline_name`, disc?.name || '');
+                                setValue(`${prefix}.specialization_master_id`, '');
+                                setValue(`${prefix}.specialization_master_name`, '');
+                              }}
+                              placeholder={pgFacultyId ? 'Select Discipline' : 'Select Faculty first'}
+                              disabled={isSubmitted || !pgFacultyId}
+                              error={!!getFieldError('discipline_id')}
+                            />
+                          )}
+                        />
+                        {renderError('discipline_id')}
+                      </div>
+                      <div className="col-md-4">
+                        <label className="form-label small fw-bold">Specialization {isRequired && <span className="text-danger">*</span>}</label>
+                        <Controller
+                          control={control}
+                          name={`${prefix}.specialization_master_id`}
+                          rules={rules}
+                          render={({ field: { onChange, value } }) => (
+                            <SearchableSelect
+                              options={pgSpecs}
+                              value={value}
+                              onChange={v => {
+                                onChange(v);
+                                const sp = pgSpecs.find(s => String(s.id) === String(v));
+                                setValue(`${prefix}.specialization_master_name`, sp?.name || '');
+                              }}
+                              placeholder={pgDiscId ? 'Select Specialization' : 'Select Discipline first'}
+                              disabled={isSubmitted || !pgDiscId}
+                              error={!!getFieldError('specialization_master_id')}
+                            />
+                          )}
+                        />
+                        {renderError('specialization_master_id')}
+                      </div>
+                    </>
+                  );
+                })()}
                 <div className="col-md-6">
                   <label className="form-label small fw-bold">
                     {degreeLevel === 'Integrated' ? 'Integrated Course Name' : 'Eligible Course'} {isRequired && <span className="text-danger">*</span>}
                   </label>
                   {eligibleCourses.length > 0 ? (
                     <>
-                      <select
-                        className={`form-select form-select-sm ${getFieldError('degree_name') ? 'is-invalid' : ''}`}
-                        {...register(`${prefix}.degree_name`, rules)}
-                        disabled={isSubmitted}
-                      >
-                        <option value="">Select {degreeLevel === 'Integrated' ? 'Course' : 'Eligible Course'}</option>
-                        {eligibleCourses.map(c => <option key={c} value={c}>{c}</option>)}
-                        {degreeLevel === 'Integrated' && <option value="Others">Others (please specify below)</option>}
-                      </select>
+                      <Controller
+                        control={control}
+                        name={`${prefix}.degree_name`}
+                        rules={rules}
+                        render={({ field: { onChange, value } }) => (
+                          <SearchableSelect
+                            options={degreeLevel === 'Integrated' ? [...eligibleCourses, 'Others'] : eligibleCourses}
+                            value={value}
+                            onChange={onChange}
+                            placeholder={degreeLevel === 'Integrated' ? 'Select Course' : 'Select Eligible Course'}
+                            disabled={isSubmitted}
+                            error={!!getFieldError('degree_name')}
+                          />
+                        )}
+                      />
                       {renderError('degree_name')}
                       <div className="text-muted mt-1" style={{ fontSize: '10px' }}>
                         {degreeLevel === 'Integrated' ? 'Select your integrated course or choose Others to enter manually.' : 'Only courses mapped by admin for this programme are shown.'}
@@ -2036,45 +2554,153 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
                 )}
               </>
             ) : (
-              /* ── Standard degree + specialization (UG / Diploma — NOT Integrated) ── */
-              <>
-                <div className="col-md-3">
-                  <label className="form-label small fw-bold">Degree {isRequired && <span className="text-danger">*</span>}</label>
-                  <select className={`form-select form-select-sm ${getFieldError('degree_id') ? 'is-invalid' : ''}`}
-                    {...register(`${prefix}.degree_id`, rules)} disabled={isSubmitted}>
-                    <option value="">Select Degree</option>
-                    {(dropdowns.degree_types || FALLBACK_DEGREE_TYPES).filter(d => !filterLevel || d.level === filterLevel).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                  </select>
-                  {renderError('degree_id')}
-                </div>
-                {/* Module 3: Specialization removed from Integrated Course — keep for UG/Diploma only */}
-                {degreeLevel !== 'Integrated' && (
-                  <>
-                    <div className="col-md-3">
-                      <label className="form-label small fw-bold">Specialization {isRequired && <span className="text-danger">*</span>}</label>
-                      <select className={`form-select form-select-sm ${getFieldError('specialization_id') ? 'is-invalid' : ''}`}
-                        {...register(`${prefix}.specialization_id`, rules)} disabled={isSubmitted}>
-                        <option value="">Select Specialization</option>
-                        {(dropdowns.specializations || FALLBACK_SPECIALIZATIONS).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                        <option value="Others">Others (please specify)</option>
-                      </select>
-                      {renderError('specialization_id')}
-                    </div>
-                    {watch(`${prefix}.specialization_id`) === 'Others' && (
-                      <div className="col-md-3">
-                        <label className="form-label small fw-bold">Specify Specialization <span className="text-danger">*</span></label>
-                        <input type="text" className={`form-control form-control-sm ${getFieldError('specialization_other') ? 'is-invalid' : ''}`}
-                          placeholder="Enter your specialization"
-                          {...register(`${prefix}.specialization_other`, {
-                            validate: v => watch(`${prefix}.specialization_id`) !== 'Others' || (v && v.trim()) ? true : 'Please specify your specialization'
-                          })}
-                          disabled={isSubmitted} />
-                        {renderError('specialization_other')}
+              /* ── Standard: UG uses Faculty→Discipline→Specialization hierarchy; Diploma uses flat degree dropdown ── */
+              degreeLevel === 'UG' ? (
+                /* ── UG: Faculty → Discipline → Specialization ── */
+                (() => {
+                  const ugFacultyId = watch(`${prefix}.faculty_id`);
+                  const ugDiscId    = watch(`${prefix}.discipline_id`);
+                  const ugDiscs     = allDisciplines.filter(d => String(d.faculty_id) === String(ugFacultyId));
+                  const ugSpecs     = allSpecializations.filter(s => String(s.discipline_id) === String(ugDiscId));
+                  return (
+                    <>
+                      <div className="col-md-4">
+                        <label className="form-label small fw-bold">Faculty {isRequired && <span className="text-danger">*</span>}</label>
+                        <Controller
+                          control={control}
+                          name={`${prefix}.faculty_id`}
+                          rules={rules}
+                          render={({ field: { onChange, value } }) => (
+                            <SearchableSelect
+                              options={allFaculties}
+                              value={value}
+                              onChange={v => {
+                                onChange(v);
+                                const fac = allFaculties.find(f => String(f.id) === String(v));
+                                setValue(`${prefix}.faculty_name`, fac?.name || '');
+                                setValue(`${prefix}.discipline_id`, '');
+                                setValue(`${prefix}.discipline_name`, '');
+                                setValue(`${prefix}.specialization_master_id`, '');
+                                setValue(`${prefix}.specialization_master_name`, '');
+                              }}
+                              placeholder="Select Faculty"
+                              disabled={isSubmitted}
+                              error={!!getFieldError('faculty_id')}
+                            />
+                          )}
+                        />
+                        {renderError('faculty_id')}
                       </div>
-                    )}
-                  </>
-                )}
-              </>
+                      <div className="col-md-4">
+                        <label className="form-label small fw-bold">Discipline {isRequired && <span className="text-danger">*</span>}</label>
+                        <Controller
+                          control={control}
+                          name={`${prefix}.discipline_id`}
+                          rules={rules}
+                          render={({ field: { onChange, value } }) => (
+                            <SearchableSelect
+                              options={ugDiscs}
+                              value={value}
+                              onChange={v => {
+                                onChange(v);
+                                const disc = ugDiscs.find(d => String(d.id) === String(v));
+                                setValue(`${prefix}.discipline_name`, disc?.name || '');
+                                setValue(`${prefix}.specialization_master_id`, '');
+                                setValue(`${prefix}.specialization_master_name`, '');
+                              }}
+                              placeholder={ugFacultyId ? 'Select Discipline' : 'Select Faculty first'}
+                              disabled={isSubmitted || !ugFacultyId}
+                              error={!!getFieldError('discipline_id')}
+                            />
+                          )}
+                        />
+                        {renderError('discipline_id')}
+                      </div>
+                      <div className="col-md-4">
+                        <label className="form-label small fw-bold">Specialization {isRequired && <span className="text-danger">*</span>}</label>
+                        <Controller
+                          control={control}
+                          name={`${prefix}.specialization_master_id`}
+                          rules={rules}
+                          render={({ field: { onChange, value } }) => (
+                            <SearchableSelect
+                              options={ugSpecs}
+                              value={value}
+                              onChange={v => {
+                                onChange(v);
+                                const sp = ugSpecs.find(s => String(s.id) === String(v));
+                                setValue(`${prefix}.specialization_master_name`, sp?.name || '');
+                              }}
+                              placeholder={ugDiscId ? 'Select Specialization' : 'Select Discipline first'}
+                              disabled={isSubmitted || !ugDiscId}
+                              error={!!getFieldError('specialization_master_id')}
+                            />
+                          )}
+                        />
+                        {renderError('specialization_master_id')}
+                      </div>
+                    </>
+                  );
+                })()
+              ) : (
+                /* ── Diploma (and any other flat-degree level) ── */
+                <>
+                  <div className="col-md-3">
+                    <label className="form-label small fw-bold">Degree {isRequired && <span className="text-danger">*</span>}</label>
+                    <Controller
+                      control={control}
+                      name={`${prefix}.degree_id`}
+                      rules={rules}
+                      render={({ field: { onChange, value } }) => (
+                        <SearchableSelect
+                          options={(dropdowns.degree_types || FALLBACK_DEGREE_TYPES).filter(d => !filterLevel || d.level === filterLevel)}
+                          value={value}
+                          onChange={onChange}
+                          placeholder="Select Degree"
+                          disabled={isSubmitted}
+                          error={!!getFieldError('degree_id')}
+                        />
+                      )}
+                    />
+                    {renderError('degree_id')}
+                  </div>
+                  {degreeLevel !== 'Integrated' && (
+                    <>
+                      <div className="col-md-3">
+                        <label className="form-label small fw-bold">Specialization {isRequired && <span className="text-danger">*</span>}</label>
+                        <Controller
+                          control={control}
+                          name={`${prefix}.specialization_id`}
+                          rules={rules}
+                          render={({ field: { onChange, value } }) => (
+                            <SearchableSelect
+                              options={[...(dropdowns.specializations || FALLBACK_SPECIALIZATIONS), { id: 'Others', name: 'Others (please specify)' }]}
+                              value={value}
+                              onChange={onChange}
+                              placeholder="Select Specialization"
+                              disabled={isSubmitted}
+                              error={!!getFieldError('specialization_id')}
+                            />
+                          )}
+                        />
+                        {renderError('specialization_id')}
+                      </div>
+                      {watch(`${prefix}.specialization_id`) === 'Others' && (
+                        <div className="col-md-3">
+                          <label className="form-label small fw-bold">Specify Specialization <span className="text-danger">*</span></label>
+                          <input type="text" className={`form-control form-control-sm ${getFieldError('specialization_other') ? 'is-invalid' : ''}`}
+                            placeholder="Enter your specialization"
+                            {...register(`${prefix}.specialization_other`, {
+                              validate: v => watch(`${prefix}.specialization_id`) !== 'Others' || (v && v.trim()) ? true : 'Please specify your specialization'
+                            })}
+                            disabled={isSubmitted} />
+                          {renderError('specialization_other')}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </>
+              )
             )}
             <div className="col-md-3">
               <label className="form-label small fw-bold">Institution Name {isRequired && <span className="text-danger">*</span>}</label>
@@ -2105,39 +2731,12 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
               </select>
               {renderError('university_type_id')}
             </div>
-            <div className="col-md-2">
-              <label className="form-label small fw-bold">Passing Month {isRequired && <span className="text-danger">*</span>}</label>
-              <select className={`form-select form-select-sm ${getFieldError('passing_month') ? 'is-invalid' : ''}`} 
-                {...register(`${prefix}.passing_month`, rules)} disabled={isSubmitted}>
-                <option value="">Month</option>
-                {["January","February","March","April","May","June","July","August","September","October","November","December"].map(m => <option key={m} value={m}>{m}</option>)}
-              </select>
-              {renderError('passing_month')}
-            </div>
-            <div className="col-md-1">
-              <label className="form-label small fw-bold">
-                {(degreeLevel === 'UG' || degreeLevel === 'PG' || degreeLevel === 'Integrated') ? 'Completion Year' : 'Year'}
-                {isRequired && <span className="text-danger">*</span>}
-              </label>
-              <select className={`form-select form-select-sm ${getFieldError('passing_year') || (degreeLevel === 'UG' && timelineErrors.ugEnd) || (degreeLevel === 'PG' && timelineErrors.pgEnd) ? 'is-invalid' : ''}`}
-                {...register(`${prefix}.passing_year`, rules)} disabled={isSubmitted}>
-                <option value="">Year</option>
-                {YEAR_OPTIONS.map(y => <option key={y} value={y}>{y}</option>)}
-              </select>
-              {renderError('passing_year')}
-              {degreeLevel === 'UG' && timelineErrors.ugEnd && (
-                <div className="text-danger mt-1" style={{ fontSize: '11px' }}>{timelineErrors.ugEnd}</div>
-              )}
-              {degreeLevel === 'PG' && timelineErrors.pgEnd && (
-                <div className="text-danger mt-1" style={{ fontSize: '11px' }}>{timelineErrors.pgEnd}</div>
-              )}
-            </div>
 
-            {/* Module 2: Start Year — shown for UG, PG, Integrated only */}
-            {(degreeLevel === 'UG' || degreeLevel === 'PG' || degreeLevel === 'Integrated') && (
-              <div className="col-md-1">
+            {/* Start Year — shown for UG, PG, Integrated only */}
+            {isUgPgInt && (
+              <div className="col-md-2">
                 <label className="form-label small fw-bold">
-                  Start Year <span className="text-danger">*</span>
+                  Start Year {isRequired && <span className="text-danger">*</span>}
                 </label>
                 <select
                   className={`form-select form-select-sm ${
@@ -2150,8 +2749,13 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
                   disabled={isSubmitted}
                 >
                   <option value="">Year</option>
-                  {YEAR_OPTIONS.map(y => <option key={y} value={y}>{y}</option>)}
+                  {(degreeLevel === 'UG' ? ugStartOptions
+                    : degreeLevel === 'PG' ? pgStartOptions
+                    : degreeLevel === 'Integrated' ? intStartOptions
+                    : YEAR_OPTIONS
+                  ).map(y => <option key={y} value={y}>{y}</option>)}
                 </select>
+                {renderError('start_year')}
                 {degreeLevel === 'UG' && timelineErrors.ugStart && (
                   <div className="text-danger mt-1" style={{ fontSize: '11px' }}>{timelineErrors.ugStart}</div>
                 )}
@@ -2164,17 +2768,132 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
               </div>
             )}
 
-            <div className="col-md-2">
+            <div className={isUgPgInt ? "col-md-2" : "col-md-3"}>
+              <label className="form-label small fw-bold">Completion Month {isRequired && <span className="text-danger">*</span>}</label>
+              <select className={`form-select form-select-sm ${getFieldError('passing_month') ? 'is-invalid' : ''}`}
+                {...register(`${prefix}.passing_month`, rules)} disabled={isSubmitted}>
+                <option value="">Month</option>
+                {["January","February","March","April","May","June","July","August","September","October","November","December"].map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+              {renderError('passing_month')}
+            </div>
+
+            {/* Passing Year — shown ONLY for non-UG/PG/Integrated (i.e. Diploma & M.Phil) */}
+            {!isUgPgInt && (
+              <div className="col-md-3">
+                <label className="form-label small fw-bold">
+                  Year {isRequired && <span className="text-danger">*</span>}
+                </label>
+                <select
+                  className={`form-select form-select-sm ${
+                    getFieldError('passing_year') || (degreeLevel === 'M.Phil' && timelineErrors.mphil) ? 'is-invalid' : ''
+                  }`}
+                  {...register(`${prefix}.passing_year`, rules)} disabled={isSubmitted}>
+                  <option value="">Year</option>
+                  {(degreeLevel === 'M.Phil' ? mphilYearOptions : YEAR_OPTIONS)
+                    .map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+                {renderError('passing_year')}
+                {degreeLevel === 'M.Phil' && timelineErrors.mphil && (
+                  <div className="text-danger mt-1" style={{ fontSize: '11px' }}>{timelineErrors.mphil}</div>
+                )}
+              </div>
+            )}
+
+            {/* Completion Year — shown for UG, PG, Integrated only */}
+            {isUgPgInt && (
+              <div className="col-md-2">
+                <label className="form-label small fw-bold">
+                  Completion Year {isRequired && <span className="text-danger">*</span>}
+                </label>
+                <select className={`form-select form-select-sm ${getFieldError('completion_year') || (degreeLevel === 'UG' && timelineErrors.ugEnd) || (degreeLevel === 'PG' && timelineErrors.pgEnd) || (degreeLevel === 'Integrated' && timelineErrors.intEnd) ? 'is-invalid' : ''}`}
+                  {...register(`${prefix}.completion_year`, rules)} disabled={isSubmitted}>
+                  <option value="">Year</option>
+                  {(degreeLevel === 'UG' ? ugEndOptions
+                    : degreeLevel === 'PG' ? pgEndOptions
+                    : degreeLevel === 'Integrated' ? intEndOptions
+                    : YEAR_OPTIONS
+                  ).map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+                {renderError('completion_year')}
+                {degreeLevel === 'UG' && timelineErrors.ugEnd && (
+                  <div className="text-danger mt-1" style={{ fontSize: '11px' }}>{timelineErrors.ugEnd}</div>
+                )}
+                {degreeLevel === 'PG' && timelineErrors.pgEnd && (
+                  <div className="text-danger mt-1" style={{ fontSize: '11px' }}>{timelineErrors.pgEnd}</div>
+                )}
+                {degreeLevel === 'Integrated' && timelineErrors.intEnd && (
+                  <div className="text-danger mt-1" style={{ fontSize: '11px' }}>{timelineErrors.intEnd}</div>
+                )}
+              </div>
+            )}
+
+            {/* ── Score Type + Value ── */}
+            <div className="col-md-3">
               <label className="form-label small fw-bold">Score {isRequired && <span className="text-danger">*</span>}</label>
               <div className="input-group input-group-sm">
-                <select className="form-select p-1" style={{ maxWidth: '80px' }} {...register(`${prefix}.score_type`)} disabled={isSubmitted}>
+                <select className="form-select p-1" style={{ maxWidth: '80px' }} {...register(`${prefix}.score_type`, {
+                  onChange: (e) => { if (e.target.value !== 'CGPA' && isCgpaScaleSupported) setValue(`${prefix}.cgpa_scale`, ''); }
+                })} disabled={isSubmitted}>
                   <option>Percentage</option><option>CGPA</option>
                 </select>
-                <input type="number" step="0.01" className={`form-control ${getFieldError('score_value') ? 'is-invalid' : ''}`} 
-                  {...register(`${prefix}.score_value`, rules)} disabled={isSubmitted} />
+                <input
+                  type="number" step="0.01" min={0}
+                  max={showCgpaScale && !isNaN(_cgpaScale) && _cgpaScale > 0 ? _cgpaScale : undefined}
+                  className={`form-control ${getFieldError('score_value') ? 'is-invalid' : ''}`}
+                  {...register(`${prefix}.score_value`, {
+                    ...rules,
+                    validate: showCgpaScale ? (val) => {
+                      if (!val && !isRequired) return true;
+                      const num = parseFloat(val);
+                      if (isNaN(num)) return true;
+                      if (num < 0) return 'CGPA must be a positive number';
+                      if (!isNaN(_cgpaScale) && _cgpaScale > 0 && num > _cgpaScale)
+                        return `CGPA cannot exceed ${_cgpaScale} for the selected scale`;
+                      return true;
+                    } : undefined
+                  })}
+                  disabled={isSubmitted}
+                />
               </div>
               {renderError('score_value')}
             </div>
+
+            {/* ── CGPA Scale (UG / PG / M.Phil only, shown when Score Type = CGPA) ── */}
+            {showCgpaScale && (
+              <div className="col-md-3">
+                <label className="form-label small fw-bold">CGPA Scale <span className="text-danger">*</span></label>
+                <select
+                  className={`form-select form-select-sm ${getFieldError('cgpa_scale') ? 'is-invalid' : ''}`}
+                  {...register(`${prefix}.cgpa_scale`, {
+                    validate: (val) => {
+                      if (watch(`${prefix}.score_type`) !== 'CGPA' || !isCgpaScaleSupported) return true;
+                      if (!val) return 'CGPA Scale is required';
+                      return true;
+                    }
+                  })}
+                  disabled={isSubmitted}
+                >
+                  <option value="">Select Scale</option>
+                  <option value="10">10 Point Scale</option>
+                  <option value="8">8 Point Scale</option>
+                  <option value="6">6 Point Scale</option>
+                  <option value="4">4 Point Scale</option>
+                </select>
+                {renderError('cgpa_scale')}
+              </div>
+            )}
+
+            {/* ── Normalized CGPA info box ── */}
+            {showCgpaScale && normalizedCgpaDisplay && (
+              <div className="col-md-12">
+                <div className="alert alert-info py-2 px-3 mb-0 mt-1" style={{ fontSize: '12px', borderRadius: '8px' }}>
+                  <strong>Entered CGPA:</strong> {isNaN(_cgpaEntered) ? '—' : _cgpaEntered.toFixed(2)}&nbsp;&nbsp;|&nbsp;&nbsp;
+                  <strong>CGPA Scale:</strong> {_cgpaScale} Point&nbsp;&nbsp;|&nbsp;&nbsp;
+                  <strong>Normalized CGPA:</strong> <span className="fw-bold text-primary">{normalizedCgpaDisplay} / 10</span>
+                </div>
+              </div>
+            )}
 
             {/* ── Mark Statement Documents ── */}
             {isAcademicActive && (
@@ -2182,16 +2901,21 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
                 <div className="fw-semibold small text-primary mb-2">Mark Statement Documents</div>
 
                 {isConsAllowed && isSemAllowed && (
-                  <div className="d-flex align-items-center gap-4 mb-3">
-                    <span className="fw-semibold small text-secondary">Type:</span>
-                    {['Individual Mark Statement', 'Consolidated Mark Statement'].map(type => (
-                      <div key={type} className="form-check mb-0">
-                        <input type="radio" className="form-check-input"
-                          id={`${semLevel}_mst_${type}`} value={type}
-                          {...register(`${semLevel}_mark_statement_type`)} disabled={isSubmitted} />
-                        <label className="form-check-label small fw-semibold" htmlFor={`${semLevel}_mst_${type}`}>{type}</label>
-                      </div>
-                    ))}
+                  <div className="p-3 mb-3 bg-light border border-dark rounded-3" style={{ borderWidth: '2px' }}>
+                    <div className="d-flex flex-wrap align-items-center gap-4">
+                      <span className="fw-bold text-dark" style={{ fontSize: '14px' }}>Type:</span>
+                      {['Individual Mark Statement', 'Consolidated Mark Statement'].map(type => (
+                        <div key={type} className="form-check mb-0">
+                          <input type="radio" className="form-check-input"
+                            id={`${semLevel}_mst_${type}`} value={type}
+                            style={{ width: '1.25em', height: '1.25em', border: '2px solid #212529', cursor: 'pointer' }}
+                            {...register(`${semLevel}_mark_statement_type`)} disabled={isSubmitted} />
+                          <label className="form-check-label fw-bold text-dark ms-1" style={{ fontSize: '14px', cursor: 'pointer' }} htmlFor={`${semLevel}_mst_${type}`}>
+                            {type}
+                          </label>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 
@@ -2639,11 +3363,17 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
             </div>
           )}
 
-          {isValidationApplicable && !isEligible && enteredPercentage !== null && (
+          {isValidationApplicable && !isEligible && enteredValue !== null && (
             <div className="alert alert-danger d-flex align-items-center gap-2 mt-4 shadow-sm border-danger border-opacity-25 animate-fade-in" style={{ borderRadius: '10px' }}>
               <span style={{ fontSize: '20px' }}>⚠️</span>
               <div>
-                <strong className="text-danger">Eligibility Alert:</strong> Minimum required PG percentage for your selected community is <span className="fw-bold">{requiredPercentage}%</span>. Your entered percentage is <span className="fw-bold">{enteredPercentage}%</span>.
+                <strong className="text-danger">Eligibility Alert:</strong>{' '}
+                Minimum required PG {isCgpa ? 'CGPA' : 'percentage'} for your selected community is{' '}
+                <span className="fw-bold">{isCgpa ? `${requiredValue.toFixed(2)} / 10` : `${requiredValue}%`}</span>.{' '}
+                {isCgpa && normalizedValue != null
+                  ? <>Your normalized CGPA is <span className="fw-bold">{normalizedValue.toFixed(2)} / 10</span>{cgpaScaleUsed ? ` (entered ${enteredValue} on ${cgpaScaleUsed}-point scale)` : ''}.</>
+                  : <>Your entered {isCgpa ? 'CGPA' : 'percentage'} is <span className="fw-bold">{isCgpa ? enteredValue : `${enteredValue}%`}</span>.</>
+                }
               </div>
             </div>
           )}
@@ -2729,19 +3459,19 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
       return durationStr;
     };
 
-    const loadExpDistricts = async (idx, stateId) => {
-      if (!stateId) { setExpDistricts(prev => ({ ...prev, [idx]: [] })); return; }
-      try {
-        const r = await axios.get(`${API}/districts?state_id=${stateId}`);
-        setExpDistricts(prev => ({ ...prev, [idx]: r.data.data || [] }));
-      } catch { setExpDistricts(prev => ({ ...prev, [idx]: [] })); }
-    };
+    // const loadExpDistricts = async (idx, stateId) => {
+    //   if (!stateId) { setExpDistricts(prev => ({ ...prev, [idx]: [] })); return; }
+    //   try {
+    //     const r = await axios.get(`${API}/districts?state_id=${stateId}`);
+    //     setExpDistricts(prev => ({ ...prev, [idx]: r.data.data || [] }));
+    //   } catch { setExpDistricts(prev => ({ ...prev, [idx]: [] })); }
+    // };
 
-    const handleExpStateChange = async (idx, stateId) => {
-      setValue(`experience_details.${idx}.state_id`, stateId);
-      setValue(`experience_details.${idx}.district_id`, '');
-      await loadExpDistricts(idx, stateId);
-    };
+    // const handleExpStateChange = async (idx, stateId) => {
+    //   setValue(`experience_details.${idx}.state_id`, stateId);
+    //   setValue(`experience_details.${idx}.district_id`, '');
+    //   await loadExpDistricts(idx, stateId);
+    // };
 
     const addExperience = () => {
       const current = getValues('experience_details') || [];
@@ -3113,14 +3843,14 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
             ) : (
               <button
                 className="btn px-5 fw-bold d-flex align-items-center gap-2"
-                style={{ background: isSubmitted ? '#6b7280' : '#32b5c0', color: '#fff' }}
-                onClick={handleSubmit(async () => {
-                  // Save draft first, then navigate to review
+                style={{ background: (isSubmitted || !declarationAccepted) ? '#6b7280' : '#32b5c0', color: '#fff' }}
+                onClick={async () => {
+                  // Save draft first, then navigate to review (direct save bypassing handleSubmit validation)
                   const ok = await saveData('Draft');
                   if (ok) navigate('/review');
-                })}
-                disabled={loading || isSubmitted || !applicationOpen}
-                title={isSubmitted ? 'Already submitted' : !applicationOpen ? 'Submissions are currently closed' : 'Save and proceed to final review'}
+                }}
+                disabled={loading || isSubmitted || !applicationOpen || !declarationAccepted}
+                title={isSubmitted ? 'Already submitted' : !applicationOpen ? 'Submissions are currently closed' : !declarationAccepted ? 'Please accept the declaration checkbox' : 'Save and proceed to final review'}
               >
                 {loading
                   ? <><span className="spinner-border spinner-border-sm" />Saving…</>
@@ -3128,7 +3858,7 @@ const ApplicationForm = ({ isAdminMode = false, adminApplicationId = null, onAdm
                   ? <><CheckCircle size={16} />Submitted</>
                   : !applicationOpen
                   ? 'Submissions Closed'
-                  : <><Eye size={16} />Review &amp; Submit</>}
+                  : <><Save size={16} />Save &amp; Review</>}
               </button>
             )}
           </div>

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 
 const API = import.meta.env.VITE_API_URL || `${import.meta.env.VITE_STUDENT_API_URL || ('http://localhost:5000')}/api`;
+const BASE_API = (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000').replace('/api', '');
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -122,7 +123,7 @@ const FinalReview = () => {
     return () => ac.abort();
   }, [token, navigate, fetchData]);
 
-  const goEdit = () => navigate('/apply');
+  const goEdit = (stepIndex) => navigate(`/apply?step=${stepIndex}`);
 
   const handleDownloadPdf = async () => {
     if (!data) return;
@@ -205,18 +206,40 @@ const FinalReview = () => {
     const schoolRows = (data.school_education || []).map(s => `
       <tr>
         <td>${v(s.level)}</td><td>${v(s.institution_name)}</td>
-        <td>${v(s.other_board_name || s.board_id)}</td>
+        <td>${v(s.board_name || s.other_board_name || s.board_id)}</td>
         <td>${v(s.passing_month)} ${v(s.passing_year)}</td>
         <td>${s.percentage ? s.percentage + '%' : '—'}</td>
       </tr>`).join('');
 
-    const higherRows = (data.higher_education || []).map(h => `
+    const higherRows = (data.higher_education || []).map(h => {
+      const isUgPgInt = h.level === 'UG' || h.level === 'PG' || h.level === 'Integrated';
+      const timelineHtml = isUgPgInt
+        ? `${h.passing_month ? h.passing_month : '—'}${ (h.start_year || h.completion_year) ? `<br/><span style="font-size:10px;color:#666;">${h.start_year ? 'Start: ' + h.start_year : ''} ${h.completion_year ? ' | End: ' + h.completion_year : ''}</span>` : '' }`
+        : `${h.passing_month ? h.passing_month + ' ' : ''}${h.passing_year ? 'Pass: ' + h.passing_year : '—'}`;
+      
+      let levelText = h.level;
+      if (h.mark_statement_type) {
+        levelText += `<br/><span style="font-size:8.5px;color:#555;font-style:italic;">${h.mark_statement_type}</span>`;
+      }
+      if (h.is_awaiting_final_sem == 1) {
+        levelText += `<br/><span style="font-size:8.5px;color:#d97706;font-weight:bold;">[Awaiting Results]</span>`;
+      }
+
+      return `
       <tr>
-        <td>${v(h.level)}</td><td>${v(h.institution_name)}</td>
+        <td>${levelText}</td><td>${v(h.institution_name)}</td>
         <td>${v(h.university_name)}</td>
-        <td>${v(h.passing_month)} ${v(h.passing_year)}</td>
-        <td>${h.score_value ? h.score_value + (h.score_type ? ` (${h.score_type})` : '') : '—'}</td>
-      </tr>`).join('');
+        <td>${timelineHtml}</td>
+        <td>${(() => {
+          if (!h.score_value) return '—';
+          if (h.score_type === 'CGPA' && h.cgpa_scale && ['UG','PG','M.Phil'].includes(h.level)) {
+            const norm = h.normalized_cgpa != null ? parseFloat(h.normalized_cgpa).toFixed(2) : null;
+            return `${h.score_value} CGPA (${h.cgpa_scale}-pt scale)${norm ? `<br/><span style="font-size:10px;color:#0d6efd;">Normalized: ${norm} / 10</span>` : ''}`;
+          }
+          return h.score_value + (h.score_type ? ` (${h.score_type})` : '');
+        })()}</td>
+      </tr>`;
+    }).join('');
 
     const expRows = (data.experience_details || []).map(e => {
       const fromDisplay = e.from_date 
@@ -228,6 +251,7 @@ const FinalReview = () => {
       return `
       <tr>
         <td>${v(e.designation)}</td><td>${v(e.organization_name)}</td>
+        <td>${v(e.employment_type || e.employment_type_id)}</td>
         <td>${fromDisplay}</td>
         <td>${toDisplay}</td>
         <td>${e.total_years || 0}Y ${e.total_months || 0}M</td>
@@ -340,6 +364,8 @@ const FinalReview = () => {
 <div class="section">
   <div class="sec-title">1. EXAMINATION DETAILS</div>
   <div class="fields-grid">
+    ${field('Department', data.department_name)}
+    ${field('Programme Offered', data.program_offered_name)}
     ${field('Exam Centre (First Preference)', data.exam_center_1)}
     ${field('Exam Centre (Second Preference)', data.exam_center_2)}
     ${field('Subject / Discipline', data.subject)}
@@ -405,7 +431,7 @@ ${higherRows ? `<div class="section">
 <!-- SECTION 6: WORK EXPERIENCE -->
 ${expRows ? `<div class="section">
   <div class="sec-title">6. WORK EXPERIENCE</div>
-  <table><thead><tr><th>Designation</th><th>Organisation</th><th>From</th><th>To</th><th>Duration</th></tr></thead>
+  <table><thead><tr><th>Designation</th><th>Organisation</th><th>Type</th><th>From</th><th>To</th><th>Duration</th></tr></thead>
   <tbody>${expRows}</tbody></table>
 </div>` : ''}
 
@@ -447,9 +473,13 @@ ${expRows ? `<div class="section">
 </html>`;
 
     const w = window.open('', '_blank', 'width=900,height=750,scrollbars=yes');
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
+    if (w) {
+      w.document.open();
+      w.document.write(html);
+      w.document.close();
+    } else {
+      toast.error('Pop-up blocked — please allow pop-ups for this site.');
+    }
   };
 
   // Called when user picks Pay Now or Pay Later in the decision modal
@@ -579,13 +609,7 @@ ${expRows ? `<div class="section">
               <button className="btn btn-outline-secondary rounded-pill px-4" onClick={() => navigate('/dashboard')}>
                 <ArrowLeft size={16} className="me-2" />Go to Dashboard
               </button>
-              
-              <button className="btn btn-primary rounded-pill px-4 d-flex align-items-center gap-2"
-                onClick={handleDownloadPdf} disabled={pdfLoading}>
-                {pdfLoading
-                  ? <><span className="spinner-border spinner-border-sm" />Generating…</>
-                  : <><Download size={16} />Application PDF</>}
-              </button>
+
 
               <button className="btn btn-success rounded-pill px-4 d-flex align-items-center gap-2"
                 onClick={() => window.open(`/payment/receipt-by-app/${data.application_id}`, '_blank')}>
@@ -606,8 +630,52 @@ ${expRows ? `<div class="section">
   const docMap = {};
   (data.documents || []).forEach(d => { docMap[d.document_type] = d.file_path; });
 
+  // Helper to strip local absolute path segments and keep the relative uploads path
+  const cleanDocPath = (path) => {
+    if (!path) return '';
+    const idx = path.indexOf('uploads/');
+    return idx !== -1 ? path.substring(idx) : path;
+  };
+
+  // Helper to dynamically resolve the document path based on type
+  const getDocPath = (type) => {
+    // 1. Direct match
+    if (docMap[type]) return docMap[type];
+
+    // 2. Case-insensitive / alias mapping
+    if (type === 'Photo') return docMap['photo'] || docMap['Photo'];
+    if (type === 'Signature') return docMap['signature'] || docMap['Signature'];
+    if (type === 'ID Proof') return docMap['id_proof'] || docMap['ID Proof'] || docMap['id_proof_path'];
+    if (type === 'community_cert') return docMap['community_cert'] || docMap['community_certificate'];
+    if (type === 'pc_cert') return docMap['pc_cert'] || docMap['pc_certificate'];
+
+    // 3. School Education marksheets
+    if (type === 'sslc_marksheet') {
+      return docMap['school_education.0_marksheet'] || docMap['sslc_marksheet'] || (data.school_education && data.school_education[0]?.marksheet_path);
+    }
+    if (type === 'hsc_marksheet') {
+      return docMap['school_education.1_marksheet'] || docMap['hsc_marksheet'] || (data.school_education && data.school_education[1]?.marksheet_path);
+    }
+
+    // 4. Higher Education marksheets
+    if (type === 'ug_marksheet') {
+      const ugRow = data.higher_education?.find(h => h.level === 'UG');
+      if (ugRow?.consolidated_marksheet_path) return ugRow.consolidated_marksheet_path;
+      if (ugRow?.marksheet_path) return ugRow.marksheet_path;
+      return docMap['ug_consolidated'] || docMap['ug_sem_1'] || docMap['ug_marksheet'];
+    }
+    if (type === 'pg_marksheet') {
+      const pgRow = data.higher_education?.find(h => h.level === 'PG');
+      if (pgRow?.consolidated_marksheet_path) return pgRow.consolidated_marksheet_path;
+      if (pgRow?.marksheet_path) return pgRow.marksheet_path;
+      return docMap['pg_consolidated'] || docMap['pg_sem_1'] || docMap['pg_marksheet'];
+    }
+
+    return null;
+  };
+
   const DocBadge = ({ type, label }) => {
-    const path = docMap[type];
+    const path = getDocPath(type);
     return (
       <div className={`d-flex align-items-center gap-2 px-3 py-2 rounded-3 border ${path ? 'border-success bg-success bg-opacity-10' : 'border-secondary bg-light'}`}>
         {path
@@ -615,7 +683,7 @@ ${expRows ? `<div class="section">
           : <XCircle size={14} className="text-secondary flex-shrink-0" />}
         <span className="small fw-semibold">{label}</span>
         {path && (
-          <a href={`'http://localhost:5000'/${path}`} target="_blank" rel="noreferrer"
+          <a href={`${BASE_API}/${cleanDocPath(path)}`} target="_blank" rel="noreferrer"
             className="ms-auto btn btn-link p-0" style={{ fontSize: 11 }}>
             <Eye size={13} className="me-1" />View
           </a>
@@ -681,6 +749,7 @@ ${expRows ? `<div class="section">
         )}
 
         {/* ── completion banner ── */}
+        {false && (
         <div className="card border-0 shadow-sm rounded-4 mb-4" style={{ overflow: 'hidden' }}>
           <div className="card-body p-4">
             <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-3">
@@ -750,16 +819,19 @@ ${expRows ? `<div class="section">
             )}
           </div>
         </div>
+        )}
 
         {/* ════════════════════════════════════
             SECTION 1 — EXAM DETAILS
         ════════════════════════════════════ */}
         <SectionCard icon={<FileText size={18} className="text-primary" />}
-          title="1. Examination Details" color="#eff6ff" onEdit={goEdit} locked={isLocked}>
+          title="1. Examination Details" color="#eff6ff" onEdit={() => goEdit(0)} locked={isLocked}>
           <div className="row">
-            <Row label="Exam Center (First Choice)"  value={fmt(data.exam_center_1)} highlight />
+            <Row label="Department"                  value={fmt(data.department_name)} highlight />
+            <Row label="Programme Offered"           value={fmt(data.program_offered_name)} highlight />
+            <Row label="Exam Center (First Choice)"  value={fmt(data.exam_center_1)} />
             <Row label="Exam Center (Second Choice)" value={fmt(data.exam_center_2)} />
-            <Row label="Subject / Discipline"        value={fmt(data.subject)} highlight />
+            <Row label="Subject / Discipline"        value={fmt(data.subject)} />
             <Row label="Secondary Subject"           value={fmt(data.subject_2)} />
             <Row label="Category"                    value={fmt(data.category)} />
             {data.category === 'Part Time' && (
@@ -777,7 +849,7 @@ ${expRows ? `<div class="section">
             SECTION 2 — PERSONAL DETAILS
         ════════════════════════════════════ */}
         <SectionCard icon={<User size={18} className="text-success" />}
-          title="2. Personal Details" color="#f0fdf4" onEdit={goEdit} locked={isLocked}>
+          title="2. Personal Details" color="#f0fdf4" onEdit={() => goEdit(0)} locked={isLocked}>
           <div className="row">
             <Row label="Applicant Name (English)"    value={fmt(data.applicant_name ? `${data.applicant_name} ${data.applicant_initial || ''}`.trim() : null)} highlight />
             <Row label="Applicant Name (Tamil)"      value={fmt(data.applicant_name_tamil)} />
@@ -797,9 +869,9 @@ ${expRows ? `<div class="section">
             )}
           </div>
           {/* Photo preview */}
-          {docMap['Photo'] && (
+          {(docMap['photo'] || docMap['Photo']) && (
             <div className="mt-3 d-flex align-items-center gap-3">
-              <img src={`'http://localhost:5000'/${docMap['Photo']}`} alt="Candidate"
+              <img src={`${BASE_API}/${cleanDocPath(docMap['photo'] || docMap['Photo'])}`} alt="Candidate"
                 className="rounded-3 border shadow-sm"
                 style={{ width: 90, height: 110, objectFit: 'cover' }} />
               <div>
@@ -814,7 +886,7 @@ ${expRows ? `<div class="section">
             SECTION 3 — COMMUNICATION ADDRESS
         ════════════════════════════════════ */}
         <SectionCard icon={<MapPin size={18} className="text-warning" />}
-          title="3. Communication Address" color="#fffbeb" onEdit={goEdit} locked={isLocked}>
+          title="3. Communication Address" color="#fffbeb" onEdit={() => goEdit(1)} locked={isLocked}>
           <div className="row">
             <Row label="Address Line 1" value={fmt(data.address_1)} />
             <Row label="Address Line 2" value={fmt(data.address_2)} />
@@ -834,7 +906,7 @@ ${expRows ? `<div class="section">
             SECTION 4 — PERMANENT ADDRESS
         ════════════════════════════════════ */}
         <SectionCard icon={<MapPin size={18} className="text-secondary" />}
-          title="4. Permanent Address" color="#f9fafb" onEdit={goEdit} locked={isLocked}>
+          title="4. Permanent Address" color="#f9fafb" onEdit={() => goEdit(1)} locked={isLocked}>
           {data.perm_same_as_comm ? (
             <div className="text-muted small fst-italic">Same as communication address</div>
           ) : (
@@ -855,7 +927,7 @@ ${expRows ? `<div class="section">
         ════════════════════════════════════ */}
         {data.school_education?.length > 0 && (
           <SectionCard icon={<BookOpen size={18} className="text-info" />}
-            title="5. School Education" color="#f0f9ff" onEdit={goEdit} locked={isLocked}>
+            title="5. School Education" color="#f0f9ff" onEdit={() => goEdit(2)} locked={isLocked}>
             <div className="table-responsive">
               <table className="table table-sm align-middle" style={{ fontSize: 13 }}>
                 <thead className="table-light">
@@ -869,12 +941,12 @@ ${expRows ? `<div class="section">
                     <tr key={i}>
                       <td className="fw-semibold">{s.level}</td>
                       <td>{s.institution_name || '—'}</td>
-                      <td>{s.other_board_name || s.board_id || '—'}</td>
+                      <td>{s.board_name || s.other_board_name || s.board_id || '—'}</td>
                       <td>{s.passing_month} {s.passing_year}</td>
                       <td>{s.percentage || '—'}</td>
                       <td>
                         {s.marksheet_path
-                          ? <a href={`'http://localhost:5000'/${s.marksheet_path}`} target="_blank" rel="noreferrer" className="btn btn-link btn-sm p-0"><Eye size={13} /></a>
+                          ? <a href={`${BASE_API}/${cleanDocPath(s.marksheet_path)}`} target="_blank" rel="noreferrer" className="btn btn-link btn-sm p-0"><Eye size={13} /></a>
                           : <XCircle size={14} className="text-secondary" />}
                       </td>
                     </tr>
@@ -888,52 +960,117 @@ ${expRows ? `<div class="section">
         {/* ════════════════════════════════════
             SECTION 6 — HIGHER EDUCATION
         ════════════════════════════════════ */}
-        {data.higher_education?.length > 0 && (
-          <SectionCard icon={<BookOpen size={18} className="text-primary" />}
-            title="6. Higher Education" color="#eef2ff" onEdit={goEdit} locked={isLocked}>
-            <div className="table-responsive">
-              <table className="table table-sm align-middle" style={{ fontSize: 13 }}>
-                <thead className="table-light">
-                  <tr>
-                    <th>Level</th><th>Institution</th><th>University</th>
-                    <th>Month/Year</th><th>Score</th><th>Marksheet</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.higher_education.map((h, i) => (
-                    <tr key={i}>
-                      <td className="fw-semibold">{h.level}</td>
-                      <td>{h.institution_name || '—'}</td>
-                      <td style={{ maxWidth: 200 }}>{h.university_name || '—'}</td>
-                      <td>{h.passing_month} {h.passing_year}</td>
-                      <td>{h.score_value} {h.score_type ? `(${h.score_type})` : ''}</td>
-                      <td>
-                        {h.consolidated_marksheet_path || h.marksheet_path
-                          ? <a href={`'http://localhost:5000'/${h.consolidated_marksheet_path || h.marksheet_path}`} target="_blank" rel="noreferrer" className="btn btn-link btn-sm p-0"><Eye size={13} /></a>
-                          : <XCircle size={14} className="text-secondary" />}
-                      </td>
+        {data.higher_education?.length > 0 && (() => {
+          const pgRow = data.higher_education?.find(h => h.level === 'PG') || {};
+          const integratedRow = data.higher_education?.find(h => h.level === 'Integrated') || {};
+          return (
+            <SectionCard icon={<BookOpen size={18} className="text-primary" />}
+              title="6. Higher Education" color="#eef2ff" onEdit={() => goEdit(2)} locked={isLocked}>
+              <div className="table-responsive">
+                <table className="table table-sm align-middle" style={{ fontSize: 13 }}>
+                  <thead className="table-light">
+                    <tr>
+                      <th>Level</th><th>Institution</th><th>University</th>
+                      <th>Timeline</th><th>Score</th><th>Marksheet</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="row mt-3">
-              <Row label="PG University"    value={fmt(data.pg_university)} />
-              <Row label="PG Degree"        value={fmt(data.pg_degree)} />
-              <Row label="Score"            value={data.score_value ? `${data.score_value} (${data.score_type})` : null} />
-              <Row label="Year of Passing"  value={fmt(data.year_of_passing)} />
-              <Row label="Mark Statement"   value={fmt(data.mark_statement_type)} />
-              {data.is_awaiting_final_sem == 1 && <Row label="Awaiting Final Semester" value="Yes" />}
-            </div>
-          </SectionCard>
-        )}
+                  </thead>
+                  <tbody>
+                    {data.higher_education.map((h, i) => (
+                      <tr key={i}>
+                        <td className="fw-semibold text-nowrap">
+                          {h.level}
+                          {h.mark_statement_type && (
+                            <div className="text-muted small fw-normal mt-0.5" style={{ fontSize: 10 }}>
+                              {h.mark_statement_type}
+                            </div>
+                          )}
+                          {h.is_awaiting_final_sem == 1 && (
+                            <span className="badge bg-warning bg-opacity-15 text-warning-emphasis border border-warning-subtle px-1.5 py-0.5 mt-1 d-inline-block fw-semibold" style={{ fontSize: 9 }}>
+                              Awaiting Results
+                            </span>
+                          )}
+                        </td>
+                        <td>{h.institution_name || '—'}</td>
+                        <td style={{ maxWidth: 200 }}>{h.university_name || '—'}</td>
+                        <td>
+                          {h.level === 'UG' || h.level === 'PG' || h.level === 'Integrated' ? (
+                            <>
+                              <div>{h.passing_month || '—'}</div>
+                              {(h.start_year || h.completion_year) && (
+                                <div className="text-muted" style={{ fontSize: 11 }}>
+                                  {h.start_year ? `Start: ${h.start_year}` : ''} {h.completion_year ? ` | End: ${h.completion_year}` : ''}
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <div>{h.passing_month ? `${h.passing_month} ` : ''}{h.passing_year ? `Pass: ${h.passing_year}` : '—'}</div>
+                          )}
+                        </td>
+                        <td>
+                          {h.score_value
+                            ? h.score_type === 'CGPA' && h.cgpa_scale && ['UG','PG','M.Phil'].includes(h.level)
+                              ? <>
+                                  <span>{h.score_value} CGPA ({h.cgpa_scale}-pt)</span>
+                                  {h.normalized_cgpa != null && (
+                                    <div className="text-primary" style={{ fontSize: 11 }}>
+                                      Normalized: {parseFloat(h.normalized_cgpa).toFixed(2)} / 10
+                                    </div>
+                                  )}
+                                </>
+                              : `${h.score_value}${h.score_type ? ` (${h.score_type})` : ''}`
+                            : '—'}
+                        </td>
+                        <td>
+                          {h.consolidated_marksheet_path || h.marksheet_path
+                            ? <a href={`${BASE_API}/${cleanDocPath(h.consolidated_marksheet_path || h.marksheet_path)}`} target="_blank" rel="noreferrer" className="btn btn-link btn-sm p-0"><Eye size={13} /></a>
+                            : <XCircle size={14} className="text-secondary" />}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              
+              {/* Dynamic PG / Integrated Summary Card */}
+              {(pgRow.institution_name || integratedRow.institution_name) && (
+                <div className="mt-4 p-3 rounded-4 bg-light bg-opacity-70 border border-light-subtle">
+                  <h6 className="fw-bold mb-3 text-secondary" style={{ fontSize: 13 }}>
+                    Qualifying Academic Details Summary
+                  </h6>
+                  {integratedRow.institution_name ? (
+                    <div className="row">
+                      <Row label="Integrated Course Name" value={fmt(integratedRow.degree_name === 'Others' ? integratedRow.degree_name_other : integratedRow.degree_name)} />
+                      <Row label="University" value={fmt(integratedRow.university_name)} />
+                      <Row label="Institution" value={fmt(integratedRow.institution_name)} />
+                      <Row label="Registration Number" value={fmt(integratedRow.registration_number)} />
+                      <Row label="Timeline" value={fmt(`${integratedRow.start_year || '—'} to ${integratedRow.completion_year || '—'}`)} />
+                      <Row label="Score" value={integratedRow.score_value ? `${integratedRow.score_value} (${integratedRow.score_type})` : null} />
+                      <Row label="Mark Statement Type" value={fmt(integratedRow.mark_statement_type)} />
+                      {integratedRow.is_awaiting_final_sem == 1 && <Row label="Awaiting Final Semester" value="Yes" highlight />}
+                    </div>
+                  ) : (
+                    <div className="row">
+                      <Row label="PG Degree / Course" value={fmt(pgRow.degree_name === 'Others' ? pgRow.degree_name_other : pgRow.degree_name)} />
+                      <Row label="PG University" value={fmt(pgRow.university_name)} />
+                      <Row label="PG Institution" value={fmt(pgRow.institution_name)} />
+                      <Row label="Passing Month & Year" value={fmt(`${pgRow.passing_month || ''} ${pgRow.passing_year || ''}`.trim() || null)} />
+                      <Row label="Score" value={pgRow.score_value ? `${pgRow.score_value} (${pgRow.score_type})` : null} />
+                      <Row label="Mark Statement Type" value={fmt(pgRow.mark_statement_type)} />
+                      {pgRow.is_awaiting_final_sem == 1 && <Row label="Awaiting Final Semester" value="Yes" highlight />}
+                    </div>
+                  )}
+                </div>
+              )}
+            </SectionCard>
+          );
+        })()}
 
         {/* ════════════════════════════════════
             SECTION 7 — WORK EXPERIENCE
         ════════════════════════════════════ */}
         {data.experience_details?.length > 0 && (
           <SectionCard icon={<Briefcase size={18} className="text-dark" />}
-            title="7. Work Experience" color="#f9fafb" onEdit={goEdit} locked={isLocked}>
+            title="7. Work Experience" color="#f9fafb" onEdit={() => goEdit(3)} locked={isLocked}>
             <div className="table-responsive">
               <table className="table table-sm align-middle" style={{ fontSize: 13 }}>
                 <thead className="table-light">
@@ -954,7 +1091,7 @@ ${expRows ? `<div class="section">
                       <tr key={i}>
                         <td className="fw-semibold">{e.designation || '—'}</td>
                         <td>{e.organization_name || '—'}</td>
-                        <td>{e.employment_type_id || '—'}</td>
+                        <td>{e.employment_type || e.employment_type_id || '—'}</td>
                         <td>{fromDisplay}</td>
                         <td>{toDisplay}</td>
                         <td>{e.total_years}Y {e.total_months}M</td>
@@ -971,7 +1108,7 @@ ${expRows ? `<div class="section">
             SECTION 8 — OTHER QUALIFICATIONS
         ════════════════════════════════════ */}
         <SectionCard icon={<BadgeCheck size={18} className="text-success" />}
-          title="8. Other Qualifications" color="#f0fdf4" onEdit={goEdit} locked={isLocked}>
+          title="8. Other Qualifications" color="#f0fdf4" onEdit={() => goEdit(2)} locked={isLocked}>
           {qualExams.length > 0 ? (
             <div className="d-flex flex-wrap gap-2">
               {qualExams.map(q => (
@@ -989,7 +1126,7 @@ ${expRows ? `<div class="section">
             SECTION 9 — UPLOADED DOCUMENTS
         ════════════════════════════════════ */}
         <SectionCard icon={<Upload size={18} className="text-primary" />}
-          title="9. Uploaded Documents" color="#eff6ff" onEdit={goEdit} locked={isLocked}>
+          title="9. Uploaded Documents" color="#eff6ff" onEdit={() => goEdit(2)} locked={isLocked}>
           <div className="row g-3">
             {[
               { type: 'Photo',                 label: 'Passport Photo' },
@@ -1053,7 +1190,7 @@ ${expRows ? `<div class="section">
                 </label>
               </div>
 
-              {pct < 100 && (
+              {false && pct < 100 && (
                 <div className="alert alert-warning d-flex gap-2 align-items-center mt-3 mb-0 rounded-3">
                   <AlertCircle size={18} className="flex-shrink-0" />
                   <span className="small">Your application is <strong>{pct}% complete</strong>. Some mandatory sections are incomplete. <Link to="/apply" className="alert-link fw-bold">Click here to go back and complete all required fields</Link> before submitting.</span>
@@ -1077,12 +1214,11 @@ ${expRows ? `<div class="section">
               <button
                 className="btn btn-success rounded-pill px-5 fw-bold d-flex align-items-center gap-2"
                 onClick={() => {
-                  if (pct < 100) { toast.error('Your application is incomplete. Please fill in all mandatory fields.'); return; }
                   setShowDecision(true);
                 }}
-                disabled={!declared || pct < 100}
-                title={pct < 100 ? 'Please complete all mandatory fields first' : !declared ? 'Please read and accept the declaration above first' : ''}
-                style={{ opacity: (!declared || pct < 100) ? 0.6 : 1, transition: 'opacity 0.2s' }}
+                disabled={!declared}
+                title={!declared ? 'Please read and accept the declaration above first' : ''}
+                style={{ opacity: !declared ? 0.6 : 1, transition: 'opacity 0.2s' }}
               >
                 <Shield size={16} />
                 Proceed to Final Submission

@@ -57,33 +57,6 @@ export default function LandingPage() {
 
     let route = portal.login_route;
 
-    // Dynamically adapt localhost URLs in production to use the current live origin and subpaths
-    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-      if (window.location.hostname.endsWith('.trycloudflare.com')) {
-        // We are on trycloudflare tunnels! Use the injected frontend tunnel URLs
-        if (route.includes('localhost:5173') || route.includes(':5173')) {
-          route = import.meta.env.VITE_STUDENT_FE_URL ? route.replace(/https?:\/\/[^\/]+:5173/, import.meta.env.VITE_STUDENT_FE_URL) : route;
-        } else if (route.includes('localhost:5174') || route.includes(':5174')) {
-          route = import.meta.env.VITE_ADMIN_FE_URL ? route.replace(/https?:\/\/[^\/]+:5174/, import.meta.env.VITE_ADMIN_FE_URL) : route;
-        } else if (route.includes('localhost:5175') || route.includes(':5175')) {
-          route = import.meta.env.VITE_SUPERVISOR_FE_URL ? route.replace(/https?:\/\/[^\/]+:5175/, import.meta.env.VITE_SUPERVISOR_FE_URL) : route;
-        } else if (route.includes('localhost:5176') || route.includes(':5176')) {
-          route = import.meta.env.VITE_CENTER_FE_URL ? route.replace(/https?:\/\/[^\/]+:5176/, import.meta.env.VITE_CENTER_FE_URL) : route;
-        }
-      } else {
-        // Standard production deploy (e.g. Netlify/Nginx subpaths)
-        if (route.includes('localhost:5173') || route.includes(':5173')) {
-          route = route.replace(/https?:\/\/[^\/]+:5173/, window.location.origin + '/student');
-        } else if (route.includes('localhost:5174') || route.includes(':5174')) {
-          route = route.replace(/https?:\/\/[^\/]+:5174/, window.location.origin + '/admin');
-        } else if (route.includes('localhost:5175') || route.includes(':5175')) {
-          route = route.replace(/https?:\/\/[^\/]+:5175/, window.location.origin + '/supervisor');
-        } else if (route.includes('localhost:5176') || route.includes(':5176')) {
-          route = route.replace(/https?:\/\/[^\/]+:5176/, window.location.origin + '/center');
-        }
-      }
-    }
-    
     // Check if the route is fully qualified (external link) or local to the current host
     if (route.startsWith('http://') || route.startsWith('https://')) {
       // If it is student portal and goes to current host login, let's keep it local

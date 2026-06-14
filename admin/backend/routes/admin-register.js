@@ -121,6 +121,17 @@ router.post('/register-supervisor', verifyToken, isAdmin, async (req, res) => {
         const loginUrl = process.env.SUPERVISOR_PORTAL_URL || 'http://localhost:5175';
         credSvc.notify({ db: pool, name, email, password, portalType: 'Supervisor', loginUrl }).catch(() => {});
 
+        const { notifyAdmin } = require('../services/notifyAdmin');
+        await notifyAdmin(null, {
+            event_key:   'supervisor.register',
+            title:       `New Supervisor Registered: ${name}`,
+            message:     `Email: ${email}${supervisorId ? ` — auto-linked to supervisor #${supervisorId}` : ' — pending manual link'}`,
+            type:        'info',
+            source_type: 'supervisor',
+            source_id:   supervisorId ? String(supervisorId) : String(result.insertId),
+            link:        '/supervisors',
+        });
+
         res.status(201).json({
             success: true,
             message: supervisorId
@@ -173,6 +184,17 @@ router.post('/register-centre', verifyToken, isAdmin, async (req, res) => {
         // Same credential notification as portal signup
         const loginUrl = process.env.CENTER_PORTAL_URL || 'http://localhost:5176';
         credSvc.notify({ db: pool, name, email, password, portalType: 'Center', loginUrl }).catch(() => {});
+
+        const { notifyAdmin: notifyAdminCentre } = require('../services/notifyAdmin');
+        await notifyAdminCentre(null, {
+            event_key:   'center.register',
+            title:       `New Exam Centre Registered: ${name}`,
+            message:     `Email: ${email}${centerId ? ` — auto-linked to centre #${centerId}` : ' — pending manual link'}`,
+            type:        'info',
+            source_type: 'center',
+            source_id:   centerId ? String(centerId) : String(result.insertId),
+            link:        '/centres',
+        });
 
         res.status(201).json({
             success: true,

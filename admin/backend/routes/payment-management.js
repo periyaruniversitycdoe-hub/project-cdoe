@@ -152,7 +152,7 @@ router.get('/receipt-data/:orderId', async (req, res) => {
       try { parsedPayload = txn.callback_payload ? JSON.parse(txn.callback_payload) : {}; } catch { /* ignore */ }
 
       data = {
-        receipt_number: txn.order_id.replace('PU', 'RC'),
+        receipt_number: txn.order_id.replace('PURD', 'RC').replace('PU', 'RC'),
         order_id: txn.order_id,
         application_id: txn.application_id,
         amount: txn.amount,
@@ -662,6 +662,26 @@ router.post('/approve-utr', async (req, res) => {
     );
 
     await conn.commit();
+
+    // Admin notification feed
+    try {
+      const { notifyAdmin } = require('../services/notifyAdmin');
+      const appDisplay = txn?.application_id || order_id;
+      await notifyAdmin(null, {
+        event_key:   'payment.approve_reject',
+        title:       action === 'approve'
+                       ? `Payment Approved: ${appDisplay}`
+                       : `Payment Rejected: ${appDisplay}`,
+        message:     action === 'approve'
+                       ? `UTR/UPI payment of ₹${txn?.amount || '?'} verified and approved`
+                       : `UTR/UPI payment rejected. Reason: ${remarks || 'No remarks'}`,
+        type:        action === 'approve' ? 'success' : 'danger',
+        source_type: 'payment',
+        source_id:   order_id,
+        link:        '/payment-management',
+      });
+    } catch (_) {}
+
     res.json({ success: true, message: `Payment ${action}d successfully` });
   } catch (err) {
     await conn.rollback();

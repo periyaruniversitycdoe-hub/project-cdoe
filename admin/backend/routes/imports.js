@@ -1,4 +1,4 @@
-﻿const { safeError } = require('../../../shared/security/safeError');
+const { safeError } = require('../../../shared/security/safeError');
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
@@ -40,7 +40,7 @@ const DESTINATIONS = {
             { key: 'name', label: 'Supervisor Name *', type: 'string', required: true, aliases: ['name', 'supervisor_name', 'guide_name', 'name_of_the_supervisor'] },
             { key: 'designation_name', label: 'Designation', type: 'master_lookup', lookupTable: 'master_designations', required: false, aliases: ['designation', 'designation_name'] },
             { key: 'recognition_ref_no', label: 'Reference No / Ref No', type: 'string', required: false, aliases: ['reference_no', 'recognition_ref_no', 'ref_no'] },
-            { key: 'department_name', label: 'Department', type: 'master_lookup', lookupTable: 'master_departments', required: false, aliases: ['department', 'department_name', 'dept'] },
+            { key: 'department_name', label: 'Department', type: 'master_lookup', lookupTable: 'departments', required: false, aliases: ['department', 'department_name', 'dept'] },
             { key: 'area_of_specialization', label: 'Area of Specialization', type: 'string', required: false, aliases: ['area_of_specialization', 'specialization', 'specialisation'] },
             { key: 'gender', label: 'Gender', type: 'enum', options: ['Male', 'Female', 'Other'], required: false, aliases: ['gender', 'sex'] },
             { key: 'serving_institute_name', label: 'Serving Institute / College', type: 'master_lookup', lookupTable: 'master_institutes', required: false, aliases: ['college_name', 'institute_name', 'serving_institute', 'serving_institute_name', 'college'] },
@@ -181,7 +181,7 @@ async function getOrInsertMaster(conn, table, nameValue, currentUserId) {
         const generatedCode = 'AUTO_' + Math.random().toString(36).substring(2, 7).toUpperCase();
         insertSql = `INSERT INTO ${table} (name, college_code, abbreviation, is_active) VALUES (?, ?, ?, 1)`;
         params = [cleanName, generatedCode, generatedCode];
-    } else if (table === 'master_designations' || table === 'master_departments' || table === 'master_districts' || table === 'master_centre_types') {
+    } else if (table === 'master_designations' || table === 'departments' || table === 'master_districts' || table === 'master_centre_types') {
         insertSql = `INSERT INTO ${table} (name, is_active) VALUES (?, 1)`;
     }
 
@@ -710,7 +710,7 @@ router.post('/export/:destination', verifyToken, isAdmin, async (req, res) => {
                        dist.name AS district_name
                 FROM supervisors s
                 LEFT JOIN master_designations d ON s.designation_id = d.id
-                LEFT JOIN master_departments dept ON s.department_id = dept.id
+                LEFT JOIN departments dept ON s.department_id = dept.id
                 LEFT JOIN master_institutes inst ON s.serving_institute_id = inst.id
                 LEFT JOIN master_districts dist ON s.district_id = dist.id
                 ${where} ORDER BY s.name ASC`;

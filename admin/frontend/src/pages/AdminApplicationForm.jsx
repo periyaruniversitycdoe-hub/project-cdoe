@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import axios from 'axios';
 import toast from 'react-hot-toast';
@@ -41,6 +41,7 @@ const AdminApplicationForm = () => {
   const [appStatus, setAppStatus] = useState('Draft');
   const [semesters, setSemesters] = useState(['sem_1']);
   const [partTimeMapping, setPartTimeMapping] = useState({});
+  const [loadedData, setLoadedData] = useState(null);
 
   const token   = localStorage.getItem('adminToken');
   const headers = { Authorization: `Bearer ${token}` };
@@ -83,14 +84,20 @@ const AdminApplicationForm = () => {
       .catch(() => {});
   }, []);
 
-  // Automatically update part-time details when sub-category changes
+  // Restore part-time dropdown selections once configurations load
   useEffect(() => {
-    if (partTimeCategory && partTimeMapping[partTimeCategory]) {
-      setValue('part_time_area', partTimeMapping[partTimeCategory].area);
-    } else {
-      setValue('part_time_area', '');
+    if (loadedData && Object.keys(partTimeMapping).length > 0) {
+      if (loadedData.part_time_category) {
+        setValue('part_time_category', loadedData.part_time_category);
+      }
+      if (loadedData.part_time_designation) {
+        setValue('part_time_designation', loadedData.part_time_designation);
+      }
+      if (loadedData.part_time_area) {
+        setValue('part_time_area', loadedData.part_time_area);
+      }
     }
-  }, [partTimeCategory, partTimeMapping, setValue]);
+  }, [partTimeMapping, loadedData, setValue]);
 
   // ── Load dropdowns & states on mount ──────────────────────────────────────
   useEffect(() => {
@@ -160,9 +167,7 @@ const AdminApplicationForm = () => {
     if (markType === 'Consolidated Mark Statement') setValue('is_awaiting_final_sem', 0);
   }, [markType, setValue]);
 
-  useEffect(() => {
-    if (category !== 'Part Time') setValue('working_district', '');
-  }, [category, setValue]);
+
 
   // ── Load application data ──────────────────────────────────────────────────
   useEffect(() => {
@@ -175,6 +180,7 @@ const AdminApplicationForm = () => {
         if (data.qualified_exams && typeof data.qualified_exams === 'string') {
           try { data.qualified_exams = JSON.parse(data.qualified_exams); } catch {}
         }
+        setLoadedData(data);
         reset(data);
 
         // Load documents
@@ -432,9 +438,21 @@ const AdminApplicationForm = () => {
               <td colSpan="2"></td>
             </tr>
             <tr>
-              <td className="text-end fw-semibold bg-light">Category <span className="text-danger">*</span></td>
+               <td className="text-end fw-semibold bg-light">Category <span className="text-danger">*</span></td>
               <td>
-                <select className="form-select form-select-sm" {...register('category')}>
+                <select
+                  className="form-select form-select-sm"
+                  {...register('category')}
+                  onChange={(e) => {
+                    register('category').onChange(e);
+                    if (e.target.value !== 'Part Time') {
+                      setValue('working_district', '');
+                      setValue('part_time_category', '');
+                      setValue('part_time_designation', '');
+                      setValue('part_time_area', '');
+                    }
+                  }}
+                >
                   <option value="">Select</option>
                   {(dropdowns.categories || FALLBACK_CATEGORIES).map(i => <option key={i.id} value={i.name}>{i.name}</option>)}
                 </select>
@@ -454,7 +472,20 @@ const AdminApplicationForm = () => {
                 <tr>
                   <td className="text-end fw-semibold bg-light text-primary">Part-Time Category <span className="text-danger">*</span></td>
                   <td>
-                    <select className="form-select form-select-sm" {...register('part_time_category')}>
+                    <select
+                      className="form-select form-select-sm"
+                      {...register('part_time_category')}
+                      onChange={(e) => {
+                        register('part_time_category').onChange(e);
+                        setValue('part_time_designation', '');
+                        const ptCat = e.target.value;
+                        if (ptCat && partTimeMapping[ptCat]) {
+                          setValue('part_time_area', partTimeMapping[ptCat].area);
+                        } else {
+                          setValue('part_time_area', '');
+                        }
+                      }}
+                    >
                       <option value="">Select Part-Time Category</option>
                       {Object.keys(partTimeMapping).map(k => <option key={k} value={k}>{k}</option>)}
                     </select>

@@ -48,10 +48,11 @@ function getPageAccess(settings = {}) {
   };
 
   return {
-    registration: makeWindow('apply_now_enabled',       'apply_now_open',    'apply_now_close'),
-    payment:      makeWindow('payment_enabled',          'payment_open',      'payment_close'),
-    hallTicket:   makeWindow('hall_ticket_enabled',      'hall_ticket_open',  'hall_ticket_close'),
-    // Counselling window is per-session in counselling_settings (handled separately)
+    registration:   makeWindow('apply_now_enabled',       'apply_now_open',       'apply_now_close'),
+    payment:        makeWindow('payment_enabled',          'payment_open',         'payment_close'),
+    hallTicket:     makeWindow('hall_ticket_enabled',      'hall_ticket_open',     'hall_ticket_close'),
+    applicantLogin: makeWindow('applicant_login_enabled',  'applicant_login_open', 'applicant_login_close'),
+    resultPublish:  makeWindow('result_publish_enabled',   'result_publish_open',  'result_publish_close'),
   };
 }
 
@@ -87,7 +88,7 @@ function computeFinalResult(app, passingMark = 50) {
  * 3. Results PUBLISHED
  * 4. Window ACTIVE
  */
-function checkCounsellingAccess(app, counsellingWindow, { entranceResultPublished } = {}) {
+function checkCounsellingAccess(app, counsellingWindow, { entranceResultPublished, resultPublishEnabled, resultPublishOpen, resultPublishClose } = {}) {
   const isExempted   = app.entrance_exam_status === 'Exempted';
   const isDirectPass = app.direct_pass_status   === 'DirectPass';
 
@@ -103,7 +104,12 @@ function checkCounsellingAccess(app, counsellingWindow, { entranceResultPublishe
   }
 
   // [GATE 3] Publication
-  const resultsAvailable = !!app.result_published_at || !!entranceResultPublished;
+  const pageAccess = getPageAccess({
+    result_publish_enabled: resultPublishEnabled,
+    result_publish_open: resultPublishOpen,
+    result_publish_close: resultPublishClose
+  });
+  const resultsAvailable = !!app.result_published_at || !!entranceResultPublished || (!!resultPublishEnabled && pageAccess.resultPublish.active);
   if (!resultsAvailable) {
     return { eligible: false, reason: 'Access Restricted: Results have not been officially published.' };
   }

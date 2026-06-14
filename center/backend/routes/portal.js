@@ -44,6 +44,7 @@ router.get('/me', verifyToken, async (req, res) => {
                     rc.institute_id,
                     rc.centre_type_id,
                     rc.district_id,
+                    rc.department_id,
                     rc.address_1, rc.address_2, rc.address_3, rc.pincode,
                     rc.contact_number, rc.email AS centre_email, rc.hod_email,
                     rc.recognition_date, rc.status AS centre_status, rc.recognition_certificate,
@@ -51,16 +52,31 @@ router.get('/me', verifyToken, async (req, res) => {
                     rc.college_code,   rc.college_name,
                     rc.principal_name, rc.principal_mobile, rc.college_phone,
                     ct.name  AS centre_type_name,
-                    d.name   AS district_name
+                    d.name   AS district_name,
+                    dept.name AS department_name
              FROM center_users cu
              LEFT JOIN research_centres rc ON cu.center_id = rc.id
              LEFT JOIN master_centre_types ct ON rc.centre_type_id = ct.id
              LEFT JOIN master_districts d    ON rc.district_id    = d.id
+             LEFT JOIN departments dept      ON rc.department_id  = dept.id
              WHERE cu.id = ?`,
             [req.user.id]
         );
         if (rows.length === 0) return res.status(404).json({ message: 'User not found' });
-        res.json(rows[0]);
+        const row = rows[0];
+        if (row.center_id) {
+            const [depts] = await pool.query(
+                `SELECT d.id, d.name
+                 FROM research_centre_departments rcd
+                 JOIN departments d ON rcd.department_id = d.id
+                 WHERE rcd.research_centre_id = ?
+                 ORDER BY d.name ASC`,
+                [row.center_id]
+            );
+            row.mapped_departments    = depts;
+            row.mapped_department_ids = depts.map(d => d.id);
+        }
+        res.json(row);
     } catch (err) {
         console.error(err);
         res.status(500).json({ message: 'Server error' });
@@ -95,7 +111,7 @@ router.get('/dashboard', verifyToken, async (req, res) => {
                             d.name AS designation_name, dept.name AS department_name
                      FROM supervisors s
                      LEFT JOIN master_designations d ON s.designation_id = d.id
-                     LEFT JOIN master_departments dept ON s.department_id = dept.id
+                     LEFT JOIN departments dept ON s.department_id = dept.id
                      WHERE s.serving_institute_id = ?
                      ORDER BY s.name LIMIT 10`,
                     [instituteId]
@@ -135,7 +151,7 @@ router.get('/supervisors', verifyToken, async (req, res) => {
                     d.name AS designation_name, dept.name AS department_name
              FROM supervisors s
              LEFT JOIN master_designations d ON s.designation_id = d.id
-             LEFT JOIN master_departments dept ON s.department_id = dept.id
+             LEFT JOIN departments dept ON s.department_id = dept.id
              WHERE s.serving_institute_id = ?
              ORDER BY s.name`,
             [instituteId]
@@ -227,6 +243,7 @@ router.post('/application', verifyToken, centerUpload, postUploadCheck(), async 
             abbreviation:     str(data.college_code) || submittedCode || str(data.abbreviation) || null,
             institute_id:     resolvedInstituteId,
             centre_type_id:   parseId(data.centre_type_id),
+            department_id:    parseId(data.department_id),
             // Step 2 — Address & Contact
             address_1:        str(data.address_1),
             address_2:        str(data.address_2),
@@ -251,6 +268,21 @@ router.post('/application', verifyToken, centerUpload, postUploadCheck(), async 
             const [result] = await pool.query('INSERT INTO research_centres SET ?', [centerData]);
             centerId = result.insertId;
             await pool.query('UPDATE center_users SET center_id = ? WHERE id = ?', [centerId, req.user.id]);
+        }
+
+        // Save department mapping
+        let mappedDeptIds = [];
+        try {
+            const raw = data.mapped_departments;
+            if (raw && raw !== 'null' && raw !== '') {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed)) mappedDeptIds = parsed.map(Number).filter(Boolean);
+            }
+        } catch { /* ignore malformed JSON */ }
+        await pool.query('DELETE FROM research_centre_departments WHERE research_centre_id = ?', [centerId]);
+        if (mappedDeptIds.length > 0) {
+            const vals = mappedDeptIds.map(id => [centerId, id]);
+            await pool.query('INSERT IGNORE INTO research_centre_departments (research_centre_id, department_id) VALUES ?', [vals]);
         }
 
         res.json({ message: 'Application saved successfully', center_id: centerId });

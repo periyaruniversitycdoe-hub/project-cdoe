@@ -28,18 +28,18 @@ async function streamReceiptPDF(orderId, userId, res) {
   }
 
   // Compute fields exactly as in frontend e-receipt
-  const transactionId = receipt.gateway_transaction_id || payload.TXNID || receipt.order_id || 'N/A';
-  const bankTransactionId = payload.BANKTXNID || receipt.gateway_transaction_id || 'PC' + Math.floor(1000000000000000 + Math.random() * 9000000000000000);
+  const transactionId = receipt.gateway_transaction_id || payload.TXNID || payload.txnId || receipt.order_id || 'N/A';
+  const bankTransactionId = payload.BANKTXNID || payload.bankTxnId || receipt.gateway_transaction_id || 'PC' + Math.floor(1000000000000000 + Math.random() * 9000000000000000);
   const orderIdVal = receipt.order_id || 'N/A';
   const txnAmount = receipt.amount ? parseFloat(receipt.amount).toFixed(2) : '0.00';
   const txnStatus = receipt.payment_status === 'SUCCESS' ? 'TXN_SUCCESS' : receipt.payment_status || 'TXN_SUCCESS';
   const txnType = 'SALE';
-  const gatewayName = payload.GATEWAYNAME || 'SBI';
-  const responseCode = payload.RESPCODE || '01';
-  const responseMessage = payload.RESPMSG || 'Txn Success';
-  const bankName = payload.BANKNAME || 'State Bank of India';
-  const merchantId = payload.MID || 'Periya40654046259334';
-  const paymentMode = payload.PAYMENTMODE || (receipt.payment_method === 'netbanking' ? 'NB' : receipt.payment_method === 'card' ? 'CC' : 'UPI');
+  const gatewayName = payload.GATEWAYNAME || payload.gatewayName || 'SBI';
+  const responseCode = payload.RESPCODE || payload.respCode || (payload.resultInfo ? payload.resultInfo.resultCode : null) || '01';
+  const responseMessage = payload.RESPMSG || payload.respMsg || (payload.resultInfo ? payload.resultInfo.resultMsg : null) || 'Txn Success';
+  const bankName = payload.BANKNAME || payload.bankName || 'State Bank of India';
+  const merchantId = payload.MID || payload.mid || 'Periya40654046259334';
+  const paymentMode = payload.PAYMENTMODE || payload.paymentMode || (receipt.payment_method === 'netbanking' ? 'NB' : receipt.payment_method === 'card' ? 'CC' : 'UPI');
   const refundAmount = '0.0';
 
   const formattedDate = receipt.issued_at

@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
-import { Plus, Trash2, Edit2, Check, X, Download, RefreshCw } from 'lucide-react';
+import { Plus, Trash2, Edit2, Check, X, Download, RefreshCw, Search, UserPlus, ChevronDown, ChevronUp } from 'lucide-react';
 
 const API = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
 const getHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('adminToken')}` });
@@ -828,14 +828,552 @@ function AllotmentsTab() {
   );
 }
 
+// ─── Admin Applications Tab ───────────────────────────────────────────────────
+
+function PreferenceRow({ pref, index, department, onCenterChange, onSupervisorChange, onRemove, removable }) {
+  const [centers, setCenters]       = useState([]);
+  const [supervisors, setSupervisors] = useState([]);
+  const [loadingC, setLoadingC]     = useState(false);
+  const [loadingSv, setLoadingSv]   = useState(false);
+
+  useEffect(() => {
+    if (!department) return;
+    setLoadingC(true);
+    axios.get(`${API}/counselling/research-centers?active=1&department=${encodeURIComponent(department)}`, { headers: getHeaders() })
+      .then(r => setCenters(r.data.data || []))
+      .catch(() => toast.error('Failed to load centres'))
+      .finally(() => setLoadingC(false));
+  }, [department]);
+
+  useEffect(() => {
+    if (!pref.center_id || !department) { setSupervisors([]); return; }
+    setLoadingSv(true);
+    axios.get(
+      `${API}/counselling/research-supervisors?active=1&center_id=${pref.center_id}&department=${encodeURIComponent(department)}`,
+      { headers: getHeaders() }
+    )
+      .then(r => setSupervisors(r.data.data || []))
+      .catch(() => toast.error('Failed to load supervisors'))
+      .finally(() => setLoadingSv(false));
+  }, [pref.center_id, department]);
+
+  return (
+    <div className="border rounded p-3 mb-2 bg-light position-relative">
+      <div className="d-flex align-items-center gap-2 mb-2">
+        <span className="badge bg-primary" style={{ fontSize: 11 }}>Preference {index + 1}</span>
+        {removable && (
+          <button type="button" className="btn btn-sm btn-outline-danger border-0 ms-auto p-1"
+            onClick={() => onRemove(index)} title="Remove preference">
+            <X size={13} />
+          </button>
+        )}
+      </div>
+      <div className="row g-2">
+        <div className="col-md-6">
+          <label className="form-label mb-1" style={{ fontSize: 11 }}>Research Centre *</label>
+          <select className="form-select form-select-sm" value={pref.center_id}
+            onChange={e => onCenterChange(index, e.target.value)} disabled={loadingC}>
+            <option value="">{loadingC ? 'Loading…' : centers.length === 0 ? 'No centres for this department' : 'Select Centre'}</option>
+            {centers.map(c => <option key={c.id} value={c.id}>{c.center_name}</option>)}
+          </select>
+        </div>
+        <div className="col-md-6">
+          <label className="form-label mb-1" style={{ fontSize: 11 }}>Supervisor *</label>
+          <select className="form-select form-select-sm" value={pref.supervisor_id}
+            onChange={e => onSupervisorChange(index, e.target.value)}
+            disabled={!pref.center_id || loadingSv}>
+            <option value="">
+              {!pref.center_id ? 'Select centre first' : loadingSv ? 'Loading…' : supervisors.length === 0 ? 'No supervisors for dept/centre' : 'Select Supervisor'}
+            </option>
+            {supervisors.map(s => (
+              <option key={s.id} value={s.id}>
+                {s.supervisor_name}{s.designation ? ` — ${s.designation}` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminApplicationModal({ show, editApp, onHide, onSaved }) {
+  const [step, setStep]               = useState(editApp ? 2 : 1);
+  const [appNumber, setAppNumber]     = useState('');
+  const [validating, setValidating]   = useState(false);
+  const [studentInfo, setStudentInfo] = useState(editApp ? {
+    user_id: editApp.user_id, application_number: editApp.user_app_id, full_name: editApp.full_name,
+    email: editApp.email, department: editApp.department_filter, session_id: editApp.session_id,
+    max_choices: 10,
+  } : null);
+  const [validError, setValidError]   = useState('');
+  const [preferences, setPreferences] = useState(
+    editApp?.choices?.length
+      ? editApp.choices.map(c => ({ center_id: String(c.research_center_id || ''), supervisor_id: String(c.supervisor_id || '') }))
+      : [{ center_id: '', supervisor_id: '' }]
+  );
+  const [adminNotes, setAdminNotes]   = useState(editApp?.admin_notes || '');
+  const [saving, setSaving]           = useState(false);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (show && step === 1 && inputRef.current) inputRef.current.focus();
+  }, [show, step]);
+
+  const validate = async () => {
+    const num = appNumber.trim().toUpperCase();
+    if (!num) return toast.error('Enter an application number');
+    setValidating(true);
+    setValidError('');
+    try {
+      const res = await axios.get(`${API}/counselling/admin-applications/validate/${num}`, { headers: getHeaders() });
+      setStudentInfo(res.data.data);
+      setStep(2);
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Validation failed';
+      setValidError(msg);
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  const addPreference = () => {
+    if (!studentInfo) return;
+    if (preferences.length >= (studentInfo.max_choices || 10)) {
+      return toast.error(`Maximum ${studentInfo.max_choices} preferences allowed`);
+    }
+    setPreferences(p => [...p, { center_id: '', supervisor_id: '' }]);
+  };
+
+  const removePreference = (idx) => {
+    setPreferences(p => p.filter((_, i) => i !== idx));
+  };
+
+  const handleCenterChange = (idx, centerId) => {
+    setPreferences(p => p.map((pref, i) => i === idx ? { center_id: centerId, supervisor_id: '' } : pref));
+  };
+
+  const handleSupervisorChange = (idx, supervisorId) => {
+    setPreferences(p => p.map((pref, i) => i === idx ? { ...pref, supervisor_id: supervisorId } : pref));
+  };
+
+  const handleSubmit = async () => {
+    if (!studentInfo) return;
+
+    // Validate completeness
+    for (let i = 0; i < preferences.length; i++) {
+      if (!preferences[i].center_id || !preferences[i].supervisor_id) {
+        return toast.error(`Preference ${i + 1}: please select both centre and supervisor`);
+      }
+    }
+
+    // Validate no duplicates
+    const cIds  = preferences.map(p => p.center_id);
+    const svIds = preferences.map(p => p.supervisor_id);
+    if (new Set(cIds).size !== cIds.length)  return toast.error('Duplicate centre selected in preferences');
+    if (new Set(svIds).size !== svIds.length) return toast.error('Duplicate supervisor selected in preferences');
+
+    setSaving(true);
+    try {
+      if (editApp) {
+        await axios.put(`${API}/counselling/admin-applications/${editApp.id}`,
+          { preferences, admin_notes: adminNotes }, { headers: getHeaders() });
+        toast.success('Application updated');
+      } else {
+        await axios.post(`${API}/counselling/admin-applications`, {
+          user_id:            studentInfo.user_id,
+          session_id:         studentInfo.session_id,
+          application_number: studentInfo.application_number,
+          department:         studentInfo.department,
+          preferences,
+          admin_notes:        adminNotes,
+        }, { headers: getHeaders() });
+        toast.success('Counselling application created');
+      }
+      onSaved();
+      onHide();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!show) return null;
+
+  return (
+    <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.5)' }}>
+      <div className="modal-dialog modal-lg modal-dialog-scrollable">
+        <div className="modal-content">
+          <div className="modal-header py-3" style={{ background: '#1e3a5f' }}>
+            <h5 className="modal-title text-white mb-0" style={{ fontSize: 15 }}>
+              <UserPlus size={16} className="me-2" />
+              {editApp ? 'Edit Counselling Application' : 'Add Counselling Application'}
+            </h5>
+            <button type="button" className="btn-close btn-close-white" onClick={onHide} />
+          </div>
+
+          <div className="modal-body">
+            {/* ── Step 1: Application Number Validation ── */}
+            {step === 1 && (
+              <div>
+                <p className="text-muted mb-3" style={{ fontSize: 13 }}>
+                  Enter the student's application number to validate eligibility and auto-populate their details.
+                </p>
+                <div className="input-group mb-3">
+                  <span className="input-group-text bg-light" style={{ fontSize: 13 }}>
+                    <Search size={14} />
+                  </span>
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. APP202600123"
+                    value={appNumber}
+                    onChange={e => { setAppNumber(e.target.value.toUpperCase()); setValidError(''); }}
+                    onKeyDown={e => e.key === 'Enter' && validate()}
+                    style={{ fontSize: 14, letterSpacing: 1 }}
+                  />
+                  <button className="btn btn-primary" onClick={validate} disabled={validating || !appNumber.trim()}>
+                    {validating ? <span className="spinner-border spinner-border-sm me-1" /> : <Search size={14} className="me-1" />}
+                    {validating ? 'Validating…' : 'Validate Application'}
+                  </button>
+                </div>
+                {validError && (
+                  <div className="alert alert-danger py-2 px-3" style={{ fontSize: 13 }}>
+                    {validError}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Step 2: Student Info + Preferences ── */}
+            {step === 2 && studentInfo && (
+              <div>
+                {/* Student Info Card */}
+                <div className="card mb-4 border-success">
+                  <div className="card-header bg-success text-white py-2 d-flex align-items-center gap-2" style={{ fontSize: 12 }}>
+                    <Check size={14} /> Student Validated
+                  </div>
+                  <div className="card-body py-2">
+                    <div className="row g-2" style={{ fontSize: 13 }}>
+                      <div className="col-md-4">
+                        <span className="text-muted">Application No.</span><br />
+                        <strong className="text-primary">{studentInfo.application_number}</strong>
+                      </div>
+                      <div className="col-md-4">
+                        <span className="text-muted">Applicant Name</span><br />
+                        <strong>{studentInfo.full_name}</strong>
+                      </div>
+                      <div className="col-md-4">
+                        <span className="text-muted">Email</span><br />
+                        <span>{studentInfo.email}</span>
+                      </div>
+                      <div className="col-md-4">
+                        <span className="text-muted">Department / Subject</span><br />
+                        <strong className="text-info">{studentInfo.department || '—'}</strong>
+                      </div>
+                      <div className="col-md-4">
+                        <span className="text-muted">Community</span><br />
+                        <span>{studentInfo.community || '—'}</span>
+                      </div>
+                      <div className="col-md-4">
+                        <span className="text-muted">Category</span><br />
+                        <span>{studentInfo.category || '—'}</span>
+                      </div>
+                    </div>
+                    {!editApp && (
+                      <div className="mt-2 pt-2 border-top">
+                        <small className="text-muted">
+                          Centres and supervisors are filtered to match the student's department:&nbsp;
+                          <strong>{studentInfo.department}</strong>.
+                          Max preferences: <strong>{studentInfo.max_choices}</strong>.
+                        </small>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Preferences */}
+                <div className="mb-3">
+                  <div className="d-flex align-items-center gap-2 mb-2">
+                    <h6 className="fw-bold mb-0" style={{ fontSize: 14 }}>Research Preferences</h6>
+                    <span className="badge bg-secondary" style={{ fontSize: 10 }}>{preferences.length} / {studentInfo.max_choices}</span>
+                  </div>
+                  <small className="text-muted d-block mb-3" style={{ fontSize: 12 }}>
+                    Centres shown are those with supervisors in <strong>{studentInfo.department}</strong>. Supervisors are further filtered by selected centre.
+                  </small>
+
+                  {preferences.map((pref, idx) => (
+                    <PreferenceRow
+                      key={idx}
+                      pref={pref}
+                      index={idx}
+                      department={studentInfo.department}
+                      onCenterChange={handleCenterChange}
+                      onSupervisorChange={handleSupervisorChange}
+                      onRemove={removePreference}
+                      removable={preferences.length > 1}
+                    />
+                  ))}
+
+                  {preferences.length < (studentInfo.max_choices || 10) && (
+                    <button type="button" className="btn btn-sm btn-outline-primary d-flex align-items-center gap-1"
+                      onClick={addPreference}>
+                      <Plus size={13} /> Add Preference
+                    </button>
+                  )}
+                </div>
+
+                {/* Admin Notes */}
+                <div className="mb-2">
+                  <label className="form-label" style={{ fontSize: 12 }}>Admin Notes (optional)</label>
+                  <textarea className="form-control form-control-sm" rows={2} placeholder="Internal notes…"
+                    value={adminNotes} onChange={e => setAdminNotes(e.target.value)} />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="modal-footer py-2">
+            <button type="button" className="btn btn-sm btn-outline-secondary" onClick={onHide}>Cancel</button>
+            {step === 2 && (
+              <button type="button" className="btn btn-sm btn-primary d-flex align-items-center gap-1"
+                onClick={handleSubmit} disabled={saving}>
+                {saving && <span className="spinner-border spinner-border-sm" />}
+                {editApp ? 'Save Changes' : 'Create Counselling Application'}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminApplicationsTab() {
+  const [apps, setApps]               = useState([]);
+  const [sessions, setSessions]       = useState([]);
+  const [loading, setLoading]         = useState(true);
+  const [sessionFilter, setSessionFilter] = useState('active');
+  const [statusFilter, setStatusFilter]   = useState('');
+  const [search, setSearch]           = useState('');
+  const [showModal, setShowModal]     = useState(false);
+  const [editApp, setEditApp]         = useState(null);
+  const [expanded, setExpanded]       = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ session_id: sessionFilter });
+      if (statusFilter) params.append('status', statusFilter);
+      if (search)       params.append('search', search);
+      const res = await axios.get(`${API}/counselling/admin-applications?${params}`, { headers: getHeaders() });
+      setApps(res.data.data || []);
+    } catch { toast.error('Failed to load admin applications'); }
+    finally { setLoading(false); }
+  }, [sessionFilter, statusFilter, search]);
+
+  useEffect(() => {
+    axios.get(`${API}/sessions`, { headers: getHeaders() })
+      .then(r => setSessions(r.data.data || []));
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleCancel = async (id) => {
+    if (!window.confirm('Cancel this counselling application? This action cannot be undone.')) return;
+    try {
+      await axios.delete(`${API}/counselling/admin-applications/${id}`, { headers: getHeaders() });
+      toast.success('Application cancelled');
+      load();
+    } catch (err) { toast.error(err.response?.data?.message || 'Cancel failed'); }
+  };
+
+  const openEdit = (app) => { setEditApp(app); setShowModal(true); };
+
+  const statusBadge = (s) => {
+    if (s === 'Submitted') return 'bg-success';
+    if (s === 'Cancelled') return 'bg-danger';
+    return 'bg-secondary';
+  };
+
+  return (
+    <div>
+      {showModal && (
+        <AdminApplicationModal
+          show={showModal}
+          editApp={editApp}
+          onHide={() => { setShowModal(false); setEditApp(null); }}
+          onSaved={load}
+        />
+      )}
+
+      <div className="d-flex justify-content-between align-items-center mb-3">
+        <h5 className="fw-bold mb-0">Admin-Created Counselling Applications</h5>
+        <div className="d-flex gap-2">
+          <button className="btn btn-sm btn-primary d-flex align-items-center gap-1"
+            onClick={() => { setEditApp(null); setShowModal(true); }}>
+            <UserPlus size={14} /> Add Counselling Application
+          </button>
+          <button className="btn btn-sm btn-outline-secondary" onClick={load}><RefreshCw size={13} /></button>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="card mb-3">
+        <div className="card-body py-2">
+          <div className="d-flex gap-2 align-items-center flex-wrap">
+            <select className="form-select form-select-sm" style={{ maxWidth: 200 }}
+              value={sessionFilter} onChange={e => setSessionFilter(e.target.value)}>
+              <option value="active">Active Session</option>
+              <option value="all">All Sessions</option>
+              {sessions.map(s => (
+                <option key={s.id} value={s.id}>{s.month} {s.year}{s.is_active ? ' ✓' : ''}</option>
+              ))}
+            </select>
+            <select className="form-select form-select-sm" style={{ maxWidth: 160 }}
+              value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+              <option value="">All Statuses</option>
+              <option value="Submitted">Submitted</option>
+              <option value="Cancelled">Cancelled</option>
+            </select>
+            <div className="input-group input-group-sm" style={{ maxWidth: 240 }}>
+              <span className="input-group-text"><Search size={12} /></span>
+              <input className="form-control" placeholder="Search by name or app no."
+                value={search} onChange={e => setSearch(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && load()} />
+            </div>
+            <span className="text-muted ms-auto" style={{ fontSize: 12 }}>{apps.length} records</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="card">
+        <div className="card-body p-0">
+          <table className="table table-hover align-middle mb-0" style={{ fontSize: 12 }}>
+            <thead>
+              <tr>
+                <th className="ps-3 py-2">#</th>
+                <th className="py-2">App ID</th>
+                <th className="py-2">Applicant</th>
+                <th className="py-2">Department</th>
+                <th className="py-2">Session</th>
+                <th className="py-2">Status</th>
+                <th className="py-2">Preferences</th>
+                <th className="py-2">Created</th>
+                <th className="py-2 text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={9} className="text-center py-4">Loading…</td></tr>
+              ) : apps.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="text-center py-5 text-muted">
+                    <UserPlus size={32} className="d-block mx-auto mb-2 opacity-25" />
+                    No admin-created counselling applications found.
+                    <br />
+                    <button className="btn btn-sm btn-primary mt-2"
+                      onClick={() => { setEditApp(null); setShowModal(true); }}>
+                      <Plus size={13} className="me-1" /> Add First Application
+                    </button>
+                  </td>
+                </tr>
+              ) : apps.map((a, i) => (
+                <React.Fragment key={a.id}>
+                  <tr className={a.status === 'Cancelled' ? 'table-secondary' : ''}>
+                    <td className="ps-3 text-muted">{i + 1}</td>
+                    <td className="fw-bold text-primary" style={{ fontSize: 11 }}>{a.user_app_id}</td>
+                    <td>
+                      <div className="fw-semibold">{a.full_name}</div>
+                      <small className="text-muted">{a.email}</small>
+                    </td>
+                    <td>
+                      <span className="badge bg-info text-dark" style={{ fontSize: 10 }}>
+                        {a.department_filter || '—'}
+                      </span>
+                    </td>
+                    <td style={{ fontSize: 11 }}>{a.session_name || '—'}</td>
+                    <td>
+                      <span className={`badge ${statusBadge(a.status)}`} style={{ fontSize: 10 }}>
+                        {a.status}
+                      </span>
+                    </td>
+                    <td>
+                      <button
+                        className="btn btn-sm btn-link p-0 text-decoration-none d-flex align-items-center gap-1"
+                        style={{ fontSize: 11 }}
+                        onClick={() => setExpanded(expanded === a.id ? null : a.id)}>
+                        {a.choices?.length || 0} preference{a.choices?.length !== 1 ? 's' : ''}
+                        {expanded === a.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                      </button>
+                    </td>
+                    <td style={{ fontSize: 11 }}>
+                      {a.created_at ? new Date(a.created_at).toLocaleDateString('en-IN') : '—'}
+                    </td>
+                    <td className="text-center">
+                      <div className="d-flex gap-1 justify-content-center">
+                        {a.status !== 'Cancelled' && (
+                          <>
+                            <button className="btn btn-sm btn-outline-warning border-0"
+                              onClick={() => openEdit(a)} title="Edit"><Edit2 size={13} /></button>
+                            <button className="btn btn-sm btn-outline-danger border-0"
+                              onClick={() => handleCancel(a.id)} title="Cancel"><X size={13} /></button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                  {expanded === a.id && (
+                    <tr className="table-light">
+                      <td colSpan={9} className="px-4 py-2">
+                        {a.choices?.length === 0
+                          ? <span className="text-muted" style={{ fontSize: 12 }}>No preferences recorded.</span>
+                          : (
+                            <div className="d-flex flex-column gap-1">
+                              {a.choices.map(c => (
+                                <div key={c.id} className="d-flex align-items-center gap-2" style={{ fontSize: 12 }}>
+                                  <span className="badge bg-primary" style={{ fontSize: 10, minWidth: 75 }}>
+                                    Preference {c.preference_order}
+                                  </span>
+                                  <strong>{c.center_name}</strong>
+                                  <span className="text-muted">—</span>
+                                  <span>{c.supervisor_name}</span>
+                                  {c.designation && <span className="text-muted">({c.designation})</span>}
+                                </div>
+                              ))}
+                            </div>
+                          )
+                        }
+                        {a.admin_notes && (
+                          <div className="mt-2 pt-2 border-top text-muted" style={{ fontSize: 11 }}>
+                            <strong>Notes:</strong> {a.admin_notes}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Counselling Management ──────────────────────────────────────────────
 
 const TABS = [
-  { key: 'settings',     label: 'Settings' },
-  { key: 'centers',      label: 'Research Centers' },
-  { key: 'supervisors',  label: 'Supervisors' },
-  { key: 'applications', label: 'Applications' },
-  { key: 'allotments',   label: 'Allotments' },
+  { key: 'settings',          label: 'Settings' },
+  { key: 'centers',           label: 'Research Centers' },
+  { key: 'supervisors',       label: 'Supervisors' },
+  { key: 'applications',      label: 'Applications' },
+  { key: 'allotments',        label: 'Allotments' },
+  { key: 'admin-applications', label: 'Admin Applications' },
 ];
 
 const CounsellingManagement = () => {
@@ -866,11 +1404,12 @@ const CounsellingManagement = () => {
         ))}
       </ul>
 
-      {activeTab === 'settings'     && <SettingsTab />}
-      {activeTab === 'centers'      && <CentersTab />}
-      {activeTab === 'supervisors'  && <SupervisorsTab />}
-      {activeTab === 'applications' && <ApplicationsTab />}
-      {activeTab === 'allotments'   && <AllotmentsTab />}
+      {activeTab === 'settings'           && <SettingsTab />}
+      {activeTab === 'centers'            && <CentersTab />}
+      {activeTab === 'supervisors'        && <SupervisorsTab />}
+      {activeTab === 'applications'       && <ApplicationsTab />}
+      {activeTab === 'allotments'         && <AllotmentsTab />}
+      {activeTab === 'admin-applications' && <AdminApplicationsTab />}
     </div>
   );
 };

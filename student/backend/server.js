@@ -50,9 +50,10 @@ app.use(helmet({
             objectSrc:   ["'none'"],
             baseUri:     ["'self'"],
             formAction:  ["'self'"],
+            frameAncestors: ["'self'", "http://localhost:*", "http://127.0.0.1:*"],
         },
     },
-    frameguard: { action: 'sameorigin' },
+    frameguard: false,
     hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
 }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
@@ -63,6 +64,20 @@ const hpp = require('hpp');
 app.use(hpp());
 const { sanitize } = require('../../shared/security/inputSanitizer');
 app.use(sanitize);
+
+// Bypassing CORS checks for payment callback and webhooks
+app.use((req, res, next) => {
+    if (req.path === '/api/payment/callback' || req.path.startsWith('/api/payment/webhook')) {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+        if (req.method === 'OPTIONS') {
+            return res.sendStatus(200);
+        }
+        delete req.headers.origin;
+    }
+    next();
+});
 
 // â”€â”€ CORS must be registered BEFORE rate limiters so that 429 responses
 //    still carry Access-Control-Allow-Origin and the browser can read them.
@@ -79,7 +94,8 @@ app.use(cors({
             (isDev && origin.startsWith('http://localhost')) ||
             (isDev && origin.startsWith('http://127.0.0.1')) ||
             productionOrigins.includes(origin) ||
-            origin.endsWith('.trycloudflare.com');
+            origin.includes('paytm.in') ||
+            origin.includes('paytm.com');
 
         if (allowed) callback(null, true);
         else callback(new Error('Not allowed by CORS'));
@@ -310,6 +326,58 @@ const initDB = async () => {
             console.error('Error creating exam_centre_config table:', err.message);
         }
 
+        // Academic Timeline Engine tables
+        try {
+            await db.query(`
+                CREATE TABLE IF NOT EXISTS academic_timeline_rules (
+                    id             INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                    transition_key VARCHAR(30)  NOT NULL UNIQUE,
+                    transition_label VARCHAR(60) NOT NULL,
+                    from_stage     VARCHAR(20)  NOT NULL,
+                    to_stage       VARCHAR(20)  NOT NULL,
+                    min_gap_years  INT          NOT NULL DEFAULT 0,
+                    max_gap_years  INT          NOT NULL DEFAULT 15,
+                    status         ENUM('active','inactive') NOT NULL DEFAULT 'active',
+                    updated_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    updated_by     VARCHAR(100) DEFAULT NULL
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            `);
+            await db.query(`
+                INSERT IGNORE INTO academic_timeline_rules
+                    (transition_key, transition_label, from_stage, to_stage, min_gap_years, max_gap_years)
+                VALUES
+                    ('sslc_hsc',  '10th → +2',     'sslc',  'hsc',   2,  5),
+                    ('hsc_ug',    '+2 → UG',        'hsc',   'ug',    0, 10),
+                    ('ug_pg',     'UG → PG',        'ug',    'pg',    0, 10),
+                    ('pg_mphil',  'PG → M.Phil',    'pg',    'mphil', 0, 15),
+                    ('mphil_phd', 'M.Phil → Ph.D',  'mphil', 'phd',   0, 15)
+            `);
+            await db.query(`
+                CREATE TABLE IF NOT EXISTS course_duration_rules (
+                    id           INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                    course_key   VARCHAR(20)  NOT NULL UNIQUE,
+                    course_label VARCHAR(50)  NOT NULL,
+                    min_duration INT          NOT NULL DEFAULT 1,
+                    max_duration INT          NOT NULL DEFAULT 5,
+                    status       ENUM('active','inactive') NOT NULL DEFAULT 'active',
+                    updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    updated_by   VARCHAR(100) DEFAULT NULL
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            `);
+            await db.query(`
+                INSERT IGNORE INTO course_duration_rules
+                    (course_key, course_label, min_duration, max_duration)
+                VALUES
+                    ('ug',         'UG',         3, 4),
+                    ('pg',         'PG',         2, 2),
+                    ('mphil',      'M.Phil',     1, 1),
+                    ('integrated', 'Integrated', 5, 5)
+            `);
+            console.log('✅ Academic Timeline Engine tables verified.');
+        } catch (err) {
+            console.error('Error creating academic timeline tables:', err.message);
+        }
+
         // Qualification Exam Pass Month & Year columns
         const qualDateCols = [
             { name: 'qual_month', def: 'VARCHAR(20) DEFAULT NULL' },
@@ -340,6 +408,49 @@ const initDB = async () => {
             if (err.errno !== 1060 && err.code !== 'ER_DUP_FIELDNAME')
                 console.error('Error adding higher_education.specialization_other:', err.message);
         }
+
+        // mark_statement_type column for level-specific academic records
+        try {
+            await db.query(`ALTER TABLE higher_education ADD COLUMN mark_statement_type VARCHAR(50) DEFAULT NULL`);
+        } catch (err) {
+            if (err.errno !== 1060 && err.code !== 'ER_DUP_FIELDNAME')
+                console.error('Error adding higher_education.mark_statement_type:', err.message);
+        }
+
+        // is_awaiting_final_sem column for level-specific academic records
+        try {
+            await db.query(`ALTER TABLE higher_education ADD COLUMN is_awaiting_final_sem TINYINT(1) DEFAULT 0`);
+        } catch (err) {
+            if (err.errno !== 1060 && err.code !== 'ER_DUP_FIELDNAME')
+                console.error('Error adding higher_education.is_awaiting_final_sem:', err.message);
+        }
+
+        // completion_year column for degree end year tracking
+        try {
+            await db.query(`ALTER TABLE higher_education ADD COLUMN completion_year INT DEFAULT NULL`);
+        } catch (err) {
+            if (err.errno !== 1060 && err.code !== 'ER_DUP_FIELDNAME')
+                console.error('Error adding higher_education.completion_year:', err.message);
+        }
+
+        // Academic Hierarchy columns (Faculty → Discipline → Specialization)
+        const hierCols = [
+            { col: 'faculty_id',                 def: 'INT DEFAULT NULL' },
+            { col: 'faculty_name',               def: 'VARCHAR(255) DEFAULT NULL' },
+            { col: 'discipline_id',              def: 'INT DEFAULT NULL' },
+            { col: 'discipline_name',            def: 'VARCHAR(255) DEFAULT NULL' },
+            { col: 'specialization_master_id',   def: 'INT DEFAULT NULL' },
+            { col: 'specialization_master_name', def: 'VARCHAR(255) DEFAULT NULL' },
+        ];
+        for (const { col, def } of hierCols) {
+            try {
+                await db.query(`ALTER TABLE higher_education ADD COLUMN ${col} ${def}`);
+            } catch (err) {
+                if (err.errno !== 1060 && err.code !== 'ER_DUP_FIELDNAME')
+                    console.error(`Error adding higher_education.${col}:`, err.message);
+            }
+        }
+        console.log('✅ Academic Hierarchy columns verified in higher_education.');
 
         // Integrated Course master data — seed 6 new courses for all active programs
         try {
@@ -448,10 +559,11 @@ const initDB = async () => {
         `);
         console.log("âœ… part_time_area_districts schema verified.");
 
-        // District + area_id columns on applications (backward-compatible)
+        // District + area_id + others_specialization columns on applications (backward-compatible)
         const ptExtCols = [
-            { name: 'part_time_area_id', type: 'INT DEFAULT NULL' },
-            { name: 'part_time_district', type: 'VARCHAR(255) DEFAULT NULL' },
+            { name: 'part_time_area_id',               type: 'INT DEFAULT NULL' },
+            { name: 'part_time_district',              type: 'VARCHAR(255) DEFAULT NULL' },
+            { name: 'part_time_others_specialization', type: 'VARCHAR(255) DEFAULT NULL' },
         ];
         for (const col of ptExtCols) {
             try {
@@ -463,6 +575,87 @@ const initDB = async () => {
                 }
             }
         }
+
+        // ── "Others" roles + Tamil Nadu districts + Bangalore seed (idempotent) ─
+        // Seeds "Others" role under School Teacher (§2.2.2.2) and Non Teacher (§2.2.2.3),
+        // with Tamil Nadu (38 districts) and Karnataka (Bangalore) as working areas.
+        const TN_DISTRICTS = [
+            'Ariyalur','Chengalpattu','Chennai','Coimbatore','Cuddalore',
+            'Dharmapuri','Dindigul','Erode','Kallakurichi','Kanchipuram',
+            'Kanniyakumari','Karur','Krishnagiri','Madurai','Mayiladuthurai',
+            'Nagapattinam','Namakkal','Nilgiris','Perambalur','Pudukkottai',
+            'Ramanathapuram','Ranipet','Salem','Sivagangai','Tenkasi',
+            'Thanjavur','Theni','Thoothukudi','Tiruchirappalli','Tirunelveli',
+            'Tirupathur','Tiruppur','Tiruvallur','Tiruvannamalai','Tiruvarur',
+            'Vellore','Villupuram','Virudhunagar',
+        ];
+        for (const ref of ['2.2.2.2', '2.2.2.3']) {
+            const [[cat]] = await db.query(
+                'SELECT id FROM part_time_categories WHERE category_reference_code = ? LIMIT 1', [ref]
+            );
+            if (!cat) continue;
+            const catId = cat.id;
+
+            // Ensure "Others" role exists
+            let [othersRoles] = await db.query(
+                'SELECT id FROM part_time_roles WHERE category_id = ? AND role_name = ? LIMIT 1',
+                [catId, 'Others']
+            );
+            if (!othersRoles.length) {
+                await db.query(
+                    'INSERT INTO part_time_roles (category_id, role_name, role_hint, status) VALUES (?, ?, ?, 1)',
+                    [catId, 'Others', 'Select this if your role or designation does not match any listed option. You will be asked to specify your specialization.']
+                );
+                [othersRoles] = await db.query(
+                    'SELECT id FROM part_time_roles WHERE category_id = ? AND role_name = ? LIMIT 1',
+                    [catId, 'Others']
+                );
+            }
+            const othersRoleId = othersRoles[0].id;
+
+            // Tamil Nadu area
+            let [tnArea] = await db.query(
+                'SELECT id FROM part_time_eligible_areas WHERE role_id = ? AND eligible_area_name = ? LIMIT 1',
+                [othersRoleId, 'Tamil Nadu']
+            );
+            if (!tnArea.length) {
+                await db.query(
+                    'INSERT INTO part_time_eligible_areas (role_id, eligible_area_name, status) VALUES (?, ?, 1)',
+                    [othersRoleId, 'Tamil Nadu']
+                );
+                [tnArea] = await db.query(
+                    'SELECT id FROM part_time_eligible_areas WHERE role_id = ? AND eligible_area_name = ? LIMIT 1',
+                    [othersRoleId, 'Tamil Nadu']
+                );
+            }
+            for (const dist of TN_DISTRICTS) {
+                await db.query(
+                    'INSERT IGNORE INTO part_time_area_districts (area_id, district_name, status) VALUES (?, ?, 1)',
+                    [tnArea[0].id, dist]
+                );
+            }
+
+            // Karnataka area + Bangalore
+            let [kaArea] = await db.query(
+                'SELECT id FROM part_time_eligible_areas WHERE role_id = ? AND eligible_area_name = ? LIMIT 1',
+                [othersRoleId, 'Karnataka']
+            );
+            if (!kaArea.length) {
+                await db.query(
+                    'INSERT INTO part_time_eligible_areas (role_id, eligible_area_name, status) VALUES (?, ?, 1)',
+                    [othersRoleId, 'Karnataka']
+                );
+                [kaArea] = await db.query(
+                    'SELECT id FROM part_time_eligible_areas WHERE role_id = ? AND eligible_area_name = ? LIMIT 1',
+                    [othersRoleId, 'Karnataka']
+                );
+            }
+            await db.query(
+                'INSERT IGNORE INTO part_time_area_districts (area_id, district_name, status) VALUES (?, ?, 1)',
+                [kaArea[0].id, 'Bangalore']
+            );
+        }
+        console.log('✅ Others roles + Tamil Nadu districts + Bangalore seeded.');
 
         // Permanent address columns on applications (features_migration.sql guard)
         const permCols = [
@@ -534,7 +727,7 @@ const initDB = async () => {
             console.log("âœ… Part-Time Configuration already present â€” skipping seed.");
         }
 
-        // Payment time-window columns (Section 1 enterprise workflow)
+        // Payment time-window and result publish columns (Section 1 enterprise workflow)
         const settingsCols = [
             { name: 'payment_enabled',   type: 'TINYINT(1) NOT NULL DEFAULT 0' },
             { name: 'payment_open',      type: 'VARCHAR(32) NULL' },
@@ -543,6 +736,9 @@ const initDB = async () => {
             { name: 'application_registration_url', type: 'VARCHAR(255) DEFAULT NULL' },
             { name: 'supervisor_registration_url', type: 'VARCHAR(255) DEFAULT NULL' },
             { name: 'research_centre_registration_url', type: 'VARCHAR(255) DEFAULT NULL' },
+            { name: 'result_publish_enabled',   type: 'TINYINT(1) NOT NULL DEFAULT 0' },
+            { name: 'result_publish_open',      type: 'VARCHAR(32) NULL' },
+            { name: 'result_publish_close',     type: 'VARCHAR(32) NULL' },
         ];
         for (const col of settingsCols) {
             try {
@@ -839,6 +1035,37 @@ const initDB = async () => {
         `);
         console.log('✅ Application Rejection Workflow schema verified.');
 
+        // ── Submission & payment tracking columns ──────────────────────────────
+        const submissionCols = [
+            { col: 'declaration_accepted', def: 'TINYINT(1) NOT NULL DEFAULT 0' },
+            { col: 'application_open',     def: 'TINYINT(1) NOT NULL DEFAULT 1' },
+        ];
+        for (const { col, def } of submissionCols) {
+            try {
+                await db.query(`ALTER TABLE applications ADD COLUMN ${col} ${def}`);
+            } catch (err) {
+                if (err.errno !== 1060 && err.code !== 'ER_DUP_FIELDNAME')
+                    console.error(`Error adding applications.${col}:`, err.message);
+            }
+        }
+        console.log('✅ Submission tracking columns verified.');
+
+        // ── Payment receipt sync columns (used by /application/review self-healing) ─
+        const paymentSyncCols = [
+            { col: 'receipt_number',       def: 'VARCHAR(255) DEFAULT NULL' },
+            { col: 'submission_reference', def: 'VARCHAR(255) DEFAULT NULL' },
+            { col: 'payment_completed_at', def: 'DATETIME DEFAULT NULL' },
+        ];
+        for (const { col, def } of paymentSyncCols) {
+            try {
+                await db.query(`ALTER TABLE applications ADD COLUMN ${col} ${def}`);
+            } catch (err) {
+                if (err.errno !== 1060 && err.code !== 'ER_DUP_FIELDNAME')
+                    console.error(`Error adding applications.${col}:`, err.message);
+            }
+        }
+        console.log('✅ Payment sync columns verified.');
+
     } catch (err) {
         console.error('Database init error:', err);
     }
@@ -883,6 +1110,18 @@ const { studentLoginSchema, studentSignupSchema, validateBody } = require('../..
 authRouter.post('/register', validateBody(studentSignupSchema), async (req, res) => {
     const { email, password, full_name } = req.body;
     try {
+        // Enforce Portal Access Control for Registration
+        const [settingsRows] = await db.query(
+            `SELECT apply_now_enabled, apply_now_open, apply_now_close FROM university_settings LIMIT 1`
+        );
+        const settings = settingsRows[0] || {};
+        const pageAccess = getPageAccess(settings);
+        if (!pageAccess.registration.active) {
+            return res.status(403).json({
+                message: 'Online registration is currently closed. Registration is not within the allowed dates.'
+            });
+        }
+
         const { validatePasswordComplexity } = require('../../shared/security/passwordValidator');
         const pwCheck = validatePasswordComplexity(password);
         if (!pwCheck.valid) return res.status(400).json({ message: pwCheck.message });
@@ -890,7 +1129,7 @@ authRouter.post('/register', validateBody(studentSignupSchema), async (req, res)
         const [existing] = await db.query('SELECT email FROM users WHERE email = ?', [email]);
         if (existing.length > 0) return res.status(400).json({ message: 'User already exists' });
 
-        // Fetch active session â€” registration blocked if none exists
+        // Fetch active session — registration blocked if none exists
         const [sessionRows] = await db.query(
             `SELECT s.id FROM sessions s WHERE s.is_active = 1 AND s.registration_open = 1 LIMIT 1`
         );
@@ -927,6 +1166,17 @@ authRouter.post('/register', validateBody(studentSignupSchema), async (req, res)
         // Credential notification + admin log (non-blocking)
         const credSvc = require('../../shared/credential/credentialNotificationService');
         credSvc.notify({ db, name: full_name, email, password, portalType: 'Student', loginUrl }).catch(() => {});
+
+        // Admin notification feed — new student registered
+        const { notifyAdminDB: notifyAdminDBReg } = require('../../shared/notification/notifyAdminDB');
+        notifyAdminDBReg(db, {
+            event_key:   'student.register',
+            title:       `New Student Registered: ${full_name}`,
+            message:     `Email: ${email} — registered and pending application`,
+            type:        'info',
+            source_type: 'student',
+            link:        '/students',
+        });
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Server error during registration' });
@@ -938,6 +1188,18 @@ authRouter.post('/login', validateBody(studentLoginSchema), async (req, res) => 
     const email = username;
 
     try {
+        // Enforce Portal Access Control for Login
+        const [settingsRows] = await db.query(
+            `SELECT applicant_login_enabled, applicant_login_open, applicant_login_close FROM university_settings LIMIT 1`
+        );
+        const settings = settingsRows[0] || {};
+        const pageAccess = getPageAccess(settings);
+        if (!pageAccess.applicantLogin.active) {
+            return res.status(403).json({
+                message: 'Applicant Login portal is currently closed. Access is not within the allowed dates.'
+            });
+        }
+
         // 1. Check account lockout before any user lookup
         const lock = await accountLock.checkLock(db, email, 'student');
         if (lock.locked) {
@@ -994,7 +1256,7 @@ authRouter.post('/login', validateBody(studentLoginSchema), async (req, res) => 
                 .update(`${req.headers['user-agent'] || ''}:${req.headers['accept-language'] || ''}`)
                 .digest('hex').substring(0, 16),
         };
-        const payload = { id: user.id, application_id: user.application_id, role: user.role };
+        const payload = { id: user.id, email: user.email, application_id: user.application_id, role: user.role };
         const { accessToken, refreshToken } = await issueTokenPair(
             db, payload, 'student', process.env.STUDENT_JWT_SECRET, reqMeta
         );
@@ -1152,6 +1414,17 @@ authRouter.post('/reset-password', async (req, res) => {
             [hashedPassword, user.id]
         );
 
+        // Notify admin
+        const { notifyAdminDB: notifyAdminDBPwd } = require('../../shared/notification/notifyAdminDB');
+        notifyAdminDBPwd(db, {
+            event_key:   'student.password_reset',
+            title:       'Password Reset — Student',
+            message:     `Student account (${email}) successfully reset their password.`,
+            type:        'info',
+            source_type: 'password_reset',
+            link:        '/credential-management',
+        });
+
         res.json({ message: 'Password reset successfully. You can now log in with your new password.' });
     } catch (err) {
         console.error('[Auth] reset-password error:', err.message);
@@ -1194,20 +1467,84 @@ app.put('/api/auth/change-password', authenticateToken, async (req, res) => {
 
 // --- SETTINGS (read-only) & DROPDOWNS ---
 
+// ── Real-time settings sync (SSE) ─────────────────────────────────────────────
+const settingsCache = require('../../shared/security/appCache');
+const studentSseClients = new Set();
+
+function broadcastStudentSettings() {
+    const msg = `event: settings-updated\ndata: ${JSON.stringify({ ts: Date.now() })}\n\n`;
+    for (const c of studentSseClients) {
+        try { c.write(msg); } catch (_) { studentSseClients.delete(c); }
+    }
+}
+
+// SSE endpoint — frontend connects here for real-time settings push
+app.get('/api/settings/events', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+    res.write(':keepalive\n\n');
+    studentSseClients.add(res);
+    const hb = setInterval(() => {
+        try { res.write(':keepalive\n\n'); }
+        catch (_) { clearInterval(hb); studentSseClients.delete(res); }
+    }, 25000);
+    req.on('close', () => { clearInterval(hb); studentSseClients.delete(res); });
+});
+
+// Internal invalidation — called by admin backend after settings change
+app.post('/internal/settings-invalidate', (req, res) => {
+    settingsCache.del('student_university_settings');
+    broadcastStudentSettings();
+    res.json({ ok: true });
+});
+
+// ── Real-time home data sync (portal_notifications + declarations) ─────────────
+const homeDataSseClients = new Set();
+
+function broadcastHomeData() {
+    const msg = `event: home-data-updated\ndata: ${JSON.stringify({ ts: Date.now() })}\n\n`;
+    for (const c of homeDataSseClients) {
+        try { c.write(msg); } catch (_) { homeDataSseClients.delete(c); }
+    }
+}
+
+app.get('/api/home-data/events', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+    res.write(':keepalive\n\n');
+    homeDataSseClients.add(res);
+    const hb = setInterval(() => {
+        try { res.write(':keepalive\n\n'); }
+        catch (_) { clearInterval(hb); homeDataSseClients.delete(res); }
+    }, 25000);
+    req.on('close', () => { clearInterval(hb); homeDataSseClients.delete(res); });
+});
+
+app.post('/internal/home-data-invalidate', (_req, res) => {
+    broadcastHomeData();
+    res.json({ ok: true });
+});
+
 // Read-only public settings endpoint for the student portal (display-only)
 app.get('/api/settings', async (_req, res) => {
     try {
+        const data = await settingsCache.getOrFetch('student_university_settings', 30, async () => {
+            const [results] = await db.query('SELECT * FROM university_settings LIMIT 1');
+            if (!results[0]) return {};
+            return {
+                ...results[0],
+                university_name_english: results[0].university_name_english || results[0].university_name_en || results[0].header_line1,
+                university_name_tamil: results[0].university_name_ta,
+                logo: results[0].logo_url,
+                logo2: results[0].logo2,
+            };
+        });
         res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-        const [results] = await db.query('SELECT * FROM university_settings LIMIT 1');
-        if (!results[0]) return res.json({ success: true, data: {} });
-        const mapped = {
-            ...results[0],
-            university_name_english: results[0].university_name_english || results[0].university_name_en || results[0].header_line1,
-            university_name_tamil: results[0].university_name_ta,
-            logo: results[0].logo_url,
-            logo2: results[0].logo2,
-        };
-        res.json({ success: true, data: mapped });
+        res.json({ success: true, data });
     } catch (err) {
         res.status(500).json({ success: false, message: 'Failed to load settings' });
     }
@@ -1260,6 +1597,21 @@ app.get('/api/portal-notifications', async (_req, res) => {
     }
 });
 
+// Public Home Manager data (action buttons, quick links, contacts, layout)
+app.get('/api/home-manager/homepage', async (_req, res) => {
+    try {
+        const [[btns], [links], [contacts], [layout]] = await Promise.all([
+            db.query(`SELECT * FROM home_action_buttons WHERE is_active=1 ORDER BY sort_order ASC`),
+            db.query(`SELECT * FROM home_quick_links   WHERE is_active=1 ORDER BY sort_order ASC`),
+            db.query(`SELECT * FROM home_contacts      WHERE is_active=1 ORDER BY sort_order ASC`),
+            db.query(`SELECT * FROM home_layout                         ORDER BY sort_order ASC`),
+        ]);
+        res.json({ success: true, data: { action_buttons: btns, quick_links: links, contacts, layout } });
+    } catch (_err) {
+        res.json({ success: true, data: { action_buttons: [], quick_links: [], contacts: [], layout: [] } });
+    }
+});
+
 // Public admission announcements/moving marquee for the student home page
 app.get('/api/portal-home/announcements', async (_req, res) => {
     try {
@@ -1273,6 +1625,71 @@ app.get('/api/portal-home/announcements', async (_req, res) => {
     } catch (_err) {
         // Table or columns may not exist yet or has schema lag â€” return empty array gracefully
         res.json({ success: true, data: [] });
+    }
+});
+
+// Public declarations & guidelines for the student home page
+app.get('/api/declarations/public', async (_req, res) => {
+    try {
+        const [declarations] = await db.query(
+            `SELECT id, title, declaration_content, display_order, created_at, updated_at
+             FROM home_page_declarations
+             WHERE is_active = 1
+             ORDER BY display_order ASC, created_at DESC`
+        );
+        for (const dec of declarations) {
+            const [attachments] = await db.query(
+                `SELECT id, file_name, original_name, file_size, file_type, display_order, created_at
+                 FROM home_page_attachments
+                 WHERE declaration_id = ? AND is_active = 1
+                 ORDER BY display_order ASC`,
+                [dec.id]
+            );
+            dec.attachments = attachments;
+        }
+        res.json({ success: true, data: declarations });
+    } catch (_err) {
+        // Tables may not exist yet on first startup
+        res.json({ success: true, data: [] });
+    }
+});
+
+// Secure stream/download endpoint for declarations attachments
+app.get('/api/declarations/attachments/download/:id', async (req, res) => {
+    try {
+        const attachmentId = req.params.id;
+        const [[row]] = await db.query(
+            'SELECT file_path, original_name, file_type FROM home_page_attachments WHERE id = ? AND is_active = 1 LIMIT 1',
+            [attachmentId]
+        );
+        if (!row) {
+            return res.status(404).json({ success: false, message: 'Attachment not found or inactive' });
+        }
+
+        const fs = require('fs');
+        const fullPath = path.resolve(__dirname, '../../', row.file_path);
+
+        // Security check: Ensure the resolved path remains within the uploads/declarations directory
+        const uploadBase = path.resolve(__dirname, '../../uploads/declarations');
+        if (!fullPath.startsWith(uploadBase)) {
+            return res.status(403).json({ success: false, message: 'Forbidden file access' });
+        }
+
+        if (!fs.existsSync(fullPath)) {
+            return res.status(404).json({ success: false, message: 'File does not exist on server' });
+        }
+
+        const mimeType = row.file_type || 'application/octet-stream';
+        res.setHeader('Content-Type', mimeType);
+
+        // Preview images and PDFs inline, download DOC/DOCX as attachments
+        const inlineTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+        const disposition = inlineTypes.includes(mimeType) ? 'inline' : 'attachment';
+        res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(row.original_name)}"`);
+
+        fs.createReadStream(fullPath).pipe(res);
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
     }
 });
 
@@ -1589,7 +2006,7 @@ const APP_ALLOWED_COLUMNS = new Set([
     'pg_degree','pg_subject','score_type','score_value','year_of_passing','pg_university',
     'mark_statement_type','is_awaiting_final_sem','qualified_exams',
     'status',
-    'part_time_category','part_time_designation','part_time_area','part_time_area_id','part_time_district',
+    'part_time_category','part_time_designation','part_time_area','part_time_area_id','part_time_district','part_time_others_specialization',
     'perm_same_as_comm','perm_address_1','perm_address_2','perm_address_3',
     'perm_state','perm_district','perm_city','perm_pincode',
     'has_sslc', 'has_hsc', 'has_ug', 'has_pg', 'has_diploma', 'has_mphil', 'has_integrated'
@@ -1597,7 +2014,7 @@ const APP_ALLOWED_COLUMNS = new Set([
 
 const COLUMNS = {
     school: ['level', 'institution_name', 'board_id', 'other_board_name', 'passing_month', 'passing_year', 'percentage', 'marksheet_path'],
-    higher: ['level', 'degree_id', 'degree_name', 'degree_name_other', 'specialization_id', 'specialization_other', 'institution_name', 'university_name', 'university_type_id', 'passing_month', 'passing_year', 'start_year', 'score_type', 'score_value', 'marksheet_path', 'consolidated_marksheet_path', 'registration_number', 'upload_mode'],
+    higher: ['level', 'degree_id', 'degree_name', 'degree_name_other', 'specialization_id', 'specialization_other', 'institution_name', 'university_name', 'university_type_id', 'passing_month', 'passing_year', 'start_year', 'completion_year', 'score_type', 'score_value', 'cgpa_scale', 'normalized_cgpa', 'marksheet_path', 'consolidated_marksheet_path', 'registration_number', 'upload_mode', 'mark_statement_type', 'is_awaiting_final_sem', 'faculty_id', 'faculty_name', 'discipline_id', 'discipline_name', 'specialization_master_id', 'specialization_master_name'],
     exp:    ['designation', 'organization_name', 'employment_type_id', 'from_month', 'from_year', 'to_month', 'to_year', 'from_date', 'to_date', 'total_years', 'total_months', 'state_id', 'district_id', 'address']
 };
 
@@ -1605,6 +2022,51 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
     try {
         const raw   = { ...req.body };
         const files = req.files || [];
+
+        // Parse and enrich higher education arrays with level-specific mark statements/awaiting flags from frontend
+        try {
+            if (raw.higher_education) {
+                const higherData = typeof raw.higher_education === 'string' ? JSON.parse(raw.higher_education) : raw.higher_education;
+                if (Array.isArray(higherData)) {
+                    if (higherData[0]) {
+                        higherData[0].mark_statement_type = raw.ug_mark_statement_type || null;
+                        higherData[0].is_awaiting_final_sem = [1, '1', 'true', true].includes(raw.ug_is_awaiting_final_sem) ? 1 : 0;
+                    }
+                    if (higherData[1]) {
+                        higherData[1].mark_statement_type = raw.pg_mark_statement_type || null;
+                        higherData[1].is_awaiting_final_sem = [1, '1', 'true', true].includes(raw.pg_is_awaiting_final_sem) ? 1 : 0;
+                    }
+                    raw.higher_education = JSON.stringify(higherData);
+                }
+            }
+            if (raw.diploma) {
+                const diplomaData = typeof raw.diploma === 'string' ? JSON.parse(raw.diploma) : raw.diploma;
+                if (diplomaData) {
+                    diplomaData.mark_statement_type = raw.diploma_mark_statement_type || null;
+                    diplomaData.is_awaiting_final_sem = [1, '1', 'true', true].includes(raw.diploma_is_awaiting_final_sem) ? 1 : 0;
+                    raw.diploma = JSON.stringify(diplomaData);
+                }
+            }
+            if (raw.mphil) {
+                const mphilData = typeof raw.mphil === 'string' ? JSON.parse(raw.mphil) : raw.mphil;
+                if (mphilData) {
+                    mphilData.mark_statement_type = raw.mphil_mark_statement_type || null;
+                    mphilData.is_awaiting_final_sem = [1, '1', 'true', true].includes(raw.mphil_is_awaiting_final_sem) ? 1 : 0;
+                    raw.mphil = JSON.stringify(mphilData);
+                }
+            }
+            if (raw.integrated) {
+                const integratedData = typeof raw.integrated === 'string' ? JSON.parse(raw.integrated) : raw.integrated;
+                if (integratedData) {
+                    integratedData.mark_statement_type = raw.integrated_mark_statement_type || null;
+                    integratedData.is_awaiting_final_sem = [1, '1', 'true', true].includes(raw.integrated_is_awaiting_final_sem) ? 1 : 0;
+                    raw.integrated = JSON.stringify(integratedData);
+                }
+            }
+        } catch (err) {
+            console.error('Error preprocessing higher education fields on save:', err.message);
+        }
+
         // Primary tracking key â€” always available from JWT, never null.
         // application_id from the request body is ignored before submission to
         // avoid depending on the old APP2026-XXXXXX format.
@@ -1632,6 +2094,9 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
                 if (val === 'false') val = 0;
                 data[k] = val;
             }
+        }
+        if (data.part_time_district !== undefined) {
+            data.working_district = data.part_time_district;
         }
 
         // Self-healing email synchronization
@@ -1666,11 +2131,11 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
 
             const hasSslc = (raw.has_sslc === undefined || raw.has_sslc === 'true' || raw.has_sslc === '1' || raw.has_sslc === 1);
             const hasHsc  = (raw.has_hsc === undefined  || raw.has_hsc === 'true'  || raw.has_hsc === '1'  || raw.has_hsc === 1);
-            const hasUg   = (raw.has_ug === undefined   || raw.has_ug === 'true'   || raw.has_ug === '1'   || raw.has_ug === 1);
-            const hasPg   = (raw.has_pg === undefined   || raw.has_pg === 'true'   || raw.has_pg === '1'   || raw.has_pg === 1);
+            const hasIntegrated = (raw.has_integrated === 'true' || raw.has_integrated === '1' || raw.has_integrated === 1);
+            const hasUg   = (raw.has_ug === undefined   || raw.has_ug === 'true'   || raw.has_ug === '1'   || raw.has_ug === 1) && !hasIntegrated;
+            const hasPg   = (raw.has_pg === undefined   || raw.has_pg === 'true'   || raw.has_pg === '1'   || raw.has_pg === 1) && !hasIntegrated;
             const hasDiploma = (raw.has_diploma === 'true' || raw.has_diploma === '1' || raw.has_diploma === 1);
             const hasMphil   = (raw.has_mphil   === 'true' || raw.has_mphil   === '1' || raw.has_mphil   === 1);
-            const hasIntegrated = (raw.has_integrated === 'true' || raw.has_integrated === '1' || raw.has_integrated === 1);
 
             const errs = [];
 
@@ -1716,6 +2181,39 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
                 }
             }
 
+            // ── CGPA Scale validation for UG, PG, M.Phil ─────────────────────
+            const VALID_CGPA_SCALES = [4, 6, 8, 10];
+            if (hasUg) {
+                const item = higherData?.[0];
+                if (item?.score_type === 'CGPA') {
+                    const scale = parseFloat(item?.cgpa_scale);
+                    const val   = parseFloat(item?.score_value);
+                    if (!item?.cgpa_scale)                       errs.push('CGPA Scale is required for UG when Score Type is CGPA');
+                    else if (!VALID_CGPA_SCALES.includes(scale)) errs.push('Invalid CGPA Scale for UG (must be 4, 6, 8, or 10)');
+                    else if (!isNaN(val) && val > scale)         errs.push(`UG CGPA value (${val}) cannot exceed the selected scale (${scale})`);
+                }
+            }
+            if (hasPg) {
+                const item = higherData?.[1];
+                if (item?.score_type === 'CGPA') {
+                    const scale = parseFloat(item?.cgpa_scale);
+                    const val   = parseFloat(item?.score_value);
+                    if (!item?.cgpa_scale)                       errs.push('CGPA Scale is required for PG when Score Type is CGPA');
+                    else if (!VALID_CGPA_SCALES.includes(scale)) errs.push('Invalid CGPA Scale for PG (must be 4, 6, 8, or 10)');
+                    else if (!isNaN(val) && val > scale)         errs.push(`PG CGPA value (${val}) cannot exceed the selected scale (${scale})`);
+                }
+            }
+            if (hasMphil) {
+                const item = mphilData;
+                if (item?.score_type === 'CGPA') {
+                    const scale = parseFloat(item?.cgpa_scale);
+                    const val   = parseFloat(item?.score_value);
+                    if (!item?.cgpa_scale)                       errs.push('CGPA Scale is required for M.Phil when Score Type is CGPA');
+                    else if (!VALID_CGPA_SCALES.includes(scale)) errs.push('Invalid CGPA Scale for M.Phil (must be 4, 6, 8, or 10)');
+                    else if (!isNaN(val) && val > scale)         errs.push(`M.Phil CGPA value (${val}) cannot exceed the selected scale (${scale})`);
+                }
+            }
+
             if (hasIntegrated) {
                 const item = integratedData;
                 if (!item || !item.institution_name?.trim() || !item.university_name?.trim() || !item.registration_number?.trim() || !item.passing_year || !item.score_value) {
@@ -1729,45 +2227,71 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
                 }
             }
 
-            // ── Academic Timeline Validation Engine (Module 2) ──────────────────
-            // Ensures educational history follows logical forward-only progression.
-            const sslcYear       = hasSslc ? parseInt(schoolData?.[0]?.passing_year) : null;
-            const hscYear        = hasHsc  ? parseInt(schoolData?.[1]?.passing_year) : null;
-            const ugStartYear    = hasUg   ? parseInt(higherData?.[0]?.start_year)   : null;
-            const ugEndYear      = hasUg   ? parseInt(higherData?.[0]?.passing_year) : null;
-            const pgStartYear    = hasPg   ? parseInt(higherData?.[1]?.start_year)   : null;
-            const pgEndYear      = hasPg   ? parseInt(higherData?.[1]?.passing_year) : null;
-            const intStartYear   = hasIntegrated ? parseInt(integratedData?.start_year)   : null;
+            // ── Academic Timeline Validation Engine (Module 2 — DB-driven) ─────────
+            // Loads admin-configured year-gap and duration rules, then validates every
+            // academic stage transition. Falls back to safe built-in minimums if the
+            // tables don't exist yet (fresh install before migration).
+            {
+                let tlTransitions = [], tlDurations = [];
+                try {
+                    [tlTransitions] = await db.query('SELECT * FROM academic_timeline_rules WHERE status = ? ORDER BY id ASC', ['active']);
+                    [tlDurations]   = await db.query('SELECT * FROM course_duration_rules   WHERE status = ? ORDER BY id ASC', ['active']);
+                } catch (_) { /* tables not yet migrated — skip DB-driven checks */ }
 
-            if (sslcYear && hscYear && !isNaN(sslcYear) && !isNaN(hscYear)) {
-                if (hscYear <= sslcYear) {
-                    errs.push('+2 completion year must be greater than 10th completion year');
-                }
-            }
-            if (hscYear && ugStartYear && !isNaN(hscYear) && !isNaN(ugStartYear)) {
-                if (ugStartYear < hscYear) {
-                    errs.push('UG start year cannot be earlier than +2 completion year');
-                }
-            }
-            if (ugStartYear && ugEndYear && !isNaN(ugStartYear) && !isNaN(ugEndYear)) {
-                if (ugEndYear <= ugStartYear) {
-                    errs.push('UG completion year must be greater than UG start year');
-                }
-            }
-            if (ugEndYear && pgStartYear && !isNaN(ugEndYear) && !isNaN(pgStartYear)) {
-                if (pgStartYear < ugEndYear) {
-                    errs.push('PG start year cannot be earlier than UG completion year');
-                }
-            }
-            if (pgStartYear && pgEndYear && !isNaN(pgStartYear) && !isNaN(pgEndYear)) {
-                if (pgEndYear <= pgStartYear) {
-                    errs.push('PG completion year must be greater than PG start year');
-                }
-            }
-            if (hscYear && intStartYear && !isNaN(hscYear) && !isNaN(intStartYear)) {
-                if (intStartYear < hscYear) {
-                    errs.push('Integrated course start year cannot be earlier than +2 completion year');
-                }
+                const tlRule = (key) => tlTransitions.find(t => t.transition_key === key);
+                const durRule = (key) => tlDurations.find(d => d.course_key === key);
+
+                const sslcYear    = hasSslc       ? parseInt(schoolData?.[0]?.passing_year)      : null;
+                const hscYear     = hasHsc        ? parseInt(schoolData?.[1]?.passing_year)      : null;
+                const ugStartYear = hasUg         ? parseInt(higherData?.[0]?.start_year)        : null;
+                const ugEndYear   = hasUg         ? parseInt(higherData?.[0]?.completion_year)   : null;
+                const pgStartYear = hasPg         ? parseInt(higherData?.[1]?.start_year)        : null;
+                const pgEndYear   = hasPg         ? parseInt(higherData?.[1]?.completion_year)   : null;
+                const mphilYear   = hasMphil      ? parseInt(mphilData?.passing_year)            : null;
+                const intStartYear  = hasIntegrated ? parseInt(integratedData?.start_year)       : null;
+                const intEndYear    = hasIntegrated ? parseInt(integratedData?.completion_year)  : null;
+
+                const ok = (v) => v !== null && !isNaN(v);
+                const INVALID_MSG = 'Invalid Academic Timeline. The selected year does not satisfy the Academic Timeline Rules configured by the administrator. Please select a valid academic year.';
+
+                const checkGap = (from, to, rule, label) => {
+                    if (!ok(from) || !ok(to)) return;
+                    const diff = to - from;
+                    if (rule) {
+                        const min = parseInt(rule.min_gap_years), max = parseInt(rule.max_gap_years);
+                        if (diff < min || (max > 0 && diff > max)) {
+                            errs.push(`${INVALID_MSG} (${label}: gap must be ${min}–${max > 0 ? max : '∞'} years)`);
+                        }
+                    } else {
+                        // Built-in safety: to ≥ from
+                        if (to < from) errs.push(`${INVALID_MSG} (${label}: year cannot go backward)`);
+                    }
+                };
+
+                const checkDuration = (start, end, rule, label) => {
+                    if (!ok(start) || !ok(end)) return;
+                    const span = end - start;
+                    if (rule) {
+                        const min = parseInt(rule.min_duration), max = parseInt(rule.max_duration);
+                        if (span < min || (max > 0 && span > max)) {
+                            errs.push(`${INVALID_MSG} (${label} duration must be ${min}–${max > 0 ? max : '∞'} years)`);
+                        }
+                    } else {
+                        if (end <= start) errs.push(`${INVALID_MSG} (${label}: completion year must be after start year)`);
+                    }
+                };
+
+                // Transition gaps
+                checkGap(sslcYear,    hscYear,      tlRule('sslc_hsc'),  '10th → +2');
+                checkGap(hscYear,     ugStartYear,  tlRule('hsc_ug'),    '+2 → UG start');
+                checkGap(ugEndYear,   pgStartYear,  tlRule('ug_pg'),     'UG → PG start');
+                checkGap(pgEndYear,   mphilYear,    tlRule('pg_mphil'),  'PG → M.Phil');
+                checkGap(hscYear,     intStartYear, tlRule('hsc_ug'),    '+2 → Integrated start');
+
+                // Course durations (start → completion)
+                checkDuration(ugStartYear,  ugEndYear,  durRule('ug'),         'UG');
+                checkDuration(pgStartYear,  pgEndYear,  durRule('pg'),         'PG');
+                checkDuration(intStartYear, intEndYear, durRule('integrated'), 'Integrated');
             }
 
             // Work experience is mandatory for Part Time candidates only.
@@ -1826,17 +2350,41 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
                 if (commRows.length > 0 && commRows[0].pg_min_mark !== null) {
                     const minMark = parseFloat(commRows[0].pg_min_mark);
                     if (hasPg) {
-                        const pgItem = higherData?.[1];
-                        const pgScore = pgItem ? parseFloat(pgItem.score_value) : NaN;
-                        if (!isNaN(pgScore) && pgScore < minMark) {
-                            errs.push(`Minimum required PG percentage for your selected community is ${minMark}% (Your score: ${pgScore}%)`);
+                        const pgItem      = higherData?.[1];
+                        const pgRawScore  = pgItem ? parseFloat(pgItem.score_value) : NaN;
+                        const pgScoreType = pgItem?.score_type || 'Percentage';
+                        if (!isNaN(pgRawScore)) {
+                            if (pgScoreType === 'CGPA') {
+                                const minCgpa  = minMark / 10;
+                                const pgScale  = parseFloat(pgItem?.cgpa_scale);
+                                const pgNorm   = (!isNaN(pgScale) && pgScale > 0)
+                                    ? (pgRawScore / pgScale) * 10
+                                    : pgRawScore; // fallback if scale missing: treat as 10-pt
+                                if (pgNorm < minCgpa) {
+                                    errs.push(`Minimum required PG CGPA for your selected community is ${minCgpa.toFixed(2)} (10-point scale). Your normalized CGPA is ${pgNorm.toFixed(2)}.`);
+                                }
+                            } else {
+                                if (pgRawScore < minMark) {
+                                    errs.push(`Minimum required PG percentage for your selected community is ${minMark}%`);
+                                }
+                            }
                         }
                     }
                     if (hasIntegrated) {
                         const integratedItem = integratedData;
                         const integratedScore = integratedItem ? parseFloat(integratedItem.score_value) : NaN;
-                        if (!isNaN(integratedScore) && integratedScore < minMark) {
-                            errs.push(`Minimum required PG percentage for your selected community is ${minMark}% (Your score: ${integratedScore}%)`);
+                        const integratedScoreType = integratedItem?.score_type || 'Percentage';
+                        if (!isNaN(integratedScore)) {
+                            if (integratedScoreType === 'CGPA') {
+                                const minCgpa = minMark / 10;
+                                if (integratedScore < minCgpa) {
+                                    errs.push(`Minimum required PG CGPA for your selected community is ${minCgpa}`);
+                                }
+                            } else {
+                                if (integratedScore < minMark) {
+                                    errs.push(`Minimum required PG percentage for your selected community is ${minMark}%`);
+                                }
+                            }
                         }
                     }
                 }
@@ -1965,6 +2513,18 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
 
                 if (!fields.level) fields.level = idx === 0 ? 'UG' : 'PG';
 
+                // Compute normalized_cgpa for UG and PG (scale-aware normalization to 10-pt)
+                if (['UG', 'PG'].includes(fields.level) && fields.score_type === 'CGPA') {
+                    const _scale = parseFloat(fields.cgpa_scale);
+                    const _raw   = parseFloat(fields.score_value);
+                    fields.normalized_cgpa = (!isNaN(_scale) && _scale > 0 && !isNaN(_raw))
+                        ? parseFloat(((_raw / _scale) * 10).toFixed(2))
+                        : null;
+                } else if (fields.score_type !== 'CGPA') {
+                    fields.cgpa_scale      = null;
+                    fields.normalized_cgpa = null;
+                }
+
                 let existingId = id;
                 if (!existingId && fields.level) {
                     const [ex] = await db.query('SELECT id FROM higher_education WHERE user_id = ? AND level = ?', [userId, fields.level]);
@@ -2029,6 +2589,17 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
             const fields = {};
             COLUMNS.higher.forEach(c => { if (mphil[c] !== undefined) fields[c] = (mphil[c] === '' || mphil[c] === 'null' || mphil[c] === 'undefined') ? null : mphil[c]; });
             if (!fields.level) fields.level = 'M.Phil';
+            // Compute normalized_cgpa for M.Phil
+            if (fields.score_type === 'CGPA') {
+                const _scale = parseFloat(fields.cgpa_scale);
+                const _raw   = parseFloat(fields.score_value);
+                fields.normalized_cgpa = (!isNaN(_scale) && _scale > 0 && !isNaN(_raw))
+                    ? parseFloat(((_raw / _scale) * 10).toFixed(2))
+                    : null;
+            } else {
+                fields.cgpa_scale      = null;
+                fields.normalized_cgpa = null;
+            }
             const [ex] = await db.query('SELECT id FROM higher_education WHERE user_id = ? AND level = "M.Phil"', [userId]);
             if (ex.length > 0) await db.query('UPDATE higher_education SET ? WHERE id = ?', [fields, ex[0].id]);
             else await db.query('INSERT INTO higher_education SET ?', { ...fields, user_id: userId });
@@ -2100,6 +2671,7 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
                 }
 
                 // â”€â”€ Standard document â”€â”€
+                // ——— Standard document ———
                 await db.query('DELETE FROM application_documents WHERE user_id = ? AND document_type = ?', [userId, file.fieldname]);
                 await db.query('INSERT INTO application_documents (user_id, document_type, file_path) VALUES (?, ?, ?)', [userId, file.fieldname, filePath]);
 
@@ -2130,13 +2702,18 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
 
         // 6. Handle normalized student_qualifications â€” keyed by user_id
         if (raw.student_qualifications !== undefined) {
+            console.log("[DEBUG Save] raw.student_qualifications:", raw.student_qualifications);
             let qualIds = [];
             try {
                 const parsed = typeof raw.student_qualifications === 'string'
                     ? JSON.parse(raw.student_qualifications)
                     : raw.student_qualifications;
                 qualIds = (Array.isArray(parsed) ? parsed : []).map(q => parseInt(q, 10)).filter(Boolean);
-            } catch { qualIds = []; }
+            } catch (e) {
+                console.error("[DEBUG Save] parse error:", e.message);
+                qualIds = [];
+            }
+            console.log("[DEBUG Save] parsed qualIds:", qualIds);
 
             const [existing] = await db.query(
                 "SELECT qualification_id FROM student_qualifications WHERE user_id = ? AND status = 'Active'",
@@ -2185,6 +2762,20 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
                 `UPDATE applications SET entrance_exam_status = ?${qualUpdate} WHERE user_id = ?`,
                 [newStatus, userId]
             );
+
+            // Sync qualifications to applications.qualified_exams JSON column
+            const [qualNamesRows] = await db.query(
+                `SELECT qt.qualification_name FROM student_qualifications sq
+                 JOIN qualification_types qt ON sq.qualification_id = qt.id
+                 WHERE sq.user_id = ? AND sq.status = 'Active'
+                 ORDER BY qt.display_order ASC`,
+                [userId]
+            );
+            const qualNames = qualNamesRows.map(r => r.qualification_name);
+            await db.query(
+                'UPDATE applications SET qualified_exams = ? WHERE user_id = ?',
+                [JSON.stringify(qualNames), userId]
+            );
         }
 
         // â”€â”€ 7. Mark application as fully submitted â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -2205,6 +2796,19 @@ app.post('/api/applications/save', authenticateToken, upload.any(), async (req, 
                     studentName: userData.full_name,
                     applicationId: null,
                 }).catch(() => {});
+
+                // Write admin notification directly to shared DB (different process — no SSE push;
+                // the admin SSE poll picks this up within ~5 s)
+                await db.query(
+                    `INSERT INTO admin_notifications (title, message, type, source_type, source_id, link, is_read)
+                     VALUES (?, ?, 'application', 'application', ?, '/applications', 0)
+                     ON DUPLICATE KEY UPDATE created_at = created_at`,
+                    [
+                        `New Application Received: ${userData?.full_name || 'Student'}`,
+                        `Email: ${userData?.email || 'N/A'} — submitted and awaiting review`,
+                        String(userId),
+                    ]
+                ).catch(() => {}); // Non-blocking
             } catch (_) {}
 
             return res.json({
@@ -2258,12 +2862,13 @@ app.get('/api/student/eligibility', authenticateToken, async (req, res) => {
 
         const [settingsRows] = await db.query(
             `SELECT entrance_result_publish, 
-                    payment_enabled, payment_open, payment_close
+                    payment_enabled, payment_open, payment_close,
+                    result_publish_enabled, result_publish_open, result_publish_close
              FROM university_settings LIMIT 1`
         );
         const settings = settingsRows[0] || {};
 
-        // Payment time-window (enterprise workflow control)
+        // Payment and result publish time-windows (enterprise workflow control)
         const pageAccess = getPageAccess(settings);
         const paymentWindowActive = pageAccess.payment.active;
 
@@ -2289,7 +2894,9 @@ app.get('/api/student/eligibility', authenticateToken, async (req, res) => {
         const gateB_paid = app.payment_status === 'Paid';
 
         // GATE C: Result Publication â€” admin has published results globally
-        const resultPublished = !!app.result_published_at || !!settings.entrance_result_publish;
+        const resultPublished = !!app.result_published_at || 
+                                !!settings.entrance_result_publish || 
+                                (!!settings.result_publish_enabled && pageAccess.resultPublish.active);
         const gateC_published = resultPublished;
 
         // GATE D: Counselling Window â€” validated against Counselling Management settings
@@ -2337,6 +2944,14 @@ app.get('/api/student/eligibility', authenticateToken, async (req, res) => {
                 payment_window_active:      paymentWindowActive,
                 payment_window_open:        pageAccess.payment.open,
                 payment_window_close:       pageAccess.payment.close,
+                // Application and locking fields
+                application_id:             app.application_id,
+                form_locked:                app.form_locked,
+                is_locked:                  app.is_locked,
+                final_submitted:            app.final_submitted,
+                application_generated_date:  app.application_generated_date,
+                application_id_generated_at: app.application_id_generated_at,
+                submitted_at:               app.submitted_at,
                 // Deferred payment fields
                 payment_decision:           app.payment_decision,
                 payment_due_date:           app.payment_due_date,
@@ -2359,12 +2974,77 @@ app.get('/api/student/eligibility', authenticateToken, async (req, res) => {
     }
 });
 
+// GET /api/student/entrance-certificate — scorecard for entrance exam
+app.get('/api/student/entrance-certificate', authenticateToken, async (req, res) => {
+    try {
+        const [appRows] = await db.query(
+            `SELECT a.application_id, a.applicant_name, a.applicant_initial, a.gender, a.subject, a.entrance_mark,
+                    a.result_published_at, a.entrance_exam_status,
+                    ht.hall_ticket_number, ht.exam_date,
+                    s.month AS session_month, s.year AS session_year,
+                    (SELECT file_path FROM application_documents
+                     WHERE application_id = a.application_id AND document_type IN ('Photo', 'photo') LIMIT 1) AS photo_path
+             FROM applications a
+             LEFT JOIN hall_tickets ht ON a.application_id = ht.application_id
+             LEFT JOIN sessions s ON a.session_id = s.id
+             WHERE a.user_id = ? LIMIT 1`,
+            [req.user.id]
+        );
+        const app = appRows[0];
+        if (!app) return res.status(404).json({ success: false, message: 'Application not found' });
+
+        // Fetch university settings for header branding details and results check
+        const [settingsRows] = await db.query(
+            `SELECT entrance_result_publish, result_publish_enabled, result_publish_open, result_publish_close,
+                    university_name_english, university_name_tamil, logo, header_line2, naac_details, subtitle, address
+             FROM university_settings LIMIT 1`
+        );
+        const settings = settingsRows[0] || {};
+
+        const pageAccess = getPageAccess(settings);
+        const resultPublished = !!app.result_published_at || 
+                              !!settings.entrance_result_publish || 
+                              (!!settings.result_publish_enabled && pageAccess.resultPublish.active);
+
+        if (!resultPublished) {
+            return res.status(403).json({ success: false, message: 'Results have not been officially published yet.' });
+        }
+
+        if (app.entrance_mark === null) {
+            return res.status(400).json({ success: false, message: 'Entrance mark not available' });
+        }
+
+        const fullName = (app.applicant_name + (app.applicant_initial ? ' ' + app.applicant_initial : '')).trim();
+
+        res.json({
+            success: true,
+            data: {
+                application_id: app.application_id,
+                applicant_name: fullName,
+                gender: app.gender,
+                subject: app.subject,
+                entrance_mark: app.entrance_mark,
+                result_published_at: app.result_published_at,
+                hall_ticket_number: app.hall_ticket_number || app.application_id,
+                exam_date: app.exam_date,
+                session_month: app.session_month,
+                session_year: app.session_year,
+                photo_path: app.photo_path,
+                settings
+            }
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
 // Session info for the logged-in student (used by Dashboard)
 app.get('/api/student/session', authenticateToken, async (req, res) => {
     try {
         const [rows] = await db.query(`
             SELECT s.id, s.year, s.month, s.is_active, s.registration_open, s.application_open,
-                   s.result_published, CONCAT(s.month, ' ', s.year) AS session_name
+                   s.entrance_result_published AS result_published, CONCAT(s.month, ' ', s.year) AS session_name
             FROM users u
             JOIN sessions s ON u.session_id = s.id
             WHERE u.id = ?
@@ -2384,6 +3064,16 @@ app.get('/api/student/session', authenticateToken, async (req, res) => {
 // Hall Ticket Route for Student
 app.get('/api/student/hall-ticket', authenticateToken, async (req, res) => {
     try {
+        // Enforce Portal Access Control for Hall Ticket
+        const [settingsRows] = await db.query(
+            `SELECT hall_ticket_enabled, hall_ticket_open, hall_ticket_close FROM university_settings LIMIT 1`
+        );
+        const settings = settingsRows[0] || {};
+        const pageAccess = getPageAccess(settings);
+        if (!pageAccess.hallTicket.active) {
+            return res.json({ available: false, message: 'Hall Ticket portal is currently closed. Downloads are not within the allowed dates.' });
+        }
+
         // Soft-gate: return available:false (not 4xx) so the browser never logs a red error
         const [dpCheck] = await db.query(
             "SELECT direct_pass_status, status FROM applications WHERE user_id = ? LIMIT 1",
@@ -2607,8 +3297,10 @@ app.get('/api/student/payment/history', authenticateToken, async (req, res) => {
         if (!appRow) return res.json({ success: true, data: [] });
 
         const [rows] = await db.query(
-            `SELECT id, amount, currency, gateway, transaction_id, payment_status,
-                    payment_mode, receipt_number, paid_at, created_at
+            `SELECT id, application_id, enterprise_order_id, amount, currency, gateway, transaction_id,
+                    CASE WHEN payment_status IN ('Paid', 'Success', 'SUCCESS', 'Success / Paid') OR payment_status IS NULL OR payment_status = '' THEN 'Success' ELSE payment_status END AS payment_status,
+                    COALESCE(payment_mode, payment_method, gateway, 'Online') AS payment_mode,
+                    receipt_number, paid_at, created_at
              FROM payments WHERE application_id = ?
              ORDER BY created_at DESC`,
             [appRow.application_id]
@@ -2787,6 +3479,18 @@ app.post('/api/applications/verify-payment-submit', authenticateToken, async (re
             }
         }).catch(() => {});
 
+        // Admin notification feed — payment submitted (non-blocking)
+        const { notifyAdminDB: notifyAdminDBPay } = require('../../shared/notification/notifyAdminDB');
+        notifyAdminDBPay(db, {
+            event_key:   'student.payment.submit',
+            title:       `Payment Received: ${appRow.application_id || receipt_number}`,
+            message:     `Amount: ₹${expectedFee} | TXN: ${finalTransactionId} | Mode: ${payment_mode || 'Online'}`,
+            type:        'payment',
+            source_type: 'payment',
+            source_id:   appRow.application_id || String(req.user.id),
+            link:        '/payment-management',
+        });
+
         res.json({
             success: true,
             message: 'Payment and application submission completed successfully.',
@@ -2808,9 +3512,9 @@ app.post('/api/applications/verify-payment-submit', authenticateToken, async (re
 });
 
 // GET /api/applications/download-receipt/:appId â€” generates premium PDF payment receipt via pdfkit
-app.get('/api/applications/download-receipt/:appId', authenticateToken, async (req, res) => {
+app.get(/^\/api\/applications\/download-receipt\/(.+)$/, authenticateToken, async (req, res) => {
     try {
-        const appId = req.params.appId;
+        const appId = req.params[0];
         // Ownership check â€” only the owning student may download their receipt
         const [appResults] = await db.query(
             'SELECT * FROM applications WHERE application_id = ? AND user_id = ?',
@@ -3120,9 +3824,9 @@ app.get('/api/student/notifications/stream', (req, res) => {
 
 const PDFDocument = require('pdfkit');
 
-app.get('/api/applications/download-pdf/:appId', authenticateToken, async (req, res) => {
+app.get(/^\/api\/applications\/download-pdf\/(.+)$/, authenticateToken, async (req, res) => {
     try {
-        const appId = req.params.appId;
+        const appId = req.params[0];
         // Ownership check â€” only the owning student may download their application PDF
         const [appResults] = await db.query(
             'SELECT * FROM applications WHERE application_id = ? AND user_id = ?',
@@ -3540,6 +4244,20 @@ app.get('/api/applications/download-pdf/:appId', authenticateToken, async (req, 
 });
 
 // â”€â”€â”€ DROPDOWNS & SETTINGS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Academic Hierarchy public endpoint (same shared DB as admin) ──────────────
+app.get('/api/academic-hierarchy/all', async (_req, res) => {
+    try {
+        const [[faculties], [disciplines], [specializations]] = await Promise.all([
+            db.query(`SELECT id, faculty_name AS name FROM faculty_master WHERE status = 'active' ORDER BY faculty_name ASC`),
+            db.query(`SELECT id, discipline_name AS name, faculty_id FROM discipline_master WHERE status = 'active' ORDER BY discipline_name ASC`),
+            db.query(`SELECT id, specialization_name AS name, discipline_id FROM specialization_master WHERE status = 'active' ORDER BY specialization_name ASC`),
+        ]);
+        res.json({ success: true, data: { faculties, disciplines, specializations } });
+    } catch (_err) {
+        res.json({ success: true, data: { faculties: [], disciplines: [], specializations: [] } });
+    }
+});
+
 app.get('/api/dropdowns/settings', async (req, res) => {
     try {
         const [rows] = await db.query('SELECT * FROM university_settings LIMIT 1');
@@ -3621,6 +4339,18 @@ app.get('/api/exam-centre-config', async (req, res) => {
     }
 });
 
+// --- ACADEMIC TIMELINE RULES (public — read by student form for dynamic year filtering)
+app.get('/api/timeline-rules', async (req, res) => {
+    try {
+        const [transitions] = await db.query('SELECT * FROM academic_timeline_rules ORDER BY id ASC');
+        const [durations]   = await db.query('SELECT * FROM course_duration_rules ORDER BY id ASC');
+        res.json({ success: true, data: { transitions, durations } });
+    } catch (_) {
+        // Graceful fallback — tables may not exist on fresh installs
+        res.json({ success: true, data: { transitions: [], durations: [] } });
+    }
+});
+
 // â”€â”€â”€ ADMIN MASTER DATA MANAGEMENT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const masterTables = ['education_boards', 'degree_types', 'university_types', 'specializations', 'employment_types'];
 
@@ -3681,7 +4411,8 @@ app.get('/api/qualifications', async (req, res) => {
 app.get('/api/active-session', async (req, res) => {
     try {
         const [rows] = await db.query(
-            `SELECT id, year, month, is_active, registration_open, application_open, result_published,
+            `SELECT id, year, month, is_active, registration_open, application_open,
+                    entrance_result_published AS result_published,
                     CONCAT(month, ' ', year) AS session_name
              FROM sessions WHERE is_active = 1 LIMIT 1`
         );
@@ -3794,45 +4525,99 @@ app.get('/api/counselling/settings', authenticateToken, async (req, res) => {
     }
 });
 
-// GET /api/counselling/research-centers – Approved Research Centres from Admin master
-app.get('/api/counselling/research-centers', async (req, res) => {
+// GET /api/counselling/student-department – logged-in student's department from applications
+app.get('/api/counselling/student-department', authenticateToken, async (req, res) => {
     try {
         const [rows] = await db.query(
-            `SELECT id, COALESCE(college_name, name) AS center_name
-             FROM research_centres
-             WHERE status = 'Approved'
-             ORDER BY COALESCE(college_name, name)`
+            'SELECT subject AS department FROM applications WHERE user_id = ? LIMIT 1',
+            [req.user.id]
         );
+        if (!rows[0]) return res.status(404).json({ success: false, message: 'Application not found' });
+        res.json({ success: true, department: rows[0].department || null });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// GET /api/counselling/research-centers – Approved Research Centres; ?department= filters by dept mapping
+app.get('/api/counselling/research-centers', async (req, res) => {
+    const { department } = req.query;
+    try {
+        let rows;
+        if (department) {
+            [rows] = await db.query(
+                `SELECT DISTINCT rc.id, COALESCE(rc.college_name, rc.name) AS center_name
+                 FROM research_centres rc
+                 JOIN research_centre_departments rcd ON rcd.research_centre_id = rc.id
+                 JOIN departments d ON d.id = rcd.department_id
+                 WHERE rc.status = 'Approved'
+                   AND LOWER(TRIM(d.name)) = LOWER(TRIM(?))
+                 ORDER BY center_name`,
+                [department]
+            );
+        } else {
+            [rows] = await db.query(
+                `SELECT id, COALESCE(college_name, name) AS center_name
+                 FROM research_centres
+                 WHERE status = 'Approved'
+                 ORDER BY COALESCE(college_name, name)`
+            );
+        }
         res.json({ success: true, data: rows });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
 });
 
-// GET /api/counselling/research-supervisors – Supervisors; optional ?center_id= filter
+// GET /api/counselling/research-supervisors – optional ?center_id= and/or ?department= filters
 app.get('/api/counselling/research-supervisors', async (req, res) => {
-    const { center_id } = req.query;
+    const { center_id, department } = req.query;
     try {
         let query, params;
-        if (center_id) {
+        if (center_id && department) {
             query = `SELECT DISTINCT s.id, s.name AS supervisor_name,
                             d.name AS designation, dep.name AS department
                      FROM supervisors s
                      LEFT JOIN supervisor_disciplines sd ON sd.supervisor_id = s.id
                      LEFT JOIN master_institutes mi ON s.serving_institute_id = mi.id
                      LEFT JOIN master_designations d ON s.designation_id = d.id
-                     LEFT JOIN master_departments dep ON s.department_id = dep.id
+                     LEFT JOIN departments dep ON s.department_id = dep.id
+                     WHERE s.status IN ('Active', 'Approved')
+                       AND (sd.centre_id = ? OR mi.source_centre_id = ?)
+                       AND LOWER(TRIM(dep.name)) = LOWER(TRIM(?))
+                     ORDER BY s.name`;
+            params = [center_id, center_id, department];
+        } else if (center_id) {
+            query = `SELECT DISTINCT s.id, s.name AS supervisor_name,
+                            d.name AS designation, dep.name AS department
+                     FROM supervisors s
+                     LEFT JOIN supervisor_disciplines sd ON sd.supervisor_id = s.id
+                     LEFT JOIN master_institutes mi ON s.serving_institute_id = mi.id
+                     LEFT JOIN master_designations d ON s.designation_id = d.id
+                     LEFT JOIN departments dep ON s.department_id = dep.id
                      WHERE s.status IN ('Active', 'Approved')
                        AND (sd.centre_id = ? OR mi.source_centre_id = ?)
                      ORDER BY s.name`;
             params = [center_id, center_id];
+        } else if (department) {
+            query = `SELECT s.id, s.name AS supervisor_name,
+                            d.name AS designation, dep.name AS department,
+                            COALESCE(rc.college_name, rc.name) AS center_name
+                     FROM supervisors s
+                     LEFT JOIN master_designations d ON s.designation_id = d.id
+                     LEFT JOIN departments dep ON s.department_id = dep.id
+                     LEFT JOIN research_centres rc ON s.research_center_id = rc.id
+                     WHERE s.status IN ('Active', 'Approved')
+                       AND LOWER(TRIM(dep.name)) = LOWER(TRIM(?))
+                     ORDER BY s.name`;
+            params = [department];
         } else {
             query = `SELECT s.id, s.name AS supervisor_name,
                             d.name AS designation, dep.name AS department,
                             COALESCE(rc.college_name, rc.name) AS center_name
                      FROM supervisors s
                      LEFT JOIN master_designations d ON s.designation_id = d.id
-                     LEFT JOIN master_departments dep ON s.department_id = dep.id
+                     LEFT JOIN departments dep ON s.department_id = dep.id
                      LEFT JOIN research_centres rc ON s.research_center_id = rc.id
                      WHERE s.status IN ('Active', 'Approved')
                      ORDER BY s.name`;
@@ -3900,7 +4685,7 @@ app.get('/api/counselling/my-application', authenticateToken, async (req, res) =
              FROM counselling_supervisor_preferences csp
              LEFT JOIN supervisors s ON csp.supervisor_id = s.id
              LEFT JOIN master_designations d ON s.designation_id = d.id
-             LEFT JOIN master_departments dep ON s.department_id = dep.id
+             LEFT JOIN departments dep ON s.department_id = dep.id
              WHERE csp.counselling_application_id = ?
              ORDER BY csp.preference_order`,
             [app.id]
@@ -4061,6 +4846,39 @@ app.post('/api/counselling/save-preferences', authenticateToken, async (req, res
         if (new Set(supervisor_preferences).size !== supervisor_preferences.length)
             throw new Error('Duplicate supervisor selections are not allowed');
 
+        // Department validation — enforce hierarchy: only centres/supervisors in student's dept
+        const [appRows] = await conn.query(
+            'SELECT subject FROM applications WHERE user_id = ? LIMIT 1',
+            [req.user.id]
+        );
+        const studentDept = (appRows[0]?.subject || '').trim().toLowerCase();
+        if (studentDept) {
+            for (const centerId of center_preferences) {
+                const [dCheck] = await conn.query(
+                    `SELECT COUNT(*) AS cnt
+                     FROM research_centre_departments rcd
+                     JOIN departments d ON d.id = rcd.department_id
+                     WHERE rcd.research_centre_id = ?
+                       AND LOWER(TRIM(d.name)) = ?`,
+                    [centerId, studentDept]
+                );
+                if (dCheck[0].cnt === 0)
+                    throw new Error(`Research Centre is not available for your registered department`);
+            }
+            for (const supId of supervisor_preferences) {
+                const [dCheck] = await conn.query(
+                    `SELECT COUNT(*) AS cnt
+                     FROM supervisors s
+                     JOIN departments dep ON dep.id = s.department_id
+                     WHERE s.id = ?
+                       AND LOWER(TRIM(dep.name)) = ?`,
+                    [supId, studentDept]
+                );
+                if (dCheck[0].cnt === 0)
+                    throw new Error(`Supervisor is not available for your registered department`);
+            }
+        }
+
         // Upsert counselling application
         let caId;
         const [existing] = await conn.query(
@@ -4155,6 +4973,22 @@ app.post('/api/counselling/submit', authenticateToken, async (req, res) => {
             [rows[0].id]
         );
         await conn.commit();
+
+        // Admin notification feed — counselling submitted (non-blocking)
+        const { notifyAdminDB: notifyAdminDBCoun } = require('../../shared/notification/notifyAdminDB');
+        db.query('SELECT full_name FROM users WHERE id = ? LIMIT 1', [req.user.id])
+            .then(([uRows]) => {
+                notifyAdminDBCoun(db, {
+                    event_key:   'student.counselling.submit',
+                    title:       `Counselling Submitted: ${uRows[0]?.full_name || 'Student'}`,
+                    message:     'New counselling application submitted and pending review',
+                    type:        'info',
+                    source_type: 'counselling',
+                    source_id:   String(req.user.id),
+                    link:        '/counselling',
+                });
+            }).catch(() => {});
+
         res.json({ success: true, message: 'Counselling application submitted successfully' });
     } catch (err) {
         await conn.rollback();
@@ -4218,9 +5052,15 @@ app.get('/api/application/review', authenticateToken, async (req, res) => {
         const eduWhere = appId ? 'user_id = ? OR application_id = ?' : 'user_id = ?';
         const eduParams = appId ? [userId, appId] : [userId];
 
-        const [school]     = await db.query(`SELECT * FROM school_education WHERE ${eduWhere}`, eduParams);
+        const schoolQuery = appId 
+            ? `SELECT se.*, eb.board_name FROM school_education se LEFT JOIN education_boards eb ON se.board_id = eb.id WHERE se.user_id = ? OR se.application_id = ?`
+            : `SELECT se.*, eb.board_name FROM school_education se LEFT JOIN education_boards eb ON se.board_id = eb.id WHERE se.user_id = ?`;
+        const [school]     = await db.query(schoolQuery, eduParams);
         const [higher]     = await db.query(`SELECT * FROM higher_education WHERE ${eduWhere} ORDER BY id ASC`, eduParams);
-        const [experience] = await db.query(`SELECT * FROM experience_details WHERE ${eduWhere}`, eduParams);
+        const expQuery = appId 
+            ? `SELECT ed.*, et.type_name AS employment_type FROM experience_details ed LEFT JOIN employment_types et ON ed.employment_type_id = et.id WHERE ed.user_id = ? OR ed.application_id = ?`
+            : `SELECT ed.*, et.type_name AS employment_type FROM experience_details ed LEFT JOIN employment_types et ON ed.employment_type_id = et.id WHERE ed.user_id = ?`;
+        const [experience] = await db.query(expQuery, eduParams);
         const [docs]       = await db.query('SELECT * FROM application_documents WHERE user_id = ?', [userId]);
 
         // Self-healing email synchronization
@@ -4229,6 +5069,43 @@ app.get('/api/application/review', authenticateToken, async (req, res) => {
             if (userEmailRow.length > 0 && userEmailRow[0].email) {
                 application.email = userEmailRow[0].email;
                 await db.query('UPDATE applications SET email = ? WHERE user_id = ?', [application.email, userId]);
+            }
+        }
+
+        // Self-healing payment info synchronization
+        if (application.payment_status === 'Paid' || application.final_submitted || application.is_locked) {
+            if (!application.receipt_number || !application.payment_transaction_id || !application.submission_reference) {
+                // 1. Try to load from payment_receipts
+                const [receiptRows] = await db.query(
+                    'SELECT receipt_number, order_id, gateway_transaction_id, issued_at FROM payment_receipts WHERE user_id = ? OR application_id = ? LIMIT 1',
+                    [userId, appId || '']
+                );
+                if (receiptRows.length > 0) {
+                    application.receipt_number = application.receipt_number || receiptRows[0].receipt_number;
+                    application.payment_transaction_id = application.payment_transaction_id || receiptRows[0].gateway_transaction_id;
+                    application.submission_reference = application.submission_reference || receiptRows[0].order_id;
+                    application.payment_completed_at = application.payment_completed_at || receiptRows[0].issued_at;
+                    await db.query(
+                        'UPDATE applications SET receipt_number = ?, payment_transaction_id = ?, submission_reference = ?, payment_completed_at = ? WHERE user_id = ?',
+                        [application.receipt_number, application.payment_transaction_id, application.submission_reference, application.payment_completed_at, userId]
+                    );
+                } else {
+                    // 2. Try to load from payments table
+                    const [paymentRows] = await db.query(
+                        'SELECT receipt_number, transaction_id, enterprise_order_id, paid_at FROM payments WHERE user_id = ? OR application_id = ? LIMIT 1',
+                        [userId, appId || '']
+                    );
+                    if (paymentRows.length > 0) {
+                        application.receipt_number = application.receipt_number || paymentRows[0].receipt_number || `RCPT-2026-${(appId || `U${userId}`).toString().replace(/[^A-Za-z0-9]/g, '')}`;
+                        application.payment_transaction_id = application.payment_transaction_id || paymentRows[0].transaction_id;
+                        application.submission_reference = application.submission_reference || paymentRows[0].enterprise_order_id || `REF-2026-${(appId || `U${userId}`).toString().replace(/[^A-Za-z0-9]/g, '')}`;
+                        application.payment_completed_at = application.payment_completed_at || paymentRows[0].paid_at;
+                        await db.query(
+                            'UPDATE applications SET receipt_number = ?, payment_transaction_id = ?, submission_reference = ?, payment_completed_at = ? WHERE user_id = ?',
+                            [application.receipt_number, application.payment_transaction_id, application.submission_reference, application.payment_completed_at, userId]
+                        );
+                    }
+                }
             }
         }
 
@@ -4265,6 +5142,24 @@ app.get('/api/application/review', authenticateToken, async (req, res) => {
                     await db.query('UPDATE higher_education SET marksheet_path = ?, consolidated_marksheet_path = ? WHERE user_id = ? AND level = "PG"', [filePath, filePath, userId]);
                 }
             }
+        }
+
+        // Self-healing: sync qualifications to applications.qualified_exams JSON column
+        const [qualNamesRows] = await db.query(
+            `SELECT qt.qualification_name FROM student_qualifications sq
+             JOIN qualification_types qt ON sq.qualification_id = qt.id
+             WHERE sq.user_id = ? AND sq.status = 'Active'
+             ORDER BY qt.display_order ASC`,
+            [userId]
+        );
+        const qualNames = qualNamesRows.map(r => r.qualification_name);
+        const qualExamsStr = JSON.stringify(qualNames);
+        if (application.qualified_exams !== qualExamsStr) {
+            application.qualified_exams = qualExamsStr;
+            await db.query(
+                'UPDATE applications SET qualified_exams = ? WHERE user_id = ?',
+                [qualExamsStr, userId]
+            );
         }
 
         // Flexible doc check — matches Photo/photo, ID Proof/id_proof, community_cert/Community Certificate etc.
@@ -4333,8 +5228,8 @@ app.get('/api/application/review', authenticateToken, async (req, res) => {
         const mphHasSheet   = !!(mphil.marksheet_path  || mphil.consolidated_marksheet_path)      || hasDoc('mphil_consolidated')    || hasDoc('mphil_marksheet');
         const intHasSheet   = !!(integrated.marksheet_path || integrated.consolidated_marksheet_path) || hasDoc('integrated_consolidated') || hasDoc('integrated_marksheet');
 
-        const isUgOk   = (!isUgActive   || !hasUgChecked)       || !!(ug.institution_name       && ugHasDegree  && ug.passing_year       && ug.score_value       && ugHasSheet);
-        const isPgOk   = (!isPgActive   || !hasPgChecked)       || !!(pg.institution_name       && pgHasDegree  && pg.passing_year       && pg.score_value       && pgHasSheet);
+        const isUgOk   = (!isUgActive   || !hasUgChecked || hasIntChecked)       || !!(ug.institution_name       && ugHasDegree  && ug.passing_year       && ug.score_value       && ugHasSheet);
+        const isPgOk   = (!isPgActive   || !hasPgChecked || hasIntChecked)       || !!(pg.institution_name       && pgHasDegree  && pg.passing_year       && pg.score_value       && pgHasSheet);
         const isDipOk  = (!isDiplomaActive || !hasDiplomaChecked) || !!(diploma.institution_name  && dipHasDegree && diploma.passing_year  && diploma.score_value  && dipHasSheet);
         const isMphOk  = (!isMphilActive   || !hasMphilChecked)   || !!(mphil.institution_name    && mphHasDegree && mphil.passing_year    && mphil.score_value    && mphHasSheet);
         const isIntOk  = (!isIntegratedActive || !hasIntChecked)  || !!(integrated.institution_name && integrated.university_name && integrated.passing_year && integrated.score_value && intHasSheet);
@@ -4392,8 +5287,8 @@ app.get('/api/application/review', authenticateToken, async (req, res) => {
         const academicRequired = 1 + maxPrefs // subject + configured exam centre count
             + (isSslcActive && hasSslcChecked ? 1 : 0)
             + (isHscActive  && hasHscChecked  ? 1 : 0)
-            + (isUgActive   && hasUgChecked   ? 1 : 0)
-            + (isPgActive   && hasPgChecked   ? 1 : 0)
+            + (isUgActive   && hasUgChecked && !hasIntChecked   ? 1 : 0)
+            + (isPgActive   && hasPgChecked && !hasIntChecked   ? 1 : 0)
             + (isDiplomaActive    && hasDiplomaChecked ? 1 : 0)
             + (isMphilActive      && hasMphilChecked   ? 1 : 0)
             + (isIntegratedActive && hasIntChecked     ? 1 : 0);
@@ -4404,10 +5299,24 @@ app.get('/api/application/review', authenticateToken, async (req, res) => {
         const missingCount  = missingFields.personalInfo.length + missingFields.contactInfo.length + missingFields.academicInfo.length + missingFields.documents.length;
         const completionPct = Math.max(0, Math.round(((totalRequired - missingCount) / totalRequired) * 100));
 
+        let department_name = null;
+        let program_offered_name = null;
+
+        if (application.department_id) {
+            const [deptRows] = await db.query('SELECT name FROM departments WHERE id = ?', [application.department_id]);
+            if (deptRows.length > 0) department_name = deptRows[0].name;
+        }
+        if (application.program_offered_id) {
+            const [progRows] = await db.query('SELECT name FROM programs_offered WHERE id = ?', [application.program_offered_id]);
+            if (progRows.length > 0) program_offered_name = progRows[0].name;
+        }
+
         res.json({
             success: true,
             data: { 
                 ...application, 
+                department_name,
+                program_offered_name,
                 final_submitted_at: application.submitted_at || application.payment_completed_at,
                 school_education: school, 
                 higher_education: higher, 
@@ -4551,8 +5460,8 @@ app.post('/api/application/final-submit', authenticateToken, async (req, res) =>
         const mphHasSheet = !!(mphil.marksheet_path    || mphil.consolidated_marksheet_path)    || hasDoc('mphil_consolidated')       || hasDoc('mphil_marksheet');
         const intHasSheet = !!(integrated.marksheet_path || integrated.consolidated_marksheet_path) || hasDoc('integrated_consolidated') || hasDoc('integrated_marksheet');
 
-        const isUgOk  = (!isUgActive  || !hasUgChecked)  || !!(ug.institution_name       && ugHasDeg  && ug.passing_year       && ug.score_value       && ugHasSheet);
-        const isPgOk  = (!isPgActive  || !hasPgChecked)  || !!(pg.institution_name       && pgHasDeg  && pg.passing_year       && pg.score_value       && pgHasSheet);
+        const isUgOk  = (!isUgActive  || !hasUgChecked || hasIntChecked)  || !!(ug.institution_name       && ugHasDeg  && ug.passing_year       && ug.score_value       && ugHasSheet);
+        const isPgOk  = (!isPgActive  || !hasPgChecked || hasIntChecked)  || !!(pg.institution_name       && pgHasDeg  && pg.passing_year       && pg.score_value       && pgHasSheet);
         const isDipOk = (!isDiplomaActive || !hasDipChecked) || !!(diploma.institution_name  && dipHasDeg && diploma.passing_year  && diploma.score_value  && dipHasSheet);
         const isMphOk = (!isMphilActive   || !hasMphChecked) || !!(mphil.institution_name    && mphHasDeg && mphil.passing_year    && mphil.score_value    && mphHasSheet);
         const isIntOk = (!isIntActive     || !hasIntChecked) || !!(integrated.institution_name && integrated.university_name && integrated.passing_year && integrated.score_value && intHasSheet);
@@ -4584,9 +5493,10 @@ app.post('/api/application/final-submit', authenticateToken, async (req, res) =>
         if (application.community !== 'OC' && isCcActive && !hasDoc('community_cert')) missing.push('Community Certificate');
         if ([1, '1', 'Yes'].includes(application.is_physically_challenged) && isPcActive && !hasDoc('pc_cert')) missing.push('PC Certificate');
 
-        if (missing.length > 0) {
-            return res.status(400).json({ success: false, message: 'Please complete all mandatory fields before submitting.', missingFields: missing });
-        }
+        // Completeness validation bypassed per request
+        // if (missing.length > 0) {
+        //     return res.status(400).json({ success: false, message: 'Please complete all mandatory fields before submitting.', missingFields: missing });
+        // }
 
         // Fetch payment_due_days from settings (default 7)
         const [[settingsRow]] = await db.query('SELECT payment_due_days FROM university_settings LIMIT 1');
@@ -4664,10 +5574,10 @@ app.get('/api/part-time/global-guidance/preview', authenticateToken, async (req,
         
         const doc = rows[0];
         // Resolve absolute path pointing to the admin uploads folder
-        const absolutePath = path.resolve(__dirname, '../../admin/backend', doc.file_path);
+        const absolutePath = path.resolve(__dirname, '../../', doc.file_path);
         
         // Security check: path traversal prevention
-        const allowedDir = path.resolve(__dirname, '../../admin/backend/uploads');
+        const allowedDir = path.resolve(__dirname, '../../uploads');
         if (!absolutePath.startsWith(allowedDir)) {
             return res.status(403).json({ success: false, message: 'Access denied' });
         }

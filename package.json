@@ -6,6 +6,12 @@
   "scripts": {
     "start": "concurrently \"node gateway.js\" \"node student/backend/server.js\" \"node admin/backend/server.js\" \"node supervisor/backend/server.js\" \"node center/backend/server.js\"",
     "build": "node build_frontend.js",
+    "build:student": "cd student/frontend && npm run build",
+    "build:admin": "cd admin/frontend && npm run build",
+    "build:supervisor": "cd supervisor/frontend && npm run build",
+    "build:center": "cd center/frontend && npm run build",
+    "build:portal": "cd portal-dashboard && npm run build",
+    "build:email": "cd email-service && npm run build",
     "dev": "concurrently \"npm run dev:student-fe\" \"npm run dev:admin-fe\" \"npm run dev:supervisor-fe\" \"npm run dev:center-fe\" \"npm run dev:portal-fe\"",
     "dev:all": "concurrently \"npm run start:student-be\" \"npm run start:admin-be\" \"npm run start:supervisor-be\" \"npm run start:center-be\" \"npm run dev:student-fe\" \"npm run dev:admin-fe\" \"npm run dev:supervisor-fe\" \"npm run dev:center-fe\" \"npm run dev:portal-fe\"",
     "start:student-be": "cd student/backend    && npm run dev",

@@ -147,10 +147,19 @@ async function verifyWebhookSignature(bodyObj, paytmChecksum) {
 
 // ── Generate unique order ID ─────────────────────────────────────────────────
 function generateOrderId(applicationId) {
-  const appPart  = String(applicationId || '').replace(/\D/g, '').slice(-4).padStart(4, '0');
-  const ts       = Date.now().toString(36).toUpperCase();
-  const rand     = crypto.randomBytes(3).toString('hex').toUpperCase();
-  return `PU${appPart}${ts}${rand}`;
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const year = d.getFullYear();
+  const month = pad(d.getMonth() + 1);
+  const date = pad(d.getDate());
+  const hours = pad(d.getHours());
+  const minutes = pad(d.getMinutes());
+  const seconds = pad(d.getSeconds());
+  
+  const timestamp = `${year}${month}${date}${hours}${minutes}${seconds}`;
+  // Append 4 random hex characters to guarantee absolute uniqueness across concurrent payments
+  const rand = crypto.randomBytes(2).toString('hex').toUpperCase();
+  return `PURD${timestamp}${rand}`;
 }
 
 // ── Generate receipt number ───────────────────────────────────────────────────

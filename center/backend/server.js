@@ -49,8 +49,7 @@ app.use(cors({
         const isDev = process.env.NODE_ENV !== 'production';
         const allowed = !origin ||
             allowedOrigins.includes(origin) ||
-            (isDev && (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1'))) ||
-            origin.endsWith('.trycloudflare.com');
+            (isDev && (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1')));
         if (allowed) cb(null, true);
         else cb(new Error('Not allowed by CORS'));
     },
@@ -137,6 +136,56 @@ app.get('/api/news-announcements/categories', async (_req, res) => {
 // Chatbot public APIs
 const chatbotPublicRoutes = require('../../shared/chatbot/chatbotPublicRoutes');
 app.use('/api/chatbot', chatbotPublicRoutes({ portalKey: 'center', jwtSecret: process.env.CENTER_JWT_SECRET, db }));
+
+// ── University Settings (real-time, read-only) ───────────────────────────────
+const centerSettingsCache = require('../../shared/security/appCache');
+const centerSseClients = new Set();
+
+function broadcastCenterSettings() {
+    const msg = `event: settings-updated\ndata: ${JSON.stringify({ ts: Date.now() })}\n\n`;
+    for (const c of centerSseClients) {
+        try { c.write(msg); } catch (_) { centerSseClients.delete(c); }
+    }
+}
+
+app.get('/api/settings', async (_req, res) => {
+    try {
+        const data = await centerSettingsCache.getOrFetch('center_university_settings', 30, async () => {
+            const [rows] = await db.query('SELECT * FROM university_settings LIMIT 1');
+            if (!rows[0]) return {};
+            return {
+                ...rows[0],
+                university_name_english: rows[0].university_name_english || rows[0].university_name_en || rows[0].header_line1,
+                university_name_tamil: rows[0].university_name_ta || '',
+                logo: rows[0].logo_url,
+                logo2: rows[0].logo2,
+            };
+        });
+        res.json({ success: true, data });
+    } catch (_err) {
+        res.status(500).json({ success: false, message: 'Failed to load settings' });
+    }
+});
+
+app.get('/api/settings/events', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+    res.write(':keepalive\n\n');
+    centerSseClients.add(res);
+    const hb = setInterval(() => {
+        try { res.write(':keepalive\n\n'); }
+        catch (_) { clearInterval(hb); centerSseClients.delete(res); }
+    }, 25000);
+    req.on('close', () => { clearInterval(hb); centerSseClients.delete(res); });
+});
+
+app.post('/internal/settings-invalidate', (_req, res) => {
+    centerSettingsCache.del('center_university_settings');
+    broadcastCenterSettings();
+    res.json({ ok: true });
+});
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'center-portal', port: PORT }));
 

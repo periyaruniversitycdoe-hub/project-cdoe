@@ -36,7 +36,7 @@ const APP_ALLOWED_COLUMNS = new Set([
   'is_physically_challenged','pc_percentage','pc_type',
   'qualified_exams',
   'status',
-  'part_time_category','part_time_designation','part_time_area',
+  'part_time_category','part_time_designation','part_time_area','part_time_district',
   'perm_same_as_comm','perm_address_1','perm_address_2','perm_address_3',
   'perm_state','perm_district','perm_city','perm_pincode',
   'has_sslc', 'has_hsc', 'has_ug', 'has_pg', 'has_diploma', 'has_mphil', 'has_integrated'
@@ -44,7 +44,7 @@ const APP_ALLOWED_COLUMNS = new Set([
 
 const SAVE_COLUMNS = {
   school: ['level','institution_name','board_id','other_board_name','passing_month','passing_year','percentage','marksheet_path'],
-  higher: ['level','degree_id','degree_name','specialization_id','institution_name','university_name','university_type_id','passing_month','passing_year','score_type','score_value','marksheet_path','consolidated_marksheet_path','registration_number','upload_mode'],
+  higher: ['level','degree_id','degree_name','specialization_id','institution_name','university_name','university_type_id','passing_month','passing_year','start_year','completion_year','score_type','score_value','cgpa_scale','normalized_cgpa','marksheet_path','consolidated_marksheet_path','registration_number','upload_mode'],
   exp:    ['designation','organization_name','employment_type_id','from_month','from_year','to_month','to_year','total_years','total_months'],
 };
 
@@ -268,12 +268,12 @@ router.get('/export/excel', verifyToken, isAdmin, async (req, res) => {
     let uniSub    = 'Salem - 636 011, Tamil Nadu, India';
     try {
       const [[us]] = await pool.execute(
-        'SELECT university_name_english, university_name_tamil, subtitle FROM university_settings LIMIT 1'
+        'SELECT university_name_en, university_name_ta, subtitle FROM university_settings LIMIT 1'
       );
       if (us) {
-        uniNameEn = us.university_name_english || uniNameEn;
-        uniNameTa = us.university_name_tamil   || '';
-        uniSub    = us.subtitle                || uniSub;
+        uniNameEn = us.university_name_en || uniNameEn;
+        uniNameTa = us.university_name_ta || '';
+        uniSub    = us.subtitle           || uniSub;
       }
     } catch (_) {}
 
@@ -1058,9 +1058,11 @@ router.get('/:id', verifyToken, isAdmin, async (req, res) => {
     const application = rows[0];
     const appId = application.application_id;
 
-    const [school]     = await pool.execute('SELECT * FROM school_education WHERE user_id = ?' + (appId ? ' OR application_id = ?' : ''), appId ? [application.user_id, appId] : [application.user_id]);
+    const schoolQuery = 'SELECT se.*, eb.board_name FROM school_education se LEFT JOIN education_boards eb ON se.board_id = eb.id WHERE se.user_id = ?' + (appId ? ' OR se.application_id = ?' : '');
+    const [school]     = await pool.execute(schoolQuery, appId ? [application.user_id, appId] : [application.user_id]);
     const [higher]     = await pool.execute('SELECT * FROM higher_education WHERE user_id = ?' + (appId ? ' OR application_id = ?' : ''), appId ? [application.user_id, appId] : [application.user_id]);
-    const [experience] = await pool.execute('SELECT * FROM experience_details WHERE user_id = ?' + (appId ? ' OR application_id = ?' : ''), appId ? [application.user_id, appId] : [application.user_id]);
+    const expQuery = 'SELECT ed.*, et.type_name AS employment_type FROM experience_details ed LEFT JOIN employment_types et ON ed.employment_type_id = et.id WHERE ed.user_id = ?' + (appId ? ' OR ed.application_id = ?' : '');
+    const [experience] = await pool.execute(expQuery, appId ? [application.user_id, appId] : [application.user_id]);
     const [documents]  = await pool.execute('SELECT * FROM application_documents WHERE user_id = ?' + (appId ? ' OR application_id = ?' : ''), appId ? [application.user_id, appId] : [application.user_id]);
 
     application.school_education  = school;
@@ -1167,6 +1169,9 @@ router.post('/save-admin', verifyToken, isAdmin, adminUpload.any(), async (req, 
         data[k] = val;
       }
     }
+    if (data.part_time_district !== undefined) {
+      data.working_district = data.part_time_district;
+    }
 
     if (Object.keys(data).length > 0) {
       const sets = Object.keys(data).map(k => {
@@ -1220,6 +1225,15 @@ router.post('/save-admin', verifyToken, isAdmin, adminUpload.any(), async (req, 
         SAVE_COLUMNS.higher.forEach(c => {
           if (rawFields[c] !== undefined) fields[c] = (rawFields[c] === '' || rawFields[c] === 'null' || rawFields[c] === 'undefined') ? null : rawFields[c];
         });
+        // Compute normalized_cgpa for UG and PG
+        if (['UG', 'PG'].includes(fields.level) && fields.score_type === 'CGPA') {
+          const _scale = parseFloat(fields.cgpa_scale);
+          const _raw   = parseFloat(fields.score_value);
+          fields.normalized_cgpa = (!isNaN(_scale) && _scale > 0 && !isNaN(_raw))
+            ? parseFloat(((_raw / _scale) * 10).toFixed(2)) : null;
+        } else if (fields.score_type !== 'CGPA') {
+          fields.cgpa_scale = null; fields.normalized_cgpa = null;
+        }
         let existingId = id;
         if (!existingId && fields.level) {
           const [ex] = await pool.execute(
@@ -1269,6 +1283,15 @@ router.post('/save-admin', verifyToken, isAdmin, adminUpload.any(), async (req, 
         if (mphil[c] !== undefined) fields[c] = (mphil[c] === '' || mphil[c] === 'null') ? null : mphil[c];
       });
       if (!fields.level) fields.level = 'M.Phil';
+      // Compute normalized_cgpa for M.Phil
+      if (fields.score_type === 'CGPA') {
+        const _scale = parseFloat(fields.cgpa_scale);
+        const _raw   = parseFloat(fields.score_value);
+        fields.normalized_cgpa = (!isNaN(_scale) && _scale > 0 && !isNaN(_raw))
+          ? parseFloat(((_raw / _scale) * 10).toFixed(2)) : null;
+      } else {
+        fields.cgpa_scale = null; fields.normalized_cgpa = null;
+      }
       const [ex] = await pool.execute(
         'SELECT id FROM higher_education WHERE (user_id = ?' + (resolvedAppId ? ' OR application_id = ?' : '') + ') AND level = "M.Phil"',
         resolvedAppId ? [resolvedUserId, resolvedAppId] : [resolvedUserId]
@@ -1402,7 +1425,7 @@ router.post('/save-admin', verifyToken, isAdmin, adminUpload.any(), async (req, 
 router.put('/:id', verifyToken, isAdmin, async (req, res) => {
   const exclude = ['id', 'application_id', 'user_id', 'created_at', 'updated_at', 'full_name', 'email'];
   const data = req.body;
-  const fields = Object.keys(data).filter(k => !exclude.includes(k));
+  const fields = Object.keys(data).filter(k => !exclude.includes(k) && APP_ALLOWED_COLUMNS.has(k));
 
   if (fields.length === 0) return res.status(400).json({ success: false, message: 'No fields to update' });
 
@@ -1552,6 +1575,21 @@ router.put('/:id/status', verifyToken, isAdmin, async (req, res) => {
           await evaluateDirectPass(connection, appRow.application_id);
         }
       }
+
+      // Notify admin feed for every status change
+      const { notifyAdmin } = require('../services/notifyAdmin');
+      const adminType = status === 'Approved' ? 'success'
+                      : status === 'Rejected' ? 'danger'
+                      : 'info';
+      await notifyAdmin(null, {
+        event_key:   'application.status_change',
+        title:       `Application ${status}: ${appRow.application_id || 'N/A'}`,
+        message:     `${appRow.full_name || 'Applicant'} — status changed to "${status}"`,
+        type:        adminType,
+        source_type: 'application',
+        source_id:   appRow.application_id || String(req.params.id),
+        link:        `/applications/${req.params.id}`,
+      });
     }
 
     const finalResult = await recomputeFinalResult(connection, req.params.id);

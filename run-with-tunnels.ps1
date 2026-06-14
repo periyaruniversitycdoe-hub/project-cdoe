@@ -55,7 +55,7 @@ foreach ($svc in $services) {
     $logFile = "$logDir\$($svc.name).log"
     "" | Out-File $logFile -Encoding utf8
     $p = Start-Process -FilePath $CF `
-           -ArgumentList "tunnel --url http://127.0.0.1:$($svc.port) --no-autoupdate" `
+           -ArgumentList "tunnel --url http://127.0.0.1:$($svc.port) --no-autoupdate --protocol http2" `
            -RedirectStandardError $logFile `
            -WindowStyle Hidden -PassThru
     $tunnelProcs += $p
@@ -107,6 +107,22 @@ foreach ($pair in $envMap.GetEnumerator()) {
     [System.IO.File]::WriteAllText($pair.Key, $pair.Value)
     Write-Host "  Wrote: $($pair.Key.Replace($root,'.'))" -ForegroundColor DarkGray
 }
+
+$studentBeEnvPath = "$root\student\backend\.env"
+if (Test-Path $studentBeEnvPath) {
+    $content = Get-Content $studentBeEnvPath -Raw
+    $content = $content -replace 'STUDENT_FRONTEND_URL=.*', "STUDENT_FRONTEND_URL=$sf"
+    $content = $content -replace 'ADMIN_FRONTEND_URL=.*', "ADMIN_FRONTEND_URL=$af"
+    $content = $content -replace 'SUPERVISOR_FRONTEND_URL=.*', "SUPERVISOR_FRONTEND_URL=$vf"
+    $content = $content -replace 'CENTER_FRONTEND_URL=.*', "CENTER_FRONTEND_URL=$cf2"
+    $content = $content -replace 'STUDENT_PORTAL_URL=.*', "STUDENT_PORTAL_URL=$sf"
+    $content = $content -replace 'PAYTM_CALLBACK_URL=.*', "PAYTM_CALLBACK_URL=$sb/api/payment/callback"
+    $content = $content -replace 'PAYMENT_RETURN_URL=.*', "PAYMENT_RETURN_URL=$sf/payment/callback"
+    $content = $content -replace 'PAYMENT_WEBHOOK_BASE_URL=.*', "PAYMENT_WEBHOOK_BASE_URL=$sb"
+    [System.IO.File]::WriteAllText($studentBeEnvPath, $content)
+    Write-Host "  Updated backend URLs in: .\student\backend\.env" -ForegroundColor DarkGray
+}
+
 
 # -- Start 5 frontends --------------------------------------------------------
 Write-Host "Starting 5 frontends with tunnel URLs in .env..." -ForegroundColor Cyan

@@ -17,6 +17,7 @@ axios.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+import { SettingsProvider } from './context/SettingsContext';
 import Register from './pages/Register';
 import Login from './pages/Login';
 import StudentHome from './pages/StudentHome';
@@ -61,6 +62,7 @@ const ProtectedRoute = ({ children }) => {
 
 function App() {
   return (
+    <SettingsProvider>
     <Router basename={import.meta.env.BASE_URL}>
       <Toaster position="top-right" />
       <StudentChatbot />
@@ -75,7 +77,7 @@ function App() {
           <Route path="/verify-receipt" element={<VerifyReceipt />} />
           
           <Route path="/payment/receipt/:orderId" element={<ProtectedRoute><ReceiptView /></ProtectedRoute>} />
-          <Route path="/payment/receipt-by-app/:appId" element={<ProtectedRoute><ReceiptView /></ProtectedRoute>} />
+          <Route path="/payment/receipt-by-app/*" element={<ProtectedRoute><ReceiptView /></ProtectedRoute>} />
           
           {/* Protected Routes sharing the same Layout */}
           <Route element={
@@ -97,6 +99,7 @@ function App() {
         </Routes>
       </div>
     </Router>
+    </SettingsProvider>
   );
 }
 

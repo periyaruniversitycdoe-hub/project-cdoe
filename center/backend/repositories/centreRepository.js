@@ -1,5 +1,25 @@
 const pool = require('../../../admin/backend/config/db');
 
+// ── Self-healing: ensure research_centre_departments mapping table exists ─────
+(async () => {
+    try {
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS research_centre_departments (
+                id                 INT NOT NULL AUTO_INCREMENT,
+                research_centre_id INT NOT NULL,
+                department_id      INT NOT NULL,
+                created_at         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                UNIQUE KEY uq_centre_dept (research_centre_id, department_id),
+                CONSTRAINT fk_rcd_centre FOREIGN KEY (research_centre_id) REFERENCES research_centres(id) ON DELETE CASCADE,
+                CONSTRAINT fk_rcd_dept   FOREIGN KEY (department_id)      REFERENCES departments(id)      ON DELETE CASCADE
+            )
+        `);
+    } catch (e) {
+        console.error('research_centre_departments table check:', e.message);
+    }
+})();
+
 // Registration form fields are the primary source of truth.
 // Joined fields from master_institutes are surfaced as fallbacks only
 // (for legacy rows that pre-date the architectural rebuild).
@@ -19,13 +39,15 @@ const SELECT_JOINED = `
         ct.name   AS centre_type_name,
         rs.name   AS subject_name,
         rcat.name AS category_name,
-        dist.name AS district_name
+        dist.name AS district_name,
+        dept.name AS department_name
     FROM research_centres rc
     LEFT JOIN master_centre_types        ct   ON rc.centre_type_id = ct.id
     LEFT JOIN master_research_subjects   rs   ON rc.subject_id     = rs.id
     LEFT JOIN master_research_categories rcat ON rc.category_id    = rcat.id
     LEFT JOIN master_institutes          inst ON rc.institute_id   = inst.id
     LEFT JOIN master_districts           dist ON rc.district_id    = dist.id
+    LEFT JOIN departments                dept ON rc.department_id  = dept.id
 `;
 
 async function findAll({ status, search, page = 1, limit = 20 }) {
@@ -55,9 +77,38 @@ async function findAll({ status, search, page = 1, limit = 20 }) {
     return { rows, total, page, limit };
 }
 
+async function getDepartments(centreId) {
+    const [rows] = await pool.execute(
+        `SELECT d.id, d.name
+         FROM research_centre_departments rcd
+         JOIN departments d ON rcd.department_id = d.id
+         WHERE rcd.research_centre_id = ?
+         ORDER BY d.name ASC`,
+        [centreId]
+    );
+    return rows;
+}
+
+async function setDepartments(centreId, deptIds) {
+    await pool.execute(
+        'DELETE FROM research_centre_departments WHERE research_centre_id = ?',
+        [centreId]
+    );
+    if (deptIds && deptIds.length > 0) {
+        const values = deptIds.map(id => [centreId, id]);
+        await pool.query(
+            'INSERT IGNORE INTO research_centre_departments (research_centre_id, department_id) VALUES ?',
+            [values]
+        );
+    }
+}
+
 async function findById(id) {
     const [[row]] = await pool.execute(`${SELECT_JOINED} WHERE rc.id = ?`, [id]);
-    return row || null;
+    if (!row) return null;
+    row.mapped_departments    = await getDepartments(id);
+    row.mapped_department_ids = row.mapped_departments.map(d => d.id);
+    return row;
 }
 
 async function findAllActive() {
@@ -113,4 +164,4 @@ async function isRefNoTaken(centre_ref_no, excludeId = null) {
     return !!row;
 }
 
-module.exports = { findAll, findById, findAllActive, create, update, updateStatus, remove, isRefNoTaken };
+module.exports = { findAll, findById, findAllActive, create, update, updateStatus, remove, isRefNoTaken, getDepartments, setDepartments };

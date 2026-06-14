@@ -65,7 +65,7 @@ router.get('/filter-options', verifyToken, isAdmin, async (req, res) => {
     try {
         const [institutes] = await pool.execute('SELECT id, college_code, name FROM master_institutes WHERE is_active = 1 ORDER BY college_code ASC');
         const [universityInstitutes] = await pool.execute('SELECT id, institute_code, institute_name AS name FROM institutes WHERE status = \'Active\' ORDER BY institute_name ASC');
-        const [departments] = await pool.execute('SELECT DISTINCT d.id, d.name FROM master_departments d INNER JOIN supervisors s ON s.department_id = d.id ORDER BY d.name ASC');
+        const [departments] = await pool.execute('SELECT DISTINCT d.id, d.name FROM departments d INNER JOIN supervisors s ON s.department_id = d.id ORDER BY d.name ASC');
         const [designations] = await pool.execute('SELECT id, name FROM master_designations WHERE is_active = 1 ORDER BY name ASC');
         res.json({ success: true, data: { institutes, universityInstitutes, departments, designations } });
     } catch (e) {
@@ -128,7 +128,7 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
                    rc.name AS research_center_name, rc.centre_ref_no AS research_center_ref_no
             FROM supervisors s
             LEFT JOIN master_designations d    ON s.designation_id          = d.id
-            LEFT JOIN master_departments dept  ON s.department_id            = dept.id
+            LEFT JOIN departments dept  ON s.department_id            = dept.id
             LEFT JOIN master_institutes inst   ON s.serving_institute_id     = inst.id
             LEFT JOIN institutes          ui   ON s.university_institute_id  = ui.id
             LEFT JOIN research_centres    rc   ON s.research_center_id       = rc.id
@@ -156,7 +156,7 @@ router.get('/:id', verifyToken, isAdmin, async (req, res) => {
                    rc.name AS research_center_name, rc.centre_ref_no AS research_center_ref_no
             FROM supervisors s
             LEFT JOIN master_designations d    ON s.designation_id          = d.id
-            LEFT JOIN master_departments dept  ON s.department_id            = dept.id
+            LEFT JOIN departments dept  ON s.department_id            = dept.id
             LEFT JOIN master_institutes inst   ON s.serving_institute_id     = inst.id
             LEFT JOIN master_districts dist    ON s.district_id              = dist.id
             LEFT JOIN institutes          ui   ON s.university_institute_id  = ui.id

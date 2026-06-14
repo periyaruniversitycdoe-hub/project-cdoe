@@ -230,6 +230,20 @@ router.post('/publish', verifyToken, isAdmin, async (req, res) => {
     }
 
     await connection.commit();
+
+    // Notify admin feed on results publication
+    try {
+      const { notifyAdmin } = require('../services/notifyAdmin');
+      await notifyAdmin(null, {
+        event_key:   'result.publish',
+        title:       `Entrance Results Published: ${cnt} application(s)`,
+        message:     `Pass: ${passIds.length}, Fail: ${failIds.length}, Direct Pass: ${directPassIds.length}`,
+        type:        'success',
+        source_type: 'result',
+        link:        '/results',
+      });
+    } catch (_) {}
+
     res.json({ success: true, message: `Results published for ${cnt} application(s)`, total: cnt });
   } catch (err) {
     await connection.rollback();

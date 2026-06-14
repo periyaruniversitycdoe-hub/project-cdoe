@@ -347,7 +347,8 @@ const Dashboard = () => {
   }, [token, eligibility?.payment_status]);
 
   const copyAppId = () => {
-    navigator.clipboard.writeText(user?.application_id || '');
+    const appId = user?.application_id || eligibility?.application_id || '';
+    navigator.clipboard.writeText(appId);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -404,34 +405,50 @@ const Dashboard = () => {
 
       {/* Stat Grid */}
       <div className="stats-grid">
-        {/* Application ID — generated after payment confirmation */}
-        <div className="stat-card" style={isFormLocked ? { borderLeft: '3px solid #10b981' } : {}}>
-          <div className="stat-card-header">
-            <div className="stat-icon-box" style={{ background: isFormLocked ? '#ecfdf5' : '#eff6ff', color: isFormLocked ? '#10b981' : '#3b82f6' }}>
-              {isFormLocked ? <ShieldCheck size={20} /> : <FileCheck size={20} />}
+        {(() => {
+          const appIdToDisplay = user?.application_id || eligibility?.application_id;
+          return (
+            <div className="stat-card" style={isFormLocked ? { borderLeft: '3px solid #10b981' } : {}}>
+              <div className="stat-card-header">
+                <div className="stat-icon-box" style={{ background: isFormLocked ? '#ecfdf5' : '#eff6ff', color: isFormLocked ? '#10b981' : '#3b82f6' }}>
+                  {isFormLocked ? <ShieldCheck size={20} /> : <FileCheck size={20} />}
+                </div>
+                {appIdToDisplay ? (
+                  <button onClick={copyAppId} className="btn btn-link p-0 text-muted" title="Copy Application ID">
+                    {copied ? <Check size={16} className="text-success" /> : <Copy size={16} />}
+                  </button>
+                ) : null}
+              </div>
+              <div className="stat-title">Application ID</div>
+              {appIdToDisplay ? (
+                <div className="stat-value font-monospace" style={{ fontSize: 14, letterSpacing: '0.5px', color: isFormLocked ? '#059669' : undefined }}>
+                  {appIdToDisplay}
+                </div>
+              ) : (
+                <div className="stat-value" style={{ fontSize: 13, color: '#6b7280' }}>
+                  Generated after payment
+                </div>
+              )}
+              {isFormLocked && (
+                <div style={{ fontSize: 10, color: '#10b981', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  🔒 Locked &amp; Permanent
+                </div>
+              )}
+              {appIdToDisplay && (
+                <div className="mt-2 pt-2 border-top">
+                  <a
+                    href={`${API}/applications/download-pdf/${appIdToDisplay}?token=${token}`}
+                    className="btn btn-sm btn-outline-success d-inline-flex align-items-center gap-1 w-100 justify-content-center text-decoration-none"
+                    style={{ fontSize: 11, padding: '4px 8px', fontWeight: 600 }}
+                    target="_blank" rel="noreferrer"
+                  >
+                    <Download size={12} /> Download PDF
+                  </a>
+                </div>
+              )}
             </div>
-            {user?.application_id ? (
-              <button onClick={copyAppId} className="btn btn-link p-0 text-muted" title="Copy Application ID">
-                {copied ? <Check size={16} className="text-success" /> : <Copy size={16} />}
-              </button>
-            ) : null}
-          </div>
-          <div className="stat-title">Application ID</div>
-          {user?.application_id ? (
-            <div className="stat-value font-monospace" style={{ fontSize: 14, letterSpacing: '0.5px', color: isFormLocked ? '#059669' : undefined }}>
-              {user.application_id}
-            </div>
-          ) : (
-            <div className="stat-value" style={{ fontSize: 13, color: '#6b7280' }}>
-              Generated after payment
-            </div>
-          )}
-          {isFormLocked && (
-            <div style={{ fontSize: 10, color: '#10b981', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-              🔒 Locked &amp; Permanent
-            </div>
-          )}
-        </div>
+          );
+        })()}
 
         {/* App Status */}
         <div className="stat-card">
@@ -719,9 +736,9 @@ const Dashboard = () => {
               </div>
             </div>
             <div className="d-flex gap-2 flex-wrap">
-              {user?.application_id && (
+              {(user?.application_id || eligibility?.application_id) && (
                 <a
-                  href={`${API}/applications/download-pdf/${user.application_id}`}
+                  href={`${API}/applications/download-pdf/${user?.application_id || eligibility?.application_id}?token=${token}`}
                   className="banner-btn"
                   style={{ background: '#10b981', color: '#fff' }}
                   target="_blank" rel="noreferrer"
@@ -904,27 +921,57 @@ const Dashboard = () => {
                 <table className="table table-sm mb-0" style={{ fontSize: 12 }}>
                   <thead className="table-light">
                     <tr>
-                      <th className="ps-3">Transaction ID</th>
+                      <th className="ps-3">Title</th>
+                      <th>Transaction ID</th>
                       <th>Mode</th>
+                      <th>Amount</th>
                       <th>Status</th>
                       <th>Date</th>
+                      <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {payHistory.map(p => (
-                      <tr key={p.id}>
-                        <td className="ps-3 fw-semibold">{p.transaction_id || '—'}</td>
-                        <td>{p.payment_mode || '—'}</td>
-                        <td>
-                          <span className={`badge ${p.payment_status === 'Success' ? 'bg-success' : 'bg-secondary'}`}>
-                            {p.payment_status}
-                          </span>
-                        </td>
-                        <td className="text-muted">
-                          {p.paid_at ? new Date(p.paid_at).toLocaleDateString('en-IN') : '—'}
-                        </td>
-                      </tr>
-                    ))}
+                    {payHistory.map(p => {
+                      const displayMode = p.payment_mode || p.payment_method || p.gateway || '—';
+                      const isSuccess = ['Success', 'Paid', 'SUCCESS', 'Success / Paid'].includes(p.payment_status) || !p.payment_status;
+                      const displayStatus = isSuccess ? 'Success' : p.payment_status;
+                      
+                      // format date to YYYY-MM-DD
+                      const pad = n => String(n).padStart(2, '0');
+                      const d = p.paid_at ? new Date(p.paid_at) : null;
+                      const displayDate = d ? `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` : '—';
+                      
+                      return (
+                        <tr key={p.id}>
+                          <td className="ps-3 fw-semibold text-primary">Admission</td>
+                          <td className="fw-semibold">{p.transaction_id || '—'}</td>
+                          <td className="text-capitalize">{displayMode.replace(/_/g, ' ')}</td>
+                          <td className="fw-semibold">₹{p.amount || '0.00'}</td>
+                          <td>
+                            <span className={`badge ${isSuccess ? 'bg-success' : 'bg-danger'}`}>
+                              {displayStatus}
+                            </span>
+                          </td>
+                          <td className="text-muted">
+                            {displayDate}
+                          </td>
+                          <td>
+                            {isSuccess ? (
+                              <button
+                                className="btn btn-sm btn-link p-0 text-decoration-none fw-semibold d-flex align-items-center gap-1"
+                                style={{ fontSize: 12, color: '#32c5d2' }}
+                                onClick={() => {
+                                  const targetId = p.application_id || user?.application_id || eligibility?.application_id || pendingStatus?.application_id || p.receipt_number;
+                                  window.open(`/payment/receipt-by-app/${targetId}`, '_blank');
+                                }}
+                              >
+                                e-Receipt
+                              </button>
+                            ) : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

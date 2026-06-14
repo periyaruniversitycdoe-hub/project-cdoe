@@ -110,11 +110,30 @@ async function loadVisualTemplate(categoryName, keyName) {
     }
     return null;
 }
+function enforceStudentLoginUrl(url) {
+    if (!url || typeof url !== 'string') return url;
+    const isStudentPortal = url.includes('localhost:5173') || (process.env.STUDENT_PORTAL_URL && url.includes(process.env.STUDENT_PORTAL_URL));
+    if (isStudentPortal) {
+        if (!url.includes('/login') && !url.includes('/register') && !url.includes('/reset-password') && 
+            !url.includes('/verify-otp') && !url.includes('/forgot-password') && !url.includes('/payment/receipt')) {
+            return url.replace(/\/$/, '') + '/login';
+        }
+    }
+    return url;
+}
 
 /**
  * Formulate client-safe responsive visual HTML based on active template configurations
  */
 function compileVisualTemplate(config, payload) {
+    // Enforce student portal URLs target /login directly
+    const urlKeys = ['loginUrl', 'portalUrl', 'actionUrl', 'resetUrl'];
+    for (const key of urlKeys) {
+        if (payload[key]) {
+            payload[key] = enforceStudentLoginUrl(payload[key]);
+        }
+    }
+
     const themeKey = config.theme || 'university-blue';
     const theme = THEMES[themeKey] || THEMES['university-blue'];
     
@@ -561,7 +580,8 @@ async function ensureDefaultTemplates() {
  * Sent immediately after a student completes registration.
  */
 async function sendWelcomeEmail({ to, studentName, applicationId, loginUrl }) {
-  const payload = { studentName, applicationId, loginUrl, email: to };
+  const finalLoginUrl = enforceStudentLoginUrl(loginUrl);
+  const payload = { studentName, applicationId, loginUrl: finalLoginUrl, email: to };
   try {
     const visualConfig = await loadVisualTemplate('Welcome & Account Activation', 'welcome');
     if (visualConfig) {
@@ -665,7 +685,8 @@ async function sendPasswordResetEmail({ to, studentName, resetUrl, expiresInHour
 // ─── Application submitted email ──────────────────────────────────────────────
 
 async function sendApplicationSubmittedEmail({ to, studentName, applicationId, department, submittedAt, portalUrl }) {
-  const payload = { studentName, applicationId, department, submittedAt, portalUrl };
+  const finalPortalUrl = enforceStudentLoginUrl(portalUrl);
+  const payload = { studentName, applicationId, department, submittedAt, portalUrl: finalPortalUrl };
   try {
     const visualConfig = await loadVisualTemplate('Application Submission Confirmation', 'application_submitted');
     if (visualConfig) {
@@ -718,10 +739,11 @@ async function sendApplicationStatusEmail({
     hall_ticket:       { type: 'Hall Ticket Generation Notification', key: 'hall_ticket' },
   };
 
+  const finalActionUrl = enforceStudentLoginUrl(actionUrl);
   const payload = {
     studentName, applicationId, statusType, department,
-    message, actionUrl, actionLabel, amount, transactionId,
-    actionUrl // interchangeable binding
+    message, actionUrl: finalActionUrl, actionLabel, amount, transactionId,
+    actionUrl: finalActionUrl // interchangeable binding
   };
 
   const mapped = visualConfigMap[statusType];

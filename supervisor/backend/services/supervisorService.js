@@ -34,10 +34,10 @@ async function create(body, files) {
 
     // For a new supervisor: current_vacancy = max_candidates (no scholars yet)
     const capacityDetails = await capacityEngine.calculateCapacityDetails(data.designation_id);
-    data.max_candidates   = capacityDetails.max_candidates || data.max_candidates || 0;
-    data.current_vacancy  = capacityDetails.current_vacancy;
-    data.max_full_time    = capacityDetails.max_full_time;
-    data.max_part_time    = capacityDetails.max_part_time;
+    data.max_candidates   = data.max_candidates || capacityDetails.max_candidates || 0;
+    data.current_vacancy  = data.current_vacancy !== null && data.current_vacancy !== undefined ? data.current_vacancy : capacityDetails.current_vacancy;
+    data.max_full_time    = data.max_full_time || capacityDetails.max_full_time;
+    data.max_part_time    = data.max_part_time || capacityDetails.max_part_time;
     data.current_scholars_count           = 0;
     data.current_part_time_scholars_count = 0;
 
@@ -72,10 +72,10 @@ async function update(id, body, files) {
 
     if (designationId) {
         const cap = await capacityEngine.calculateCapacityDetails(designationId, scholarsCount, ptScholarsCount);
-        data.max_candidates  = cap.max_candidates;
-        data.current_vacancy = cap.current_vacancy;
-        data.max_full_time   = cap.max_full_time;
-        data.max_part_time   = cap.max_part_time;
+        data.max_candidates  = data.max_candidates || cap.max_candidates;
+        data.current_vacancy = data.current_vacancy !== null && data.current_vacancy !== undefined ? data.current_vacancy : cap.current_vacancy;
+        data.max_full_time   = data.max_full_time || cap.max_full_time;
+        data.max_part_time   = data.max_part_time || cap.max_part_time;
     }
 
     await repo.update(id, data);

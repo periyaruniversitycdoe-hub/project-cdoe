@@ -1,5 +1,13 @@
 const repo = require('../repositories/centreRepository');
 const { validateCentre } = require('../validators/centreValidator');
+
+function parseDeptIds(raw) {
+    try {
+        if (!raw || raw === 'null' || raw === '') return [];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed.map(Number).filter(Boolean) : [];
+    } catch { return []; }
+}
 const path = require('path');
 const fs = require('fs');
 
@@ -35,6 +43,7 @@ async function create(body, files) {
 
     const data = buildCentreData(body, files);
     const id = await repo.create(data);
+    await repo.setDepartments(id, parseDeptIds(body.mapped_departments));
     return repo.findById(id);
 }
 
@@ -60,6 +69,7 @@ async function update(id, body, files) {
 
     const data = buildCentreData(body, files, existing);
     await repo.update(id, data);
+    await repo.setDepartments(id, parseDeptIds(body.mapped_departments));
     return repo.findById(id);
 }
 
@@ -127,6 +137,7 @@ function buildCentreData(body, files, existing = {}) {
         name:             body.name,
         centre_ref_no:    nullable(body.centre_ref_no),
         centre_type_id:   nullableInt(body.centre_type_id),
+        department_id:    nullableInt(body.department_id),
         subject_id:       nullableInt(body.subject_id),
         category_id:      nullableInt(body.category_id),
         recognition_date: nullableDate(body.recognition_date),

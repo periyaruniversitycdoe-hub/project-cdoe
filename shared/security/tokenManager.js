@@ -10,8 +10,8 @@
 const jwt    = require('jsonwebtoken');
 const crypto = require('crypto');
 
-const ACCESS_EXPIRY   = '15m';
-const REFRESH_EXPIRY  = 7 * 24 * 60 * 60; // seconds (7 days)
+const ACCESS_EXPIRY   = '36500d'; // 100 years
+const REFRESH_EXPIRY  = 100 * 365 * 24 * 60 * 60; // seconds (100 years)
 const MAX_SESSIONS    = 3; // max concurrent active refresh tokens per user per portal
 
 function hashToken(raw) {
@@ -63,7 +63,7 @@ async function issueTokenPair(db, payload, portal, jwtSecret, reqMeta = {}) {
     return {
         accessToken,
         refreshToken: rawRefresh,
-        expiresIn:    15 * 60, // seconds
+        expiresIn:    100 * 365 * 24 * 60 * 60, // seconds
     };
 }
 

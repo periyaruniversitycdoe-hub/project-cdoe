@@ -28,6 +28,8 @@ router.get('/me', verifyToken, async (req, res) => {
                     s.current_scholars_count, s.current_part_time_scholars_count,
                     s.eligibility_dept_id, s.program_offered_id,
                     d.max_capacity AS designation_max_capacity,
+                    d.full_time_max_capacity AS designation_ft_max,
+                    d.part_time_max_capacity AS designation_pt_max,
                     d.name AS designation_name,
                     dept.name AS department_name,
                     dist.name AS district_name,
@@ -37,7 +39,7 @@ router.get('/me', verifyToken, async (req, res) => {
              FROM supervisor_users su
              LEFT JOIN supervisors s ON su.supervisor_id = s.id
              LEFT JOIN master_designations d ON s.designation_id = d.id
-             LEFT JOIN master_departments dept ON s.department_id = dept.id
+             LEFT JOIN departments dept ON s.department_id = dept.id
              LEFT JOIN master_districts dist ON s.district_id = dist.id
              LEFT JOIN master_institutes inst ON s.serving_institute_id = inst.id
              LEFT JOIN departments ed ON s.eligibility_dept_id = ed.id
@@ -48,10 +50,16 @@ router.get('/me', verifyToken, async (req, res) => {
         if (rows.length === 0) return res.status(404).json({ message: 'User not found' });
         const row = rows[0];
         if (row.supervisor_id && row.designation_max_capacity !== undefined && row.designation_max_capacity !== null) {
-            row.max_candidates = row.designation_max_capacity;
+            if (!row.max_candidates) {
+                row.max_candidates = row.designation_max_capacity;
+            }
             row.current_vacancy = Math.max(0, row.max_candidates - (row.current_scholars_count || 0));
-            row.max_full_time = row.max_candidates;
-            row.max_part_time = Math.floor(row.max_candidates / 2);
+            if (!row.max_full_time) {
+                row.max_full_time = row.designation_ft_max > 0 ? row.designation_ft_max : row.max_candidates;
+            }
+            if (!row.max_part_time) {
+                row.max_part_time = row.designation_pt_max > 0 ? row.designation_pt_max : Math.floor(row.max_candidates / 2);
+            }
         }
         res.json(row);
     } catch (err) {
@@ -87,13 +95,13 @@ router.get('/dashboard', verifyToken, async (req, res) => {
             );
             if (sv.length > 0) {
                 const sRec = sv[0];
-                const maxCandidates = sRec.designation_max_capacity !== null && sRec.designation_max_capacity !== undefined ? sRec.designation_max_capacity : sRec.max_candidates;
+                const maxCandidates = sRec.max_candidates || (sRec.designation_max_capacity !== null && sRec.designation_max_capacity !== undefined ? sRec.designation_max_capacity : 0);
                 const currentVacancy = Math.max(0, maxCandidates - (sRec.current_scholars_count || 0));
                 stats = {
                     maxCandidates: maxCandidates,
                     currentVacancy: currentVacancy,
-                    maxFullTime: maxCandidates,
-                    maxPartTime: Math.floor(maxCandidates / 2),
+                    maxFullTime: sRec.max_full_time || maxCandidates,
+                    maxPartTime: sRec.max_part_time || Math.floor(maxCandidates / 2),
                     isLinked: true
                 };
             }
@@ -311,20 +319,20 @@ router.post('/application', verifyToken, upload.fields([
             }
         }
 
-        // Programme Department and Offered Course validation on final submit
+        // Programme Department and Approved Course validation on final submit
         if (isFinalSubmit) {
             if (!data.eligibility_dept_id) {
                 return res.status(400).json({ success: false, message: 'Programme Department is required.' });
             }
             if (!data.program_offered_id) {
-                return res.status(400).json({ success: false, message: 'Offered Course is required.' });
+                return res.status(400).json({ success: false, message: 'Approved Course is required.' });
             }
             const [[progCheck]] = await pool.query(
                 'SELECT id FROM programs_offered WHERE id = ? AND department_id = ? AND is_active = 1',
                 [parseId(data.program_offered_id), parseId(data.eligibility_dept_id)]
             );
             if (!progCheck) {
-                return res.status(400).json({ success: false, message: 'Selected Offered Course does not belong to the chosen Programme Department.' });
+                return res.status(400).json({ success: false, message: 'Selected Approved Course does not belong to the chosen Programme Department.' });
             }
         }
 
@@ -342,8 +350,17 @@ router.post('/application', verifyToken, upload.fields([
         const currentScholarsCount     = 0;
         const currentPtScholarsCount   = 0;
         const currentVacancy           = Math.max(0, maxCandidates - currentScholarsCount);
-        const maxPartTime              = Math.floor(maxCandidates / 2);
-        const maxFullTime              = maxCandidates;
+
+        // Resolve FT/PT defaults from the designation's specific limits (no hardcoded formula)
+        const desigConfig   = designationIdParsed
+            ? await capacityEngine.getCapacityByDesignation(designationIdParsed)
+            : null;
+        const maxFullTime   = desigConfig && desigConfig.full_time_max_capacity > 0
+            ? desigConfig.full_time_max_capacity
+            : maxCandidates;
+        const maxPartTime   = desigConfig && desigConfig.part_time_max_capacity > 0
+            ? desigConfig.part_time_max_capacity
+            : Math.floor(maxCandidates / 2);
 
         const svData = {
             name:                    data.name,

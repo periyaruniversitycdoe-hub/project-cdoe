@@ -5,7 +5,7 @@ const pool = require('../config/db');
 router.get('/:table', async (req, res) => {
     const { table } = req.params;
     const allowed = [
-        'master_districts', 'master_centre_types', 'master_institutes'
+        'master_districts', 'master_centre_types', 'master_institutes', 'departments'
     ];
     
     if (!allowed.includes(table)) return res.status(400).json({ message: 'Invalid table' });

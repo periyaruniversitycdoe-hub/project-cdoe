@@ -9,10 +9,9 @@ import {
   Lock, XCircle, FileText, Phone, Mail, User
 } from 'lucide-react';
 
-// Three steps — Registration Form is the master source of truth
+// Two steps — Registration Form is the master source of truth
 const STEPS = [
   { label: 'Centre Information', icon: Building, desc: 'Name, type & recognition details' },
-  { label: 'Institute Details',  icon: User,     desc: 'College info & principal contact' },
   { label: 'Address & Contact',  icon: MapPin,   desc: 'Location & communication details' },
 ];
 
@@ -71,21 +70,14 @@ const S = {
   fieldHint: { fontSize: 11, color: '#6b7280', marginTop: 2 },
 };
 
-function validate(step, formData) {
+function validate(step, formData, selectedDepts = []) {
   const errors = {};
   if (step === 0) {
-    if (!formData.name?.trim()) errors.name = 'Centre name is required';
+    if (!formData.college_code?.trim()) errors.college_code = 'College code is required';
     if (!formData.centre_type_id) errors.centre_type_id = 'Centre type is required';
+    if (!formData.department_id) errors.department_id = 'Recognized Department is required';
   }
   if (step === 1) {
-    if (!formData.college_code?.trim()) errors.college_code = 'College code is required';
-    if (!formData.college_name?.trim()) errors.college_name = 'College name is required';
-    if (formData.principal_mobile && !/^\d{10,15}$/.test(formData.principal_mobile.replace(/\D/g, '')))
-      errors.principal_mobile = 'Enter valid mobile number (10–15 digits)';
-    if (formData.hod_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.hod_email))
-      errors.hod_email = 'Enter valid email address';
-  }
-  if (step === 2) {
     if (!formData.address_1?.trim()) errors.address_1 = 'Address is required';
     if (!formData.district_id) errors.district_id = 'District is required';
     if (formData.contact_number && !/^\d{10,11}$/.test(formData.contact_number))
@@ -94,6 +86,8 @@ function validate(step, formData) {
       errors.email = 'Enter valid email address';
     if (formData.pincode && !/^\d{6}$/.test(formData.pincode))
       errors.pincode = 'Pincode must be 6 digits';
+    if (formData.principal_mobile && !/^\d{10,15}$/.test(formData.principal_mobile.replace(/\D/g, '')))
+      errors.principal_mobile = 'Enter valid mobile number (10–15 digits)';
   }
   return errors;
 }
@@ -110,12 +104,14 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
   const [appStatus, setAppStatus] = useState('Draft');
   const [institutes, setInstitutes] = useState([]);
   const [useInstituteAddress, setUseInstituteAddress] = useState(false);
+  const [selectedDepts, setSelectedDepts] = useState([]);
 
   // ── Master form state — ALL fields from the registration form ────────────────
   const [formData, setFormData] = useState({
     // Step 0: Centre Information
     name: '',
     centre_type_id: '',
+    department_id: '',
     centre_ref_no: '',
     recognition_date: '',
     status: 'Draft',
@@ -146,7 +142,7 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
 
   // ── Load dropdowns ───────────────────────────────────────────────────────────
   useEffect(() => {
-    const tables = ['master_districts', 'master_centre_types'];
+    const tables = ['master_districts', 'master_centre_types', 'departments'];
     Promise.all(tables.map(t => axios.get(`${CENTER_API}/dropdowns/${t}`))).then(results => {
       const data = {};
       tables.forEach((t, i) => { data[t] = results[i].data || []; });
@@ -182,11 +178,15 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
   }, [user, centerId, isAdminMode]);
 
   function populateForm(d) {
+    if (d.mapped_department_ids && Array.isArray(d.mapped_department_ids)) {
+      setSelectedDepts(d.mapped_department_ids.map(String));
+    }
     setFormData(prev => ({
       ...prev,
       // Step 0
       name:                    d.name || d.centre_name || '',
       centre_type_id:          d.centre_type_id  ? String(d.centre_type_id)  : '',
+      department_id:           d.department_id ? String(d.department_id) : '',
       centre_ref_no:           d.centre_ref_no   || '',
       recognition_date:        d.recognition_date ? d.recognition_date.split('T')[0] : '',
       recognition_certificate: d.recognition_certificate || null,
@@ -255,7 +255,7 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
   const saveApplication = async (isFinal = false) => {
     if (isReadOnly) return;
     if (isFinal) {
-      const allErrors = { ...validate(0, formData), ...validate(1, formData), ...validate(2, formData) };
+      const allErrors = { ...validate(0, formData), ...validate(1, formData) };
       if (Object.keys(allErrors).length > 0) {
         toast.error('Please fill all required fields before submitting.');
         setErrors(allErrors);
@@ -269,6 +269,7 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
 
     const postData = new FormData();
     Object.entries(formData).forEach(([k, v]) => { postData.append(k, v ?? ''); });
+    postData.append('mapped_departments', JSON.stringify(selectedDepts.map(Number)));
     if (isFinal) postData.set('status', 'Pending');
     if (files.recognition_certificate) postData.append('recognition_certificate', files.recognition_certificate);
 
@@ -374,66 +375,10 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
           {/* ══ STEP 0: Centre Information ══════════════════════════════════ */}
           {step === 0 && (
             <div style={S.grid2}>
-              <div style={{ ...S.group, gridColumn: '1 / -1' }}>
-                <label style={S.label}><Building size={14} color="#0891b2" /> Centre Name <span style={S.required}>*</span></label>
-                <input style={S.input(errors.name)} name="name" value={formData.name}
-                  onChange={handleInput} readOnly={isReadOnly}
-                  placeholder="e.g. Department of Computer Science, Periyar University" />
-                {errors.name && <span style={S.errMsg}>{errors.name}</span>}
-              </div>
-
-              <div style={S.group}>
-                <label style={S.label}>Centre Type <span style={S.required}>*</span></label>
-                <select style={S.select(errors.centre_type_id)} name="centre_type_id"
-                  value={formData.centre_type_id} onChange={handleInput} disabled={isReadOnly}>
-                  <option value="">— Select Type —</option>
-                  {dropdowns.master_centre_types?.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                </select>
-                {errors.centre_type_id && <span style={S.errMsg}>{errors.centre_type_id}</span>}
-              </div>
-
-              <div style={S.group}>
-                <label style={S.label}>Recognition Ref. No.</label>
-                <input style={S.input(false)} name="centre_ref_no" value={formData.centre_ref_no}
-                  onChange={handleInput} readOnly={isReadOnly} placeholder="e.g. PU/RC/2024/001" />
-              </div>
-
-              <div style={S.group}>
-                <label style={S.label}>Recognition Date</label>
-                <input style={S.input(false)} name="recognition_date" type="date"
-                  value={formData.recognition_date} onChange={handleInput} readOnly={isReadOnly} />
-              </div>
-
-              <div style={S.group}>
-                <label style={S.label}>Recognition Certificate (PDF)</label>
-                {formData.recognition_certificate && (
-                  <div style={{ marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <FileText size={15} color="#0891b2" />
-                    <a href={`${import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001'}${formData.recognition_certificate}`}
-                      target="_blank" rel="noopener noreferrer"
-                      style={{ fontSize: 12, color: '#0891b2', fontWeight: 600, textDecoration: 'underline' }}>
-                      View Existing Certificate
-                    </a>
-                  </div>
-                )}
-                <input style={S.input(false)} type="file" accept=".pdf"
-                  onChange={e => handleFile(e, 'recognition_certificate')} disabled={isReadOnly} />
-              </div>
-
-              <div style={{ ...S.notice, gridColumn: '1 / -1' }}>
-                <AlertCircle size={17} style={{ flexShrink: 0 }} />
-                <span>Once submitted, a Periyar University administrator will review and activate your centre for PhD admissions.</span>
-              </div>
-            </div>
-          )}
-
-          {/* ══ STEP 1: Institute Details ══════════════════════════════════ */}
-          {step === 1 && (
-            <div style={S.grid2}>
               {/* University Institute (hierarchy parent) */}
               <div style={{ ...S.group, gridColumn: '1 / -1' }}>
                 <label style={S.label}>
-                  <Building size={14} color="#0891b2" /> University Institute <span style={S.required}>*</span>
+                  <Building size={14} color="#0891b2" /> University Institute
                 </label>
                 <select
                   style={S.select(errors.university_institute_id)}
@@ -473,12 +418,7 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
                 </div>
               )}
 
-              <div style={{ ...S.notice, gridColumn: '1 / -1' }}>
-                <AlertCircle size={17} style={{ flexShrink: 0 }} />
-                <span>College details below are for your affiliated college information (principal, code, contact).</span>
-              </div>
-
-              <div style={S.group}>
+              <div style={{ ...S.group, gridColumn: '1 / -1' }}>
                 <label style={S.label}><Building size={14} color="#0891b2" /> College Code <span style={S.required}>*</span></label>
                 <input style={S.input(errors.college_code)} name="college_code"
                   value={formData.college_code} onChange={handleInput} readOnly={isReadOnly}
@@ -488,47 +428,62 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
               </div>
 
               <div style={S.group}>
-                <label style={S.label}><Building size={14} color="#0891b2" /> College Name <span style={S.required}>*</span></label>
-                <input style={S.input(errors.college_name)} name="college_name"
-                  value={formData.college_name} onChange={handleInput} readOnly={isReadOnly}
-                  placeholder="Full name of the affiliated college" />
-                {errors.college_name && <span style={S.errMsg}>{errors.college_name}</span>}
+                <label style={S.label}>Centre Type <span style={S.required}>*</span></label>
+                <select style={S.select(errors.centre_type_id)} name="centre_type_id"
+                  value={formData.centre_type_id} onChange={handleInput} disabled={isReadOnly}>
+                  <option value="">— Select Type —</option>
+                  {dropdowns.master_centre_types?.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </select>
+                {errors.centre_type_id && <span style={S.errMsg}>{errors.centre_type_id}</span>}
               </div>
 
               <div style={S.group}>
-                <label style={S.label}><User size={13} color="#0891b2" /> Principal / HOD Name</label>
-                <input style={S.input(false)} name="principal_name"
-                  value={formData.principal_name} onChange={handleInput} readOnly={isReadOnly}
-                  placeholder="Dr. Name" />
+                <label style={S.label}>Recognized Department <span style={S.required}>*</span></label>
+                <select style={S.select(errors.department_id)} name="department_id"
+                  value={formData.department_id} onChange={handleInput} disabled={isReadOnly}>
+                  <option value="">— Select Recognized Department —</option>
+                  {dropdowns.departments?.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </select>
+                {errors.department_id && <span style={S.errMsg}>{errors.department_id}</span>}
               </div>
 
               <div style={S.group}>
-                <label style={S.label}><Phone size={13} color="#0891b2" /> Principal Mobile</label>
-                <input style={S.input(errors.principal_mobile)} name="principal_mobile"
-                  value={formData.principal_mobile} onChange={handleInput} readOnly={isReadOnly}
-                  placeholder="10-digit mobile number" inputMode="numeric" />
-                {errors.principal_mobile && <span style={S.errMsg}>{errors.principal_mobile}</span>}
+                <label style={S.label}>Recognition Ref. No.</label>
+                <input style={S.input(false)} name="centre_ref_no" value={formData.centre_ref_no}
+                  onChange={handleInput} readOnly={isReadOnly} placeholder="e.g. PU/RC/2024/001" />
               </div>
 
               <div style={S.group}>
-                <label style={S.label}><Mail size={13} color="#0891b2" /> Principal / HOD Email</label>
-                <input style={S.input(errors.hod_email)} name="hod_email" type="email"
-                  value={formData.hod_email} onChange={handleInput} readOnly={isReadOnly}
-                  placeholder="principal@college.ac.in" />
-                {errors.hod_email && <span style={S.errMsg}>{errors.hod_email}</span>}
+                <label style={S.label}>Recognition Date</label>
+                <input style={S.input(false)} name="recognition_date" type="date"
+                  value={formData.recognition_date} onChange={handleInput} readOnly={isReadOnly} />
               </div>
 
               <div style={S.group}>
-                <label style={S.label}><Phone size={13} color="#0891b2" /> College Phone</label>
-                <input style={S.input(false)} name="college_phone"
-                  value={formData.college_phone} onChange={handleInput} readOnly={isReadOnly}
-                  placeholder="0427-2XXXXXX" />
+                <label style={S.label}>Recognition Certificate (PDF)</label>
+                {formData.recognition_certificate && (
+                  <div style={{ marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <FileText size={15} color="#0891b2" />
+                    <a href={`${import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001'}${formData.recognition_certificate}`}
+                      target="_blank" rel="noopener noreferrer"
+                      style={{ fontSize: 12, color: '#0891b2', fontWeight: 600, textDecoration: 'underline' }}>
+                      View Existing Certificate
+                    </a>
+                  </div>
+                )}
+                <input style={S.input(false)} type="file" accept=".pdf"
+                  onChange={e => handleFile(e, 'recognition_certificate')} disabled={isReadOnly} />
+              </div>
+
+              <div style={{ ...S.notice, gridColumn: '1 / -1' }}>
+                <AlertCircle size={17} style={{ flexShrink: 0 }} />
+                <span>Once submitted, a Periyar University administrator will review and activate your centre for PhD admissions.</span>
               </div>
             </div>
           )}
 
-          {/* ══ STEP 2: Address & Contact ════════════════════════════════════ */}
-          {step === 2 && (
+          {/* ══ STEP 1: Address & Contact ════════════════════════════════════ */}
+          {step === 1 && (
             <div style={S.grid2}>
               <div style={{ ...S.group, gridColumn: '1 / -1' }}>
                 <label style={S.label}><MapPin size={14} color="#0891b2" /> Address Line 1 <span style={S.required}>*</span></label>
@@ -567,18 +522,34 @@ export default function ApplicationForm({ isAdminMode = false, centerId = null, 
               </div>
 
               <div style={S.group}>
-                <label style={S.label}><Mail size={13} color="#0891b2" /> Centre Email</label>
-                <input style={S.input(errors.email)} name="email" type="email" value={formData.email}
-                  onChange={handleInput} readOnly={isReadOnly} placeholder="centre@university.edu" />
-                {errors.email && <span style={S.errMsg}>{errors.email}</span>}
+                <label style={S.label}><User size={13} color="#0891b2" /> Principal / HOD Name</label>
+                <input style={S.input(false)} name="principal_name"
+                  value={formData.principal_name} onChange={handleInput} readOnly={isReadOnly}
+                  placeholder="Dr. Name" />
               </div>
 
-              <div style={{ ...S.group, gridColumn: '1 / -1' }}>
+              <div style={S.group}>
+                <label style={S.label}><Phone size={13} color="#0891b2" /> Principal Mobile</label>
+                <input style={S.input(errors.principal_mobile)} name="principal_mobile"
+                  value={formData.principal_mobile} onChange={handleInput} readOnly={isReadOnly}
+                  placeholder="10-digit mobile number" inputMode="numeric" />
+                {errors.principal_mobile && <span style={S.errMsg}>{errors.principal_mobile}</span>}
+              </div>
+
+              <div style={S.group}>
                 <label style={S.label}><Phone size={13} color="#0891b2" /> Centre Contact Number</label>
                 <input style={S.input(errors.contact_number)} name="contact_number"
                   value={formData.contact_number} onChange={handleInput} readOnly={isReadOnly}
                   placeholder="10-digit phone number" />
                 {errors.contact_number && <span style={S.errMsg}>{errors.contact_number}</span>}
+              </div>
+
+              <div style={S.group}>
+                <label style={S.label}><Mail size={13} color="#0891b2" /> Centre Email</label>
+                <input style={{ ...S.input(errors.email), background: '#f1f5f9', cursor: 'not-allowed' }}
+                  name="email" type="email" value={formData.email}
+                  readOnly={true} placeholder="centre@university.edu" />
+                {errors.email && <span style={S.errMsg}>{errors.email}</span>}
               </div>
             </div>
           )}

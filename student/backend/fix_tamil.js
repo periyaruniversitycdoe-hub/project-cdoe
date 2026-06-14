@@ -14,11 +14,10 @@ async function fixTamil() {
     try {
         console.log('Updating Tamil branding...');
         const tamilName = 'பெரியார் பல்கலைக்கழகம்';
-        await pool.execute('UPDATE university_settings SET university_name_tamil = ?, subtitle = ? WHERE id = 1', [tamilName, tamilName]);
+        await pool.execute('UPDATE university_settings SET university_name_ta = ? WHERE id = 1', [tamilName]);
         
-        const [rows] = await pool.execute('SELECT university_name_tamil, subtitle FROM university_settings WHERE id = 1');
-        console.log('Verified Name:', rows[0].university_name_tamil);
-        console.log('Verified Subtitle:', rows[0].subtitle);
+        const [rows] = await pool.execute('SELECT university_name_ta FROM university_settings WHERE id = 1');
+        console.log('Verified Name:', rows[0].university_name_ta);
         console.log('✅ Tamil branding fixed successfully!');
     } catch (err) {
         console.error('❌ Fix failed:', err.message);

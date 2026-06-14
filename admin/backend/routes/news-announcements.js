@@ -165,6 +165,75 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
+// ── Category CRUD Endpoints (must be BEFORE /:id to avoid param capture) ──
+
+// GET all active categories (Public access)
+router.get('/categories', async (req, res) => {
+    try {
+        const [rows] = await pool.execute('SELECT * FROM news_announcement_categories WHERE is_active = 1 ORDER BY label ASC');
+        res.json({ success: true, data: rows });
+    } catch (err) {
+        res.status(500).json({ success: false, message: safeError(err) });
+    }
+});
+
+// POST add new category (Admin only)
+router.post('/categories', verifyToken, isAdmin, async (req, res) => {
+    const { category_key, label, icon = '📢', color = '#7c3aed', bg = '#ede9fe' } = req.body;
+    if (!category_key || !label) {
+        return res.status(400).json({ success: false, message: 'category_key and label are required' });
+    }
+    const cleanKey = category_key.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+    try {
+        const [[exist]] = await pool.execute('SELECT id FROM news_announcement_categories WHERE category_key = ?', [cleanKey]);
+        if (exist) {
+            return res.status(400).json({ success: false, message: 'Category key already exists' });
+        }
+        await pool.execute(
+            `INSERT INTO news_announcement_categories (category_key, label, icon, color, bg) VALUES (?, ?, ?, ?, ?)`,
+            [cleanKey, label, icon, color, bg]
+        );
+        res.status(201).json({ success: true, message: 'Category created successfully', data: { category_key: cleanKey, label, icon, color, bg } });
+    } catch (err) {
+        res.status(500).json({ success: false, message: safeError(err) });
+    }
+});
+
+// PUT update category (Admin only)
+router.put('/categories/:id', verifyToken, isAdmin, async (req, res) => {
+    const { label, icon, color, bg, is_active } = req.body;
+    try {
+        const [existing] = await pool.execute('SELECT * FROM news_announcement_categories WHERE id = ?', [req.params.id]);
+        if (!existing[0]) return res.status(404).json({ success: false, message: 'Category not found' });
+        await pool.execute(
+            `UPDATE news_announcement_categories SET label = ?, icon = ?, color = ?, bg = ?, is_active = ? WHERE id = ?`,
+            [
+                label !== undefined ? label : existing[0].label,
+                icon !== undefined ? icon : existing[0].icon,
+                color !== undefined ? color : existing[0].color,
+                bg !== undefined ? bg : existing[0].bg,
+                is_active !== undefined ? is_active : existing[0].is_active,
+                req.params.id
+            ]
+        );
+        res.json({ success: true, message: 'Category updated successfully' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: safeError(err) });
+    }
+});
+
+// DELETE category (Admin only)
+router.delete('/categories/:id', verifyToken, isAdmin, async (req, res) => {
+    try {
+        const [existing] = await pool.execute('SELECT * FROM news_announcement_categories WHERE id = ?', [req.params.id]);
+        if (!existing[0]) return res.status(404).json({ success: false, message: 'Category not found' });
+        await pool.execute('DELETE FROM news_announcement_categories WHERE id = ?', [req.params.id]);
+        res.json({ success: true, message: 'Category deleted successfully' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: safeError(err) });
+    }
+});
+
 // GET single
 router.get('/:id', verifyToken, isAdmin, async (req, res) => {
     try {
@@ -362,81 +431,5 @@ router.get('/portal/student',    makePortalEndpoint('student'));
 router.get('/portal/supervisor', makePortalEndpoint('supervisor'));
 router.get('/portal/centre',     makePortalEndpoint('centre'));
 router.get('/portal/admin',      verifyToken, isAdmin, makePortalEndpoint('admin'));
-
-// â”€â”€ Category CRUD Endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-// GET all active categories (Public access)
-router.get('/categories', async (req, res) => {
-    try {
-        const [rows] = await pool.execute('SELECT * FROM news_announcement_categories WHERE is_active = 1 ORDER BY label ASC');
-        res.json({ success: true, data: rows });
-    } catch (err) {
-        res.status(500).json({ success: false, message: safeError(err) });
-    }
-});
-
-// POST add new category (Admin only)
-router.post('/categories', verifyToken, isAdmin, async (req, res) => {
-    const { category_key, label, icon = 'ðŸ“¢', color = '#7c3aed', bg = '#ede9fe' } = req.body;
-    if (!category_key || !label) {
-        return res.status(400).json({ success: false, message: 'category_key and label are required' });
-    }
-    
-    // Clean key: lowercase alphanumeric and underscore only
-    const cleanKey = category_key.toLowerCase().replace(/[^a-z0-9_]/g, '_');
-    
-    try {
-        // Check if duplicate
-        const [[exist]] = await pool.execute('SELECT id FROM news_announcement_categories WHERE category_key = ?', [cleanKey]);
-        if (exist) {
-            return res.status(400).json({ success: false, message: 'Category key already exists' });
-        }
-        
-        await pool.execute(
-            `INSERT INTO news_announcement_categories (category_key, label, icon, color, bg) VALUES (?, ?, ?, ?, ?)`,
-            [cleanKey, label, icon, color, bg]
-        );
-        res.status(201).json({ success: true, message: 'Category created successfully', data: { category_key: cleanKey, label, icon, color, bg } });
-    } catch (err) {
-        res.status(500).json({ success: false, message: safeError(err) });
-    }
-});
-
-// PUT update category (Admin only)
-router.put('/categories/:id', verifyToken, isAdmin, async (req, res) => {
-    const { label, icon, color, bg, is_active } = req.body;
-    try {
-        const [existing] = await pool.execute('SELECT * FROM news_announcement_categories WHERE id = ?', [req.params.id]);
-        if (!existing[0]) return res.status(404).json({ success: false, message: 'Category not found' });
-        
-        await pool.execute(
-            `UPDATE news_announcement_categories SET label = ?, icon = ?, color = ?, bg = ?, is_active = ? WHERE id = ?`,
-            [
-                label !== undefined ? label : existing[0].label,
-                icon !== undefined ? icon : existing[0].icon,
-                color !== undefined ? color : existing[0].color,
-                bg !== undefined ? bg : existing[0].bg,
-                is_active !== undefined ? is_active : existing[0].is_active,
-                req.params.id
-            ]
-        );
-        res.json({ success: true, message: 'Category updated successfully' });
-    } catch (err) {
-        res.status(500).json({ success: false, message: safeError(err) });
-    }
-});
-
-// DELETE soft delete / delete category (Admin only)
-router.delete('/categories/:id', verifyToken, isAdmin, async (req, res) => {
-    try {
-        const [existing] = await pool.execute('SELECT * FROM news_announcement_categories WHERE id = ?', [req.params.id]);
-        if (!existing[0]) return res.status(404).json({ success: false, message: 'Category not found' });
-        
-        await pool.execute('DELETE FROM news_announcement_categories WHERE id = ?', [req.params.id]);
-        res.json({ success: true, message: 'Category deleted successfully' });
-    } catch (err) {
-        res.status(500).json({ success: false, message: safeError(err) });
-    }
-});
 
 module.exports = router;

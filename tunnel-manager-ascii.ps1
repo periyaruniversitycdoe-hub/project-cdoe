@@ -32,7 +32,7 @@ foreach ($svc in $services) {
 
     # Start cloudflared using Start-Process with native file redirection
     $proc = Start-Process -FilePath $CF `
-              -ArgumentList "tunnel --url http://127.0.0.1:$($svc.port) --no-autoupdate" `
+              -ArgumentList "tunnel --url http://127.0.0.1:$($svc.port) --no-autoupdate --protocol http2" `
               -RedirectStandardError $logFile `
               -WindowStyle Hidden -PassThru
 
@@ -80,6 +80,28 @@ foreach ($pair in $envMap.GetEnumerator()) {
     [System.IO.File]::WriteAllText($pair.Key, $pair.Value)
 }
 Write-Host "Frontend .env files written with tunnel URLs." -ForegroundColor Cyan
+
+# Save URLs to a text file
+$summary = @"
+PhD ERP Portal - Cloudflare Tunnel URLs
+Generated: $(Get-Date)
+
+FRONTENDS (share these):
+  Portal Dashboard  : $($urls['portal-fe'])
+  Student Portal    : $($urls['student-fe'])
+  Admin Portal      : $($urls['admin-fe'])
+  Supervisor Portal : $($urls['supervisor-fe'])
+  Center Portal     : $($urls['center-fe'])
+
+BACKEND APIs:
+  Student API       : $($urls['student-be'])
+  Admin API         : $($urls['admin-be'])
+  Supervisor API    : $($urls['supervisor-be'])
+  Center API        : $($urls['center-be'])
+"@
+[System.IO.File]::WriteAllText("$root\tunnel-urls.txt", $summary)
+Write-Host "URLs saved in: $root\tunnel-urls.txt" -ForegroundColor Yellow
+
 
 $line = "=" * 68
 Write-Host "`n$line" -ForegroundColor Green

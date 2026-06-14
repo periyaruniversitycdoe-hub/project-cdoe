@@ -49,8 +49,7 @@ app.use(cors({
         const isDev = process.env.NODE_ENV !== 'production';
         const allowed = !origin ||
             allowedOrigins.includes(origin) ||
-            (isDev && (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1'))) ||
-            origin.endsWith('.trycloudflare.com');
+            (isDev && (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1')));
         if (allowed) cb(null, true);
         else cb(new Error('Not allowed by CORS'));
     },
@@ -190,6 +189,56 @@ app.get('/api/eligibility-programs', async (req, res) => {
 // Chatbot public APIs
 const chatbotPublicRoutes = require('../../shared/chatbot/chatbotPublicRoutes');
 app.use('/api/chatbot', chatbotPublicRoutes({ portalKey: 'supervisor', jwtSecret: process.env.SUPERVISOR_JWT_SECRET, db }));
+
+// ── University Settings (real-time, read-only) ───────────────────────────────
+const supervisorSettingsCache = require('../../shared/security/appCache');
+const supervisorSseClients = new Set();
+
+function broadcastSupervisorSettings() {
+    const msg = `event: settings-updated\ndata: ${JSON.stringify({ ts: Date.now() })}\n\n`;
+    for (const c of supervisorSseClients) {
+        try { c.write(msg); } catch (_) { supervisorSseClients.delete(c); }
+    }
+}
+
+app.get('/api/settings', async (_req, res) => {
+    try {
+        const data = await supervisorSettingsCache.getOrFetch('supervisor_university_settings', 30, async () => {
+            const [rows] = await db.query('SELECT * FROM university_settings LIMIT 1');
+            if (!rows[0]) return {};
+            return {
+                ...rows[0],
+                university_name_english: rows[0].university_name_english || rows[0].university_name_en || rows[0].header_line1,
+                university_name_tamil: rows[0].university_name_ta || '',
+                logo: rows[0].logo_url,
+                logo2: rows[0].logo2,
+            };
+        });
+        res.json({ success: true, data });
+    } catch (_err) {
+        res.status(500).json({ success: false, message: 'Failed to load settings' });
+    }
+});
+
+app.get('/api/settings/events', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+    res.write(':keepalive\n\n');
+    supervisorSseClients.add(res);
+    const hb = setInterval(() => {
+        try { res.write(':keepalive\n\n'); }
+        catch (_) { clearInterval(hb); supervisorSseClients.delete(res); }
+    }, 25000);
+    req.on('close', () => { clearInterval(hb); supervisorSseClients.delete(res); });
+});
+
+app.post('/internal/settings-invalidate', (_req, res) => {
+    supervisorSettingsCache.del('supervisor_university_settings');
+    broadcastSupervisorSettings();
+    res.json({ ok: true });
+});
 
 // Health check
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'supervisor-portal', port: PORT }));

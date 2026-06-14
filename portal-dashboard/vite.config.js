@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 
 export default defineConfig({
+  // base is '/' in dev (default) and set by build_frontend.js in production.
+  base: process.env.VITE_BASE_PATH || '/',
   plugins: [react()],
   server: {
     port: 5172,

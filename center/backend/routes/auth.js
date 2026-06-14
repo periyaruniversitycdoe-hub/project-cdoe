@@ -47,6 +47,18 @@ router.post('/signup', validateBody(signupSchema), async (req, res) => {
 
         const loginUrl = process.env.CENTER_PORTAL_URL || 'http://localhost:5176';
         credSvc.notify({ db: pool, name, email, password, portalType: 'Center', loginUrl }).catch(() => {});
+
+        // Admin notification feed — centre self-registered (non-blocking)
+        const { notifyAdminDB } = require('../../../shared/notification/notifyAdminDB');
+        notifyAdminDB(pool, {
+            event_key:   'center.register',
+            title:       `New Exam Centre Registered: ${name}`,
+            message:     `Email: ${email}${centerId ? ` — linked to centre #${centerId}` : ' — pending manual link'}`,
+            type:        'info',
+            source_type: 'center',
+            source_id:   centerId ? String(centerId) : String(result.insertId),
+            link:        '/research-centres',
+        });
     } catch (err) {
         console.error('Signup error:', err);
         res.status(500).json({ message: 'Server error' });

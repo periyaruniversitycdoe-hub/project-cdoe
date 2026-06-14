@@ -13,7 +13,6 @@ function authHeaders(json = false) {
 
 const MASTER_TYPES = [
     { key: 'designations',         label: 'Designation',           icon: '🎓', hasAbbrev: false },
-    { key: 'departments',          label: 'Department',            icon: '🏛️', hasAbbrev: false },
     { key: 'institutes',           label: 'Institute',             icon: '🏫', hasAbbrev: true, isEnterprise: true },
     { key: 'districts',            label: 'District',              icon: '📍', hasAbbrev: false },
     { key: 'centre_types',         label: 'Centre Type',           icon: '🏢', hasAbbrev: false },
@@ -78,9 +77,17 @@ function MasterPanel({ type, meta }) {
     const [editName, setEditName] = useState('');
     const [editAbbrev, setEditAbbrev] = useState('');
     const [editCapacity, setEditCapacity] = useState(0);
+    const [editFtCapacity, setEditFtCapacity] = useState(0);
+    const [editPtCapacity, setEditPtCapacity] = useState(0);
+    const [editFtRequired, setEditFtRequired] = useState(false);
+    const [editPtRequired, setEditPtRequired] = useState(false);
     const [newName, setNewName] = useState('');
     const [newAbbrev, setNewAbbrev] = useState('');
     const [newCapacity, setNewCapacity] = useState(0);
+    const [newFtCapacity, setNewFtCapacity] = useState(0);
+    const [newPtCapacity, setNewPtCapacity] = useState(0);
+    const [newFtRequired, setNewFtRequired] = useState(false);
+    const [newPtRequired, setNewPtRequired] = useState(false);
     const [adding, setAdding] = useState(false);
     const [error, setError] = useState('');
 
@@ -94,19 +101,33 @@ function MasterPanel({ type, meta }) {
         finally { setLoading(false); }
     }, [type]);
 
-    useEffect(() => { load(); setEditingId(null); setNewName(''); setNewAbbrev(''); setNewCapacity(0); setError(''); }, [load]);
+    useEffect(() => {
+        load();
+        setEditingId(null);
+        setNewName(''); setNewAbbrev(''); setNewCapacity(0);
+        setNewFtCapacity(0); setNewPtCapacity(0);
+        setNewFtRequired(false); setNewPtRequired(false);
+        setError('');
+    }, [load]);
 
     async function add() {
         if (!newName.trim()) { setError('Name is required'); return; }
         if (type === 'designations') {
             const cap = parseInt(newCapacity);
             if (isNaN(cap) || cap < 0) { setError('Capacity must be a non-negative integer'); return; }
+            const ft = parseInt(newFtCapacity) || 0;
+            const pt = parseInt(newPtCapacity) || 0;
+            if (ft + pt > cap) { setError('Combined Full-Time and Part-Time Capacity cannot exceed Max Capacity'); return; }
         }
         setAdding(true); setError('');
         try {
             const payload = { name: newName.trim(), abbreviation: newAbbrev.trim() || undefined };
             if (type === 'designations') {
-                payload.max_capacity = parseInt(newCapacity) || 0;
+                payload.max_capacity            = parseInt(newCapacity)   || 0;
+                payload.full_time_max_capacity  = parseInt(newFtCapacity) || 0;
+                payload.part_time_max_capacity  = parseInt(newPtCapacity) || 0;
+                payload.full_time_required      = newFtRequired ? 1 : 0;
+                payload.part_time_required      = newPtRequired ? 1 : 0;
             }
             const res = await fetch(`${API}/${type}`, {
                 method: 'POST',
@@ -114,14 +135,13 @@ function MasterPanel({ type, meta }) {
                 body: JSON.stringify(payload),
             });
             const json = await res.json();
-            if (json.success) { 
-                setNewName(''); 
-                setNewAbbrev(''); 
-                setNewCapacity(0);
-                invalidateDropdownCache(type); 
-                load(); 
-            }
-            else setError(json.message);
+            if (json.success) {
+                setNewName(''); setNewAbbrev(''); setNewCapacity(0);
+                setNewFtCapacity(0); setNewPtCapacity(0);
+                setNewFtRequired(false); setNewPtRequired(false);
+                invalidateDropdownCache(type);
+                load();
+            } else setError(json.message);
         } catch { setError('Network error'); }
         finally { setAdding(false); }
     }
@@ -131,7 +151,11 @@ function MasterPanel({ type, meta }) {
         setEditName(item.name);
         setEditAbbrev(item.abbreviation || '');
         if (type === 'designations') {
-            setEditCapacity(item.max_capacity || 0);
+            setEditCapacity(item.max_capacity           || 0);
+            setEditFtCapacity(item.full_time_max_capacity || 0);
+            setEditPtCapacity(item.part_time_max_capacity || 0);
+            setEditFtRequired(!!item.full_time_required);
+            setEditPtRequired(!!item.part_time_required);
         }
         setError('');
     }
@@ -141,11 +165,18 @@ function MasterPanel({ type, meta }) {
         if (type === 'designations') {
             const cap = parseInt(editCapacity);
             if (isNaN(cap) || cap < 0) { setError('Capacity must be a non-negative integer'); return; }
+            const ft = parseInt(editFtCapacity) || 0;
+            const pt = parseInt(editPtCapacity) || 0;
+            if (ft + pt > cap) { setError('Combined Full-Time and Part-Time Capacity cannot exceed Max Capacity'); return; }
         }
         try {
             const payload = { name: editName.trim(), abbreviation: editAbbrev.trim() || undefined, is_active: items.find(i => i.id === id)?.is_active };
             if (type === 'designations') {
-                payload.max_capacity = parseInt(editCapacity) || 0;
+                payload.max_capacity            = parseInt(editCapacity)   || 0;
+                payload.full_time_max_capacity  = parseInt(editFtCapacity) || 0;
+                payload.part_time_max_capacity  = parseInt(editPtCapacity) || 0;
+                payload.full_time_required      = editFtRequired ? 1 : 0;
+                payload.part_time_required      = editPtRequired ? 1 : 0;
             }
             const res = await fetch(`${API}/${type}/${id}`, {
                 method: 'PUT',
@@ -197,7 +228,7 @@ function MasterPanel({ type, meta }) {
                 <div className="bg-light rounded p-3 mb-4">
                     <div className="fw-semibold small text-muted mb-2">Add New {meta.label}</div>
                     <div className="row g-2 align-items-end">
-                        <div className={meta.hasAbbrev || type === 'designations' ? 'col-md-5' : 'col-md-9'}>
+                        <div className={type === 'designations' ? 'col-md-3' : meta.hasAbbrev ? 'col-md-5' : 'col-md-9'}>
                             <input
                                 className="form-control"
                                 placeholder={`${meta.label} name *`}
@@ -218,25 +249,57 @@ function MasterPanel({ type, meta }) {
                                 />
                             </div>
                         )}
-                        {type === 'designations' && (
-                            <div className="col-md-4">
+                        {type === 'designations' && (<>
+                            <div className="col-md-2">
+                                <label className="form-label small mb-1 text-muted">Max Cap</label>
                                 <input
-                                    type="number"
-                                    className="form-control"
-                                    placeholder="Max scholar capacity"
-                                    value={newCapacity}
-                                    min={0}
+                                    type="number" className="form-control" placeholder="Total max"
+                                    value={newCapacity} min={0}
                                     onChange={e => setNewCapacity(parseInt(e.target.value) || 0)}
-                                    onKeyDown={e => e.key === 'Enter' && add()}
                                 />
                             </div>
-                        )}
-                        <div className="col-md-3">
+                            <div className="col-md-2">
+                                <label className="form-label small mb-1 text-muted">FT Cap</label>
+                                <input
+                                    type="number" className="form-control" placeholder="Full-Time max"
+                                    value={newFtCapacity} min={0}
+                                    onChange={e => setNewFtCapacity(parseInt(e.target.value) || 0)}
+                                />
+                            </div>
+                            <div className="col-md-2">
+                                <label className="form-label small mb-1 text-muted">PT Cap</label>
+                                <input
+                                    type="number" className="form-control" placeholder="Part-Time max"
+                                    value={newPtCapacity} min={0}
+                                    onChange={e => setNewPtCapacity(parseInt(e.target.value) || 0)}
+                                />
+                            </div>
+                            <div className="col-md-1">
+                                <label className="form-label small mb-1 text-muted">FT Req</label>
+                                <div className="form-check mt-1">
+                                    <input type="checkbox" className="form-check-input" id="nFtReq"
+                                        checked={newFtRequired} onChange={e => setNewFtRequired(e.target.checked)} />
+                                </div>
+                            </div>
+                            <div className="col-md-1">
+                                <label className="form-label small mb-1 text-muted">PT Req</label>
+                                <div className="form-check mt-1">
+                                    <input type="checkbox" className="form-check-input" id="nPtReq"
+                                        checked={newPtRequired} onChange={e => setNewPtRequired(e.target.checked)} />
+                                </div>
+                            </div>
+                        </>)}
+                        <div className={type === 'designations' ? 'col-md-1' : 'col-md-3'}>
                             <button className="btn btn-primary w-100" onClick={add} disabled={adding}>
-                                {adding ? 'Adding...' : '+ Add'}
+                                {adding ? '...' : '+ Add'}
                             </button>
                         </div>
                     </div>
+                    {type === 'designations' && (
+                        <div className="text-muted small mt-2">
+                            FT Cap + PT Cap must not exceed Max Cap. Check FT/PT Req to make those fields mandatory in supervisor registration.
+                        </div>
+                    )}
                 </div>
 
                 {/* List */}
@@ -252,7 +315,13 @@ function MasterPanel({ type, meta }) {
                                     <th>#</th>
                                     <th>Name</th>
                                     {meta.hasAbbrev && <th>College code</th>}
-                                    {type === 'designations' && <th>Max Capacity</th>}
+                                    {type === 'designations' && <>
+                                        <th title="Total max scholars">Max</th>
+                                        <th title="Full-Time max scholars">FT Cap</th>
+                                        <th title="Part-Time max scholars">PT Cap</th>
+                                        <th title="Full-Time mandatory in registration">FT Req</th>
+                                        <th title="Part-Time mandatory in registration">PT Req</th>
+                                    </>}
                                     <th>Status</th>
                                     <th>Actions</th>
                                 </tr>
@@ -290,21 +359,57 @@ function MasterPanel({ type, meta }) {
                                                 )}
                                             </td>
                                         )}
-                                        {type === 'designations' && (
+                                        {type === 'designations' && <>
                                             <td>
                                                 {editingId === item.id ? (
-                                                    <input
-                                                        type="number"
-                                                        className="form-control form-control-sm"
-                                                        value={editCapacity}
-                                                        min={0}
-                                                        onChange={e => setEditCapacity(parseInt(e.target.value) || 0)}
-                                                    />
+                                                    <input type="number" className="form-control form-control-sm" style={{ width: 70 }}
+                                                        value={editCapacity} min={0}
+                                                        onChange={e => setEditCapacity(parseInt(e.target.value) || 0)} />
                                                 ) : (
                                                     <span className="fw-semibold text-primary">{item.max_capacity || 0}</span>
                                                 )}
                                             </td>
-                                        )}
+                                            <td>
+                                                {editingId === item.id ? (
+                                                    <input type="number" className="form-control form-control-sm" style={{ width: 70 }}
+                                                        value={editFtCapacity} min={0}
+                                                        onChange={e => setEditFtCapacity(parseInt(e.target.value) || 0)} />
+                                                ) : (
+                                                    <span className="text-success-emphasis small fw-semibold">{item.full_time_max_capacity || 0}</span>
+                                                )}
+                                            </td>
+                                            <td>
+                                                {editingId === item.id ? (
+                                                    <input type="number" className="form-control form-control-sm" style={{ width: 70 }}
+                                                        value={editPtCapacity} min={0}
+                                                        onChange={e => setEditPtCapacity(parseInt(e.target.value) || 0)} />
+                                                ) : (
+                                                    <span className="text-info-emphasis small fw-semibold">{item.part_time_max_capacity || 0}</span>
+                                                )}
+                                            </td>
+                                            <td className="text-center">
+                                                {editingId === item.id ? (
+                                                    <input type="checkbox" className="form-check-input"
+                                                        checked={editFtRequired}
+                                                        onChange={e => setEditFtRequired(e.target.checked)} />
+                                                ) : (
+                                                    <span className={`badge ${item.full_time_required ? 'bg-warning text-dark' : 'bg-light text-muted border'}`}>
+                                                        {item.full_time_required ? 'Req' : 'Opt'}
+                                                    </span>
+                                                )}
+                                            </td>
+                                            <td className="text-center">
+                                                {editingId === item.id ? (
+                                                    <input type="checkbox" className="form-check-input"
+                                                        checked={editPtRequired}
+                                                        onChange={e => setEditPtRequired(e.target.checked)} />
+                                                ) : (
+                                                    <span className={`badge ${item.part_time_required ? 'bg-warning text-dark' : 'bg-light text-muted border'}`}>
+                                                        {item.part_time_required ? 'Req' : 'Opt'}
+                                                    </span>
+                                                )}
+                                            </td>
+                                        </>}
                                         <td>
                                             <span className={`badge ${item.is_active ? 'bg-success' : 'bg-secondary'}`}>
                                                 {item.is_active ? 'Active' : 'Inactive'}

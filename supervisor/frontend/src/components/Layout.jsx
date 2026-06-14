@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useSettings } from '../context/SettingsContext';
 import toast from 'react-hot-toast';
 
 const NAV = [
@@ -15,10 +16,20 @@ const ACCENT = '#4338ca';
 
 export default function Layout() {
   const { user, logout } = useAuth();
+  const { settings } = useSettings();
   const navigate = useNavigate();
   const location = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  const uniName = settings.university_name_en || settings.university_name_english || 'Periyar University';
+  const uploadsBase = import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001';
+  const logoSrc = settings.logo || settings.logo_url
+    ? (settings.logo || settings.logo_url).startsWith('http')
+      ? (settings.logo || settings.logo_url)
+      : `${uploadsBase}${settings.logo || settings.logo_url}`
+    : null;
+  const copyrightText = settings.copyright_text || `© ${new Date().getFullYear()} ${uniName}`;
 
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth < 768);
@@ -72,13 +83,13 @@ export default function Layout() {
 
         {/* ── Desktop Sidebar ── */}
         <aside className="sv-sidebar">
-          <SidebarContent user={user} initials={initials} nav={NAV} onLogout={handleLogout} accent={ACCENT} />
+          <SidebarContent user={user} initials={initials} nav={NAV} onLogout={handleLogout} accent={ACCENT} uniName={uniName} logoSrc={logoSrc} copyrightText={copyrightText} />
         </aside>
 
         {/* ── Mobile Drawer ── */}
         <div className={`sv-backdrop ${drawerOpen ? 'open' : ''}`} onClick={() => setDrawerOpen(false)} />
         <div className={`sv-drawer ${drawerOpen ? 'open' : ''}`}>
-          <SidebarContent user={user} initials={initials} nav={NAV} onLogout={handleLogout} accent={ACCENT} onClose={() => setDrawerOpen(false)} />
+          <SidebarContent user={user} initials={initials} nav={NAV} onLogout={handleLogout} accent={ACCENT} uniName={uniName} logoSrc={logoSrc} copyrightText={copyrightText} onClose={() => setDrawerOpen(false)} />
         </div>
 
         {/* ── Main Content ── */}
@@ -94,7 +105,7 @@ export default function Layout() {
               </button>
               <div>
                 <div style={{ fontSize: 15, fontWeight: 700, color: '#1e293b', lineHeight: 1.2 }}>Supervisor Portal</div>
-                <div style={{ fontSize: 11, color: '#94a3b8' }}>PhD Research Management</div>
+                <div style={{ fontSize: 11, color: '#94a3b8' }}>{uniName} · PhD Research</div>
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -121,14 +132,17 @@ export default function Layout() {
   );
 }
 
-function SidebarContent({ user, initials, nav, onLogout, accent, onClose }) {
+function SidebarContent({ user, initials, nav, onLogout, accent, onClose, uniName, logoSrc, copyrightText }) {
   return (
     <>
       {/* Brand */}
       <div style={{ padding: '24px 20px 20px', borderBottom: '1px solid rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div>
-          <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: 0.2 }}>Supervisor Portal</div>
-          <div style={{ fontSize: 11, opacity: 0.6, marginTop: 3 }}>PhD ERP · Periyar University</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {logoSrc && <img src={logoSrc} alt="Logo" style={{ height: 36, width: 36, objectFit: 'contain', borderRadius: 6, background: 'rgba(255,255,255,0.9)', padding: 2 }} />}
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: 0.2 }}>Supervisor Portal</div>
+            <div style={{ fontSize: 11, opacity: 0.6, marginTop: 2 }}>PhD ERP · {uniName}</div>
+          </div>
         </div>
         {onClose && (
           <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: 8, color: '#fff', cursor: 'pointer', padding: '6px 8px', lineHeight: 1 }}>✕</button>
@@ -166,7 +180,7 @@ function SidebarContent({ user, initials, nav, onLogout, accent, onClose }) {
         <button className="sv-logout-btn" onClick={onLogout}>
           <LogoutIcon /> Sign Out
         </button>
-        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textAlign: 'center', marginTop: 12 }}>© 2025 Periyar University</div>
+        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', textAlign: 'center', marginTop: 12 }}>{copyrightText}</div>
       </div>
     </>
   );

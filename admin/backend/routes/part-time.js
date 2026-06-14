@@ -1,4 +1,4 @@
-﻿const { safeError } = require('../../../shared/security/safeError');
+const { safeError } = require('../../../shared/security/safeError');
 const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
@@ -185,7 +185,7 @@ router.post('/global-guidance', verifyToken, isAdmin, uploadGuidance.single('fil
             oldValue = existing[0].file_name;
 
             // Delete old file safely
-            const oldAbsPath = path.resolve(__dirname, '..', existing[0].file_path);
+            const oldAbsPath = path.resolve(__dirname, '../../..', existing[0].file_path);
             if (fs.existsSync(oldAbsPath)) {
                 try {
                     fs.unlinkSync(oldAbsPath);
@@ -250,7 +250,7 @@ router.delete('/global-guidance', verifyToken, isAdmin, async (req, res) => {
         }
 
         // Delete physical file safely
-        const absPath = path.resolve(__dirname, '..', existing[0].file_path);
+        const absPath = path.resolve(__dirname, '../../..', existing[0].file_path);
         if (fs.existsSync(absPath)) {
             try {
                 fs.unlinkSync(absPath);
@@ -292,10 +292,10 @@ router.get('/global-guidance/preview', verifyToken, async (req, res) => {
         }
         
         const doc = rows[0];
-        const absolutePath = path.resolve(__dirname, '..', doc.file_path);
+        const absolutePath = path.resolve(__dirname, '../../..', doc.file_path);
         
         // Security check: path traversal prevention
-        const uploadsDir = path.resolve(__dirname, '../uploads');
+        const uploadsDir = path.resolve(__dirname, '../../../uploads');
         if (!absolutePath.startsWith(uploadsDir)) {
             return res.status(403).json({ success: false, message: 'Access denied' });
         }

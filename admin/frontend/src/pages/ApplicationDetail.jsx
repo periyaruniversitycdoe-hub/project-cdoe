@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
-import { ArrowLeft, CheckCircle, XCircle, Clock, Save, Edit3, Printer, Award, CreditCard, ShieldCheck, AlertTriangle, Eye } from 'lucide-react';
+import { ArrowLeft, CheckCircle, XCircle, Clock, Save, Edit3, Printer, CreditCard, AlertTriangle, Eye } from 'lucide-react';
 
 const API_URL = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
 const SEMESTERS = ['First Semester', 'Second Semester', 'Third Semester', 'Fourth Semester', 'Fifth Semester', 'Sixth Semester'];
@@ -214,7 +214,16 @@ const ApplicationDetail = () => {
   };
 
   const getDoc = (type) => documents.find(d => d.document_type === type);
-  const userBackendURL = ((import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000') + '');
+  const userBackendURL = (import.meta.env.VITE_STUDENT_API_URL || 'http://localhost:5000').replace('/api', '');
+  const getDocUrl = (filePath) => {
+    if (!filePath) return '';
+    let path = filePath.replace(/\\/g, '/');
+    const idx = path.indexOf('uploads/');
+    if (idx !== -1) {
+      return `${userBackendURL}/${path.substring(idx)}`;
+    }
+    return `${userBackendURL}/${path}`;
+  };
 
   let qualifiedExams = [];
   try { qualifiedExams = JSON.parse(app?.qualified_exams || '[]'); } catch {}
@@ -288,7 +297,7 @@ const ApplicationDetail = () => {
                   {field('Exam Center Preference 2', 'exam_center_2', 'select', dropdowns.exam_centers)}
                   <td rowSpan={4} className="text-center align-middle" style={{ width: '120px' }}>
                     {getDoc('photo') ? (
-                      <img src={`${userBackendURL}/${getDoc('photo').file_path}`} style={{ width: 90, height: 110, objectFit: 'cover', border: '1px solid #ccc' }} alt="Photo" />
+                      <img src={getDocUrl(getDoc('photo').file_path)} style={{ width: 90, height: 110, objectFit: 'cover', border: '1px solid #ccc' }} alt="Photo" />
                     ) : (
                       <div style={{ width: 90, height: 110, background: '#f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', color: '#aaa', margin: '0 auto' }}>No Photo</div>
                     )}
@@ -318,6 +327,18 @@ const ApplicationDetail = () => {
                   {field('Working District', 'working_district', 'select', dropdowns.districts)}
                   <td className="bg-light"></td><td></td>
                 </tr>
+                {formData.category === 'Part Time' && (
+                  <>
+                    <tr>
+                      {field('Part-Time Category', 'part_time_category')}
+                      {field('Role / Designation', 'part_time_designation')}
+                    </tr>
+                    <tr>
+                      {field('Working Area', 'part_time_area')}
+                      <td className="bg-light"></td><td></td>
+                    </tr>
+                  </>
+                )}
               </tbody>
             </table>
           </div>
@@ -368,7 +389,7 @@ const ApplicationDetail = () => {
                   <td className="text-end fw-semibold bg-light" style={{ fontSize: '13px' }}>ID Proof</td>
                   <td>
                     {getDoc('id_proof')
-                      ? <a href={`${userBackendURL}/${getDoc('id_proof').file_path}`} target="_blank" rel="noreferrer" className="btn btn-sm btn-outline-info">View</a>
+                      ? <a href={getDocUrl(getDoc('id_proof').file_path)} target="_blank" rel="noreferrer" className="btn btn-sm btn-outline-info">View</a>
                       : <span className="text-muted" style={{ fontSize: '12px' }}>Not uploaded</span>}
                   </td>
                 </tr>
@@ -406,12 +427,12 @@ const ApplicationDetail = () => {
                   <tr key={i}>
                     <td className="fw-bold">{edu.level}</td>
                     <td>{edu.institution_name}</td>
-                    <td>{dropdowns.education_boards?.find(b => b.id == edu.board_id)?.name || edu.other_board_name}</td>
+                    <td>{edu.board_name || dropdowns.education_boards?.find(b => b.id == edu.board_id)?.name || edu.other_board_name}</td>
                     <td>{edu.passing_month} {edu.passing_year}</td>
                     <td>{edu.percentage}%</td>
                     <td className="text-center">
                       {getDoc(`${edu.level.toLowerCase()}_marksheet`) 
-                        ? <a href={`${userBackendURL}/${getDoc(`${edu.level.toLowerCase()}_marksheet`).file_path}`} target="_blank" className="btn btn-xs btn-outline-info p-1">View</a>
+                        ? <a href={getDocUrl(getDoc(`${edu.level.toLowerCase()}_marksheet`).file_path)} target="_blank" className="btn btn-xs btn-outline-info p-1">View</a>
                         : <span className="text-muted">No</span>}
                     </td>
                   </tr>
@@ -430,7 +451,7 @@ const ApplicationDetail = () => {
             <table className="table table-bordered align-middle mb-0 admin-form-table small">
               <thead className="table-light">
                 <tr>
-                  <th>Level</th><th>Degree</th><th>Specialization</th><th>Institution/University</th><th>Month/Year</th><th>Score</th><th>Docs</th>
+                  <th>Level</th><th>Degree</th><th>Specialization</th><th>Institution/University</th><th>Timeline</th><th>Score</th><th>Docs</th>
                 </tr>
               </thead>
               <tbody>
@@ -440,12 +461,36 @@ const ApplicationDetail = () => {
                     <td>{dropdowns.degree_types?.find(d => d.id == edu.degree_id)?.name}</td>
                     <td>{dropdowns.specializations?.find(s => s.id == edu.specialization_id)?.name}</td>
                     <td>{edu.institution_name} <br/><small className="text-muted">{edu.university_name}</small></td>
-                    <td>{edu.passing_month} {edu.passing_year}</td>
-                    <td>{edu.score_value} ({edu.score_type})</td>
+                    <td>
+                      {edu.level === 'UG' || edu.level === 'PG' || edu.level === 'Integrated' ? (
+                        <>
+                          <div>{edu.passing_month || '—'}</div>
+                          {(edu.start_year || edu.completion_year) && (
+                            <div className="text-muted" style={{ fontSize: '11px' }}>
+                              {edu.start_year ? `Start: ${edu.start_year}` : ''} {edu.completion_year ? `| End: ${edu.completion_year}` : ''}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div>{edu.passing_month} {edu.passing_year && `Pass: ${edu.passing_year}`}</div>
+                      )}
+                    </td>
+                    <td>
+                      {edu.score_type === 'CGPA' && edu.cgpa_scale && ['UG','PG','M.Phil'].includes(edu.level)
+                        ? <>
+                            <span>{edu.score_value} CGPA ({edu.cgpa_scale}-pt scale)</span>
+                            {edu.normalized_cgpa != null && (
+                              <div className="text-primary" style={{ fontSize: '11px' }}>
+                                Normalized: {parseFloat(edu.normalized_cgpa).toFixed(2)} / 10
+                              </div>
+                            )}
+                          </>
+                        : `${edu.score_value} (${edu.score_type})`}
+                    </td>
                     <td>
                       <div className="d-flex flex-column gap-1">
-                        {getDoc(`${edu.level.toLowerCase()}_marksheet`) && <a href={`${userBackendURL}/${getDoc(`${edu.level.toLowerCase()}_marksheet`).file_path}`} target="_blank" className="btn btn-xs btn-outline-primary p-0">Marksheet</a>}
-                        {getDoc(`${edu.level.toLowerCase()}_consolidated`) && <a href={`${userBackendURL}/${getDoc(`${edu.level.toLowerCase()}_consolidated`).file_path}`} target="_blank" className="btn btn-xs btn-outline-secondary p-0">Consolidated</a>}
+                        {getDoc(`${edu.level.toLowerCase()}_marksheet`) && <a href={getDocUrl(getDoc(`${edu.level.toLowerCase()}_marksheet`).file_path)} target="_blank" className="btn btn-xs btn-outline-primary p-0">Marksheet</a>}
+                        {getDoc(`${edu.level.toLowerCase()}_consolidated`) && <a href={getDocUrl(getDoc(`${edu.level.toLowerCase()}_consolidated`).file_path)} target="_blank" className="btn btn-xs btn-outline-secondary p-0">Consolidated</a>}
                       </div>
                     </td>
                   </tr>
@@ -480,7 +525,7 @@ const ApplicationDetail = () => {
                       <tr key={i}>
                         <td>{exp.designation}</td>
                         <td>{exp.organization_name}</td>
-                        <td>{dropdowns.employment_types?.find(t => t.id == exp.employment_type_id)?.name}</td>
+                        <td>{exp.employment_type || dropdowns.employment_types?.find(t => t.id == exp.employment_type_id)?.name || '—'}</td>
                         <td>{fromDisplay} - {toDisplay}</td>
                         <td className="fw-bold text-primary">{exp.total_years}Y {exp.total_months}M</td>
                       </tr>
@@ -513,7 +558,7 @@ const ApplicationDetail = () => {
                   <td className="text-end fw-semibold bg-light" style={{ fontSize: '13px' }}>Signature</td>
                   <td>
                     {getDoc('signature')
-                      ? <img src={`${userBackendURL}/${getDoc('signature').file_path}`} style={{ height: 50, objectFit: 'contain' }} alt="Signature" />
+                      ? <img src={getDocUrl(getDoc('signature').file_path)} style={{ height: 50, objectFit: 'contain' }} alt="Signature" />
                       : <span className="text-muted" style={{ fontSize: '12px' }}>Not uploaded</span>}
                   </td>
                 </tr>
@@ -528,146 +573,6 @@ const ApplicationDetail = () => {
           </div>
         </div>
 
-        {/* SECTION 5: Entrance Marks & Qualification */}
-        <div className="card border-0 shadow-sm rounded-3 mb-3" style={{ border: '1px solid #32b5c044' }}>
-          <div className="card-header py-2 px-4 d-flex align-items-center justify-content-between"
-            style={{ background: 'linear-gradient(90deg,#1a6e7a,#32b5c0)', color: '#fff' }}>
-            <h6 className="mb-0 fw-bold d-flex align-items-center gap-2">
-              <Award size={16} /> Entrance Mark &amp; Qualification
-            </h6>
-            <div className="d-flex align-items-center gap-2">
-              <span className={`badge ${QUAL_BADGE[app.qualification_status] || 'bg-secondary text-white'}`} style={{ fontSize: '12px' }}>
-                {app.qualification_status || 'Pending'}
-              </span>
-              {app.admission_approved ? (
-                <span className="badge bg-success" style={{ fontSize: '12px' }}>✓ Admitted</span>
-              ) : null}
-            </div>
-          </div>
-          <div className="card-body p-4">
-            <div className="row g-4">
-
-              {/* Pass criteria config */}
-              <div className="col-md-4">
-                <div className="card border bg-light h-100">
-                  <div className="card-body p-3">
-                    <p className="fw-bold mb-2" style={{ fontSize: '13px' }}>Passing Criteria (Global)</p>
-                    <div className="d-flex align-items-center gap-2 mb-2">
-                      <label className="form-label mb-0" style={{ fontSize: '12px', minWidth: 100 }}>Passing Mark</label>
-                      <input type="number" className="form-control form-control-sm" style={{ width: 80 }}
-                        value={entranceCriteria.passing_mark}
-                        onChange={e => setEntranceCriteria(p => ({ ...p, passing_mark: e.target.value }))}
-                      />
-                    </div>
-                    <div className="d-flex align-items-center gap-2 mb-3">
-                      <label className="form-label mb-0" style={{ fontSize: '12px', minWidth: 100 }}>Total Mark</label>
-                      <input type="number" className="form-control form-control-sm" style={{ width: 80 }}
-                        value={entranceCriteria.total_mark}
-                        onChange={e => setEntranceCriteria(p => ({ ...p, total_mark: e.target.value }))}
-                      />
-                    </div>
-                    <button className="btn btn-sm btn-outline-primary w-100" onClick={handleSaveCriteria} disabled={savingCriteria}>
-                      {savingCriteria ? <span className="spinner-border spinner-border-sm me-1" /> : null}
-                      Update Criteria
-                    </button>
-                    <small className="text-muted d-block mt-2" style={{ fontSize: '11px' }}>
-                      Changes affect all future mark entries across all applications.
-                    </small>
-                  </div>
-                </div>
-              </div>
-
-              {/* Entrance mark entry */}
-              <div className="col-md-5">
-                <p className="fw-bold mb-2" style={{ fontSize: '13px' }}>Enter Entrance Mark</p>
-
-                {hasDirectQual && (
-                  <div className="alert alert-primary py-2 mb-3 d-flex align-items-center gap-2" style={{ fontSize: '13px' }}>
-                    <ShieldCheck size={16} />
-                    <span>This applicant has <strong>{qualifiedExams.filter(e => DIRECT_EXAMS.includes(e)).join(', ')}</strong> — auto-qualifies as <strong>Direct Qualified</strong>.</span>
-                  </div>
-                )}
-
-                <div className="mb-3">
-                  <label className="form-label fw-semibold" style={{ fontSize: '13px' }}>
-                    Entrance Mark <span className="text-muted fw-normal">/ {entranceCriteria.total_mark}</span>
-                  </label>
-                  <input
-                    type="number"
-                    className="form-control form-control-sm"
-                    style={{ width: 140 }}
-                    min={0}
-                    max={entranceCriteria.total_mark}
-                    step="0.01"
-                    value={entranceMark}
-                    onChange={e => setEntranceMark(e.target.value)}
-                    placeholder={`0 – ${entranceCriteria.total_mark}`}
-                    disabled={hasDirectQual}
-                  />
-                  {!hasDirectQual && entranceMark !== '' && (
-                    <small className={parseFloat(entranceMark) >= parseFloat(entranceCriteria.passing_mark) ? 'text-success' : 'text-danger'}
-                      style={{ fontSize: '12px' }}>
-                      {parseFloat(entranceMark) >= parseFloat(entranceCriteria.passing_mark) ? '✓ Passes criteria' : `✗ Below passing mark (${entranceCriteria.passing_mark})`}
-                    </small>
-                  )}
-                </div>
-
-                <div className="mb-3">
-                  <label className="form-label fw-semibold" style={{ fontSize: '13px' }}>Remarks / Notes</label>
-                  <textarea className="form-control form-control-sm" rows={2}
-                    value={entranceRemarks} onChange={e => setEntranceRemarks(e.target.value)}
-                    placeholder="Optional admin remarks..." />
-                </div>
-
-                <button className="btn btn-sm btn-primary d-flex align-items-center gap-2" onClick={handleSaveEntrance} disabled={savingEntrance}>
-                  {savingEntrance ? <span className="spinner-border spinner-border-sm" /> : <Save size={14} />}
-                  Save Entrance Mark
-                </button>
-              </div>
-
-              {/* Admission approval */}
-              <div className="col-md-3">
-                <div className="card border h-100">
-                  <div className="card-body p-3 d-flex flex-column gap-3">
-                    <p className="fw-bold mb-0" style={{ fontSize: '13px' }}>Admission Decision</p>
-
-                    <div>
-                      <small className="text-muted" style={{ fontSize: '11px' }}>Qualification Status</small>
-                      <div><span className={`badge ${QUAL_BADGE[app.qualification_status] || 'bg-secondary text-white'}`}>
-                        {app.qualification_status || 'Pending'}
-                      </span></div>
-                    </div>
-
-                    <div>
-                      <small className="text-muted" style={{ fontSize: '11px' }}>Admission</small>
-                      <div>
-                        <span className={`badge ${app.admission_approved ? 'bg-success' : 'bg-warning text-dark'}`}>
-                          {app.admission_approved ? '✓ Approved' : 'Pending'}
-                        </span>
-                        {app.admission_approved_at && (
-                          <small className="d-block text-muted mt-1" style={{ fontSize: '10px' }}>
-                            {new Date(app.admission_approved_at).toLocaleString('en-IN')}
-                          </small>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="d-flex flex-column gap-2 mt-auto">
-                      <button className="btn btn-sm btn-success d-flex align-items-center justify-content-center gap-1"
-                        onClick={() => handleAdmission(true)} disabled={savingAdmission || app.admission_approved}>
-                        <ShieldCheck size={13} /> Approve Admission
-                      </button>
-                      <button className="btn btn-sm btn-outline-danger d-flex align-items-center justify-content-center gap-1"
-                        onClick={() => handleAdmission(false)} disabled={savingAdmission || !app.admission_approved}>
-                        <XCircle size={13} /> Revoke Admission
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
 
         {/* SECTION 6: Payment */}
         <div className="card border-0 shadow-sm rounded-3 mb-3">

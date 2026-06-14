@@ -155,6 +155,16 @@ router.get('/:id', verifyToken, isAdmin, async (req, res) => {
             WHERE rc.id = ?
         `, [req.params.id]);
         if (!row) return res.status(404).json({ success: false, message: 'Research centre not found' });
+        const [depts] = await pool.execute(
+            `SELECT d.id, d.name
+             FROM research_centre_departments rcd
+             JOIN departments d ON rcd.department_id = d.id
+             WHERE rcd.research_centre_id = ?
+             ORDER BY d.name ASC`,
+            [req.params.id]
+        );
+        row.mapped_departments    = depts;
+        row.mapped_department_ids = depts.map(d => d.id);
         res.json({ success: true, data: row });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });

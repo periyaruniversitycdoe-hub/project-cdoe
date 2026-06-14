@@ -2,6 +2,8 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import axios from 'axios';
 import { SessionProvider } from './contexts/SessionContext';
+import { NotificationProvider } from './contexts/NotificationContext';
+import { SettingsProvider } from './contexts/SettingsContext';
 import { Toaster } from 'react-hot-toast';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
@@ -54,6 +56,8 @@ import CentreTracking from './pages/CentreTracking';
 import ChatbotManagement from './pages/ChatbotManagement';
 import EmailDeliveryLog from './pages/EmailDeliveryLog';
 import PermissionReviewAllocation from './pages/PermissionReviewAllocation';
+import NotificationsPage from './pages/NotificationsPage';
+import AcademicHierarchy from './pages/AcademicHierarchy';
 
 // Global 401 interceptor — attempts token refresh before forcing re-login
 const ADMIN_API = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
@@ -121,22 +125,61 @@ axios.interceptors.response.use(
   }
 );
 
+// Decode JWT payload without verifying signature (server still validates).
+// Used only to catch visibly-expired tokens before any API call fires.
+function _isTokenExpired(token) {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload.exp ? payload.exp * 1000 < Date.now() : false;
+  } catch {
+    return true; // malformed token → treat as expired
+  }
+}
+
+function _clearSession() {
+  localStorage.removeItem('adminToken');
+  localStorage.removeItem('adminRefreshToken');
+  localStorage.removeItem('adminUser');
+}
+
 const ProtectedRoute = ({ children }) => {
   const token = localStorage.getItem('adminToken');
   if (!token) return <Navigate to="/login" replace />;
+
+  // If the access token is clearly expired, try the refresh token.
+  // If the refresh token is also expired (or absent), bounce to login.
+  if (_isTokenExpired(token)) {
+    const refreshToken = localStorage.getItem('adminRefreshToken');
+    if (!refreshToken || _isTokenExpired(refreshToken)) {
+      _clearSession();
+      return <Navigate to="/login" replace />;
+    }
+    // Refresh is still valid — let the Axios interceptor handle the refresh
+    // on the first API call. Don't clear session here.
+  }
+
   return <Layout>{children}</Layout>;
 };
 
 const ProtectedPrintRoute = ({ children }) => {
   const token = localStorage.getItem('adminToken');
   if (!token) return <Navigate to="/login" replace />;
+  if (_isTokenExpired(token)) {
+    const refreshToken = localStorage.getItem('adminRefreshToken');
+    if (!refreshToken || _isTokenExpired(refreshToken)) {
+      _clearSession();
+      return <Navigate to="/login" replace />;
+    }
+  }
   return <>{children}</>;
 };
 
 function App() {
   return (
+    <SettingsProvider>
     <SessionProvider>
     <Router basename={import.meta.env.BASE_URL}>
+      <NotificationProvider>
       <Toaster position="top-right" />
       <Routes>
         <Route path="/login" element={<Login />} />
@@ -212,10 +255,18 @@ function App() {
         {/* Permission Review & Allocation */}
         <Route path="/permission-review" element={<ProtectedRoute><PermissionReviewAllocation /></ProtectedRoute>} />
 
+        {/* Admin Notification Feed */}
+        <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
+
+        {/* Academic Hierarchy — Faculty / Discipline / Specialization */}
+        <Route path="/academic-hierarchy" element={<ProtectedRoute><AcademicHierarchy /></ProtectedRoute>} />
+
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </NotificationProvider>
     </Router>
     </SessionProvider>
+    </SettingsProvider>
   );
 }
 

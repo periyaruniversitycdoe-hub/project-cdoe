@@ -38,10 +38,10 @@ app.use(helmet({
             objectSrc:   ["'none'"],
             baseUri:     ["'self'"],
             formAction:  ["'self'"],
+            frameAncestors: ["'self'", "http://localhost:*", "http://127.0.0.1:*"],
         },
     },
-    // Keep frameguard enabled (SAMEORIGIN) — cross-origin iframe embed is handled by CSP frameSrc
-    frameguard: { action: 'sameorigin' },
+    frameguard: false,
     hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
 }));
 
@@ -56,13 +56,12 @@ app.use(cors({
         const isDev = process.env.NODE_ENV !== 'production';
         const allowed = !origin ||
             allowedAdminOrigins.includes(origin) ||
-            (isDev && (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1'))) ||
-            origin.endsWith('.trycloudflare.com');
+            (isDev && (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1')));
         if (allowed) callback(null, true);
         else callback(new Error('Not allowed by CORS'));
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'bypass-tunnel-reminder'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
 }));
 app.use(express.json({ limit: '5mb' }));        // 50mb was dangerously large
@@ -181,9 +180,25 @@ app.use('/api/portals', portalsRoutes);
 const notificationsRoutes = require('./routes/notifications');
 app.use('/api/notifications', notificationsRoutes);
 
+// Admin Notification Feed (real-time bell icon + SSE stream)
+const adminNotificationsRoutes = require('./routes/admin-notifications');
+app.use('/api/admin-notifications', adminNotificationsRoutes);
+
 // Portal Home Management (Student home page content — real-time admin control)
 const portalHomeRoutes = require('./routes/portal-home');
 app.use('/api/portal-home', portalHomeRoutes);
+
+// Home Manager Module (action buttons, quick links, contacts, layout, audit logs)
+const homeManagerRoutes = require('./routes/home-manager');
+app.use('/api/home-manager', homeManagerRoutes);
+
+// Declarations & Guidelines Module
+const declarationsRoutes = require('./routes/declarations');
+app.use('/api/declarations', declarationsRoutes);
+
+// Academic Hierarchy (Faculty → Discipline → Specialization)
+const academicHierarchyRoutes = require('./routes/academic-hierarchy');
+app.use('/api/academic-hierarchy', academicHierarchyRoutes);
 
 // Enterprise Roster Module
 const rosterRoutes = require('./routes/roster');
@@ -444,6 +459,27 @@ app.use('/api/chatbot', chatbotRoutes);
     }
 })();
 
+// ── University Settings columns auto-migration ───────────────────────────────
+(async () => {
+    const settingsCols = [
+        { name: 'payment_enabled',          type: 'TINYINT(1) NOT NULL DEFAULT 0' },
+        { name: 'payment_open',             type: 'VARCHAR(32) NULL' },
+        { name: 'payment_close',            type: 'VARCHAR(32) NULL' },
+        { name: 'result_publish_enabled',   type: 'TINYINT(1) NOT NULL DEFAULT 0' },
+        { name: 'result_publish_open',      type: 'VARCHAR(32) NULL' },
+        { name: 'result_publish_close',     type: 'VARCHAR(32) NULL' }
+    ];
+    for (const col of settingsCols) {
+        try {
+            await db.execute(`ALTER TABLE university_settings ADD COLUMN ${col.name} ${col.type}`);
+        } catch (e) {
+            if (e.errno !== 1060 && e.code !== 'ER_DUP_FIELDNAME') {
+                console.error(`Settings col ${col.name}:`, e.message);
+            }
+        }
+    }
+    console.log('✅ University Settings portal control columns verified.');
+})();
 
 // ── Application Rejection Workflow auto-migration ────────────────────────────
 (async () => {
@@ -653,6 +689,23 @@ app.use('/api/chatbot', chatbotRoutes);
 
         console.log('✅ Preference-based allocation schema verified.');
     } catch (e) { console.error('[Preference allocation migration]', e.message); }
+})();
+
+// ── Dropdown Departments table auto-migration ─────────────────────────────────
+(async () => {
+    try {
+        await db.execute(`
+            CREATE TABLE IF NOT EXISTS dropdown_departments (
+                id         INT AUTO_INCREMENT PRIMARY KEY,
+                name       VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_dept_name (name)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        `);
+        console.log('✅ dropdown_departments table verified.');
+    } catch (e) {
+        console.error('[dropdown_departments migration]', e.message);
+    }
 })();
 
 // Error Handling

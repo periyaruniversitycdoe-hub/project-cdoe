@@ -33,7 +33,7 @@ foreach ($svc in $services) {
     # Use ProcessStartInfo for reliable stderr capture
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName  = $CF
-    $psi.Arguments = "tunnel --url http://localhost:$($svc.port) --no-autoupdate"
+    $psi.Arguments = "tunnel --url http://localhost:$($svc.port) --no-autoupdate --protocol http2"
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError  = $true
     $psi.UseShellExecute        = $false

@@ -47,6 +47,18 @@ router.post('/signup', validateBody(signupSchema), async (req, res) => {
 
         const loginUrl = process.env.SUPERVISOR_PORTAL_URL || 'http://localhost:5175';
         credSvc.notify({ db: pool, name, email, password, portalType: 'Supervisor', loginUrl }).catch(() => {});
+
+        // Admin notification feed — supervisor self-registered (non-blocking)
+        const { notifyAdminDB } = require('../../../shared/notification/notifyAdminDB');
+        notifyAdminDB(pool, {
+            event_key:   'supervisor.register',
+            title:       `New Supervisor Registered: ${name}`,
+            message:     `Email: ${email}${supervisorId ? ` — linked to supervisor #${supervisorId}` : ' — pending manual link'}`,
+            type:        'info',
+            source_type: 'supervisor',
+            source_id:   supervisorId ? String(supervisorId) : String(result.insertId),
+            link:        '/supervisors',
+        });
     } catch (err) {
         console.error('Signup error:', err);
         res.status(500).json({ message: 'Server error' });

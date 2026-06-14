@@ -15,7 +15,7 @@ const SELECT_JOINED = `
         rc.centre_ref_no  AS research_center_ref_no
     FROM supervisors s
     LEFT JOIN master_designations  d    ON s.designation_id          = d.id
-    LEFT JOIN master_departments   dept ON s.department_id            = dept.id
+    LEFT JOIN departments          dept ON s.department_id            = dept.id
     LEFT JOIN master_institutes    inst ON s.serving_institute_id     = inst.id
     LEFT JOIN master_districts     dist ON s.district_id              = dist.id
     LEFT JOIN institutes           ui   ON s.university_institute_id  = ui.id
@@ -25,10 +25,16 @@ const SELECT_JOINED = `
 function enrichCapacity(row) {
     if (!row) return row;
     if (row.designation_id && row.designation_max_capacity !== undefined && row.designation_max_capacity !== null) {
-        row.max_candidates = row.designation_max_capacity;
+        if (!row.max_candidates) {
+            row.max_candidates = row.designation_max_capacity;
+        }
         row.current_vacancy = Math.max(0, row.max_candidates - (row.current_scholars_count || 0));
-        row.max_full_time = row.max_candidates;
-        row.max_part_time = Math.floor(row.max_candidates / 2);
+        if (!row.max_full_time) {
+            row.max_full_time = row.max_candidates;
+        }
+        if (!row.max_part_time) {
+            row.max_part_time = Math.floor(row.max_candidates / 2);
+        }
     }
     return row;
 }
@@ -77,7 +83,7 @@ async function getFilterOptions() {
     );
     const [departments] = await pool.execute(
         `SELECT DISTINCT d.id, d.name
-         FROM   master_departments d
+         FROM   departments d
          INNER  JOIN supervisors s ON s.department_id = d.id
          ORDER  BY d.name ASC`
     );

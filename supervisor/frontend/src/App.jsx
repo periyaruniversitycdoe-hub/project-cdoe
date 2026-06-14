@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { SettingsProvider } from './context/SettingsContext';
 import ChatbotWidget from '../../../shared/components/ChatbotWidget';
 
 const SUPERVISOR_API = import.meta.env.VITE_SUPERVISOR_API_URL || 'http://localhost:5002';
@@ -35,6 +36,7 @@ function GuestRoute({ children }) {
 export default function App() {
   return (
     <AuthProvider>
+      <SettingsProvider>
       <BrowserRouter basename={import.meta.env.BASE_URL}>
         <SupervisorChatbot />
         <Routes>
@@ -53,6 +55,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </BrowserRouter>
+      </SettingsProvider>
     </AuthProvider>
   );
 }

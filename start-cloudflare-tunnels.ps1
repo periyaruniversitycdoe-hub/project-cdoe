@@ -30,7 +30,7 @@ foreach ($svc in $services) {
     if (Test-Path $logFile) { Remove-Item $logFile -Force }
 
     $p = Start-Process -FilePath $CF `
-         -ArgumentList "tunnel --url http://127.0.0.1:$($svc.port) --no-autoupdate 2>&1" `
+         -ArgumentList "tunnel --url http://127.0.0.1:$($svc.port) --no-autoupdate --protocol http2 2>&1" `
          -RedirectStandardError $logFile `
          -WindowStyle Hidden -PassThru
     $procs += $p

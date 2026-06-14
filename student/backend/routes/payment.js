@@ -29,6 +29,25 @@ router.post('/initiate', authenticateToken, paymentRateLimit, async (req, res) =
   }
 
   try {
+    // Enforce Portal Access Control for Payment
+    const [settingsRows] = await db.query(
+      `SELECT payment_enabled, payment_open, payment_close, last_payment_date FROM university_settings LIMIT 1`
+    );
+    const settings = settingsRows[0] || {};
+    const { getPageAccess } = require('../services/workflowEngine');
+    const pageAccess = getPageAccess(settings);
+    if (!pageAccess.payment.active) {
+      return res.status(403).json({ success: false, message: 'The payment portal is currently closed.' });
+    }
+
+    if (settings.last_payment_date) {
+      const lastPay = new Date(settings.last_payment_date);
+      lastPay.setHours(23, 59, 59, 999);
+      if (Date.now() > lastPay.getTime()) {
+        return res.status(403).json({ success: false, message: 'The last date for payment has passed.' });
+      }
+    }
+
     // Fetch application + fee
     const [[app]] = await db.query(
       `SELECT application_id, community, is_physically_challenged, payment_status, payment_due_date, payment_decision
@@ -59,12 +78,30 @@ router.post('/initiate', authenticateToken, paymentRateLimit, async (req, res) =
     // Use user_id for order ID generation — application_id is null until after payment
     const orderId = paymentService.generateOrderId(req.user.id);
 
+    // Retrieve the student's email from the database if not present in req.user
+    let studentEmail = req.user.email;
+    if (!studentEmail) {
+      const [[userRow]] = await db.query('SELECT email FROM users WHERE id = ?', [req.user.id]);
+      if (userRow && userRow.email) {
+        studentEmail = userRow.email;
+      }
+    }
+    if (!studentEmail) {
+      const [[appRow]] = await db.query('SELECT email FROM applications WHERE user_id = ? LIMIT 1', [req.user.id]);
+      if (appRow && appRow.email) {
+        studentEmail = appRow.email;
+      }
+    }
+    if (!studentEmail) {
+      studentEmail = `student_${req.user.id}@cdoe.local`;
+    }
+
     // ALL payment methods (UPI, Card, Net Banking) → create Paytm order → hosted checkout.
     // Paytm's checkout page natively supports Google Pay, PhonePe, Paytm UPI, Cards, and
     // Net Banking. Routing UPI through Paytm ensures every payment is gateway-tracked,
     // webhook-confirmed, and auto-reconciled — direct-UPI bypass broke polling.
     const orderResult = await paymentService.createOrder({
-      orderId, amount, custId: req.user.id,
+      orderId, amount, custId: studentEmail,
     });
     const responseData = {
       orderId,
@@ -125,7 +162,7 @@ router.post('/callback', async (req, res) => {
     // Step 2: Always verify against Paytm API — never lock application based on callback params alone
     const result = await paymentService.verifyTransaction(orderId);
     if (result.status === 'SUCCESS') {
-      await _processVerification(orderId, { STATUS: 'TXN_SUCCESS', TXNID: result.txnId });
+      await _processVerification(orderId, result.raw);
     }
   } catch (err) {
     console.error('[payment/callback]', err.message);
@@ -159,7 +196,7 @@ router.post('/verify', authenticateToken, async (req, res) => {
     if (!result) return res.json({ success: true, status: txn.payment_status, data: {} });
 
     if (result.status === 'SUCCESS') {
-      await _processVerification(order_id, { STATUS: 'TXN_SUCCESS', TXNID: result.txnId });
+      await _processVerification(order_id, result.raw);
       const [[rcpt]] = await db.query('SELECT * FROM payment_receipts WHERE order_id = ? LIMIT 1', [order_id]);
       return res.json({ success: true, status: 'SUCCESS', data: { receipt: rcpt } });
     }
@@ -189,7 +226,7 @@ router.get('/status/:orderId', authenticateToken, async (req, res) => {
     if (['INITIATED', 'PROCESSING'].includes(status)) {
       const live = await paymentService.verifyTransaction(req.params.orderId).catch(() => null);
       if (live && live.status === 'SUCCESS') {
-        await _processVerification(req.params.orderId, { STATUS: 'TXN_SUCCESS', TXNID: live.txnId });
+        await _processVerification(req.params.orderId, live.raw);
         status = 'SUCCESS';
       } else if (live?.status === 'FAILED') {
         status = 'FAILED';
@@ -363,7 +400,7 @@ router.get('/receipt-data/:orderId', authenticateToken, async (req, res) => {
       try { parsedPayload = txn.callback_payload ? JSON.parse(txn.callback_payload) : {}; } catch { /* ignore */ }
 
       data = {
-        receipt_number: txn.order_id.replace('PU', 'RC'),
+        receipt_number: txn.order_id.replace('PURD', 'RC').replace('PU', 'RC'),
         order_id: txn.order_id,
         application_id: txn.application_id,
         amount: txn.amount,
@@ -403,8 +440,9 @@ router.get('/receipt-data/:orderId', authenticateToken, async (req, res) => {
 });
 
 // ── GET /api/payment/receipt-data-by-app/:appId ───────────────────────────────
-router.get('/receipt-data-by-app/:appId', authenticateToken, async (req, res) => {
+router.get(/^\/receipt-data-by-app\/(.+)$/, authenticateToken, async (req, res) => {
   try {
+    const appId = req.params[0];
     const [[receipt]] = await db.query(
       `SELECT pr.*, pt.payment_method, pt.payment_sub_method, pt.provider_name, 
               pt.gateway_transaction_id, pt.payment_status, pt.completed_at, pt.callback_payload
@@ -412,14 +450,14 @@ router.get('/receipt-data-by-app/:appId', authenticateToken, async (req, res) =>
        JOIN payment_transactions pt ON pr.order_id = pt.order_id
        WHERE pr.application_id = ?
        ORDER BY pr.created_at DESC LIMIT 1`,
-      [req.params.appId]
+      [appId]
     );
 
     let data;
     if (!receipt) {
       const [[app]] = await db.query(
         `SELECT * FROM applications WHERE application_id = ? LIMIT 1`,
-        [req.params.appId]
+        [appId]
       );
       if (!app) return res.status(404).json({ success: false, message: 'Application not found' });
       if (app.user_id !== req.user.id) return res.status(403).json({ success: false, message: 'Forbidden' });
@@ -428,7 +466,7 @@ router.get('/receipt-data-by-app/:appId', authenticateToken, async (req, res) =>
         `SELECT * FROM payment_transactions 
          WHERE application_id = ? AND (payment_status = 'SUCCESS' OR payment_status = 'AWAITING_CONFIRMATION')
          ORDER BY created_at DESC LIMIT 1`,
-        [req.params.appId]
+        [appId]
       );
 
       let parsedPayload = {};
@@ -437,7 +475,7 @@ router.get('/receipt-data-by-app/:appId', authenticateToken, async (req, res) =>
       }
 
       data = {
-        receipt_number: app.receipt_number || (txn ? txn.order_id.replace('PU', 'RC') : 'RC' + app.application_id.replace(/[^0-9]/g, '')),
+        receipt_number: app.receipt_number || (txn ? txn.order_id.replace('PURD', 'RC').replace('PU', 'RC') : 'RC' + app.application_id.replace(/[^0-9]/g, '')),
         order_id: txn ? txn.order_id : app.payment_transaction_id || 'N/A',
         application_id: app.application_id,
         amount: txn ? txn.amount : (app.amount_paid || '500.00'),
@@ -566,7 +604,7 @@ async function _processVerification(orderId, paytmData) {
   );
   if (!txn || txn.payment_status === 'SUCCESS') return;
 
-  const txnStatus = paytmData.STATUS || paytmData.status || '';
+  const txnStatus = paytmData.STATUS || paytmData.status || (paytmData.resultInfo ? paytmData.resultInfo.resultStatus : '') || '';
   const gatewayTxnId = paytmData.TXNID || paytmData.txnId || paytmData.txn_id || '';
   const isPaid = txnStatus === 'TXN_SUCCESS' || txnStatus === 'SUCCESS';
 
@@ -577,12 +615,12 @@ async function _processVerification(orderId, paytmData) {
     await conn.beginTransaction();
     await conn.query(
       `UPDATE payment_transactions
-       SET payment_status='SUCCESS', gateway_transaction_id=?,
+       SET payment_status='SUCCESS', gateway_transaction_id=?, callback_payload=?,
            completed_at=NOW(), verified_at=NOW(), updated_at=NOW()
        WHERE order_id=?`,
-      [gatewayTxnId, orderId]
+      [gatewayTxnId, JSON.stringify(paytmData), orderId]
     );
-    await webhook.lockApplicationAndGenerateReceipt(conn, txn, gatewayTxnId);
+    await webhook.lockApplicationAndGenerateReceipt(conn, txn, gatewayTxnId, paytmData);
     await conn.commit();
   } catch (err) {
     await conn.rollback();

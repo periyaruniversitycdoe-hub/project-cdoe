@@ -103,6 +103,21 @@ module.exports = function resetPasswordController(db, portal) {
         ipAddress: req.ip,
       }).catch(() => {});
 
+      // 7. Notify admin of password reset (non-blocking, skip admin self-reset)
+      if (portal !== 'admin') {
+        const labelMap = { student: 'Student', supervisor: 'Supervisor', center: 'Centre' };
+        const label = labelMap[portal] || portal;
+        const { notifyAdminDB } = require('../../notification/notifyAdminDB');
+        notifyAdminDB(db, {
+          event_key:   `${portal}.password_reset`,
+          title:       `Password Reset — ${label}`,
+          message:     `${label} account (${email}) successfully reset their password.`,
+          type:        'info',
+          source_type: 'password_reset',
+          link:        '/credential-management',
+        });
+      }
+
       return res.status(200).json({
         success: true,
         message: 'Your password has been reset successfully. You can now login with your new password.'

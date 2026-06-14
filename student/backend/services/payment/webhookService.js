@@ -4,12 +4,33 @@ const db             = require('../../config/db');
 const paymentService = require('./paymentService');
 const { generateCETPHDApplicationId } = require('../applicationIdEngine');
 
+function mapPaytmPaymentMode(paymentMode, defaultMethod = 'upi_intent') {
+  if (!paymentMode) return defaultMethod;
+  const mode = String(paymentMode).toUpperCase();
+  if (mode === 'CC' || mode === 'DC') return 'card';
+  if (mode === 'NB') return 'netbanking';
+  if (mode === 'PPI') return 'wallet';
+  if (mode.includes('UPI')) return 'upi_intent';
+  return defaultMethod;
+}
+
 // ── ApplicationIdGenerationEngine: called inside an open transaction ──────────
 // Generates CETPHD/{SESSION_CODE}/{SERIAL} for the user, propagates it to all
 // related tables, then locks the application and issues the payment receipt.
 // Idempotent: if application_id is already set for this user, skips generation.
-async function lockApplicationAndGenerateReceipt(conn, txn, gatewayTxnId) {
+async function lockApplicationAndGenerateReceipt(conn, txn, gatewayTxnId, rawPayload) {
   const userId = txn.user_id;
+
+  // Map raw paymentMode to friendly method and update txn object + database
+  const paymentModeRaw = rawPayload ? (rawPayload.PAYMENTMODE || rawPayload.paymentMode) : null;
+  const friendlyMethod = mapPaytmPaymentMode(paymentModeRaw, txn.payment_method);
+  if (friendlyMethod) {
+    txn.payment_method = friendlyMethod;
+    await conn.query(
+      'UPDATE payment_transactions SET payment_method = ? WHERE order_id = ?',
+      [friendlyMethod, txn.order_id]
+    );
+  }
 
   // 1. Lock the application row for this user so concurrent webhooks/callbacks
   //    queue here and re-check application_id after the first one commits.
@@ -101,13 +122,14 @@ async function lockApplicationAndGenerateReceipt(conn, txn, gatewayTxnId) {
   await conn.query(
     `INSERT INTO payments
        (application_id, user_id, amount, transaction_id, payment_method,
-        payment_date, payment_status, enterprise_order_id, provider_name)
-     VALUES (?,?,?,?,?,NOW(),'Paid',?,?)
+        paid_at, payment_status, enterprise_order_id, provider_name, gateway, payment_mode)
+     VALUES (?,?,?,?,?,NOW(),'Success',?,?, 'Online', ?)
      ON DUPLICATE KEY UPDATE
-       transaction_id = VALUES(transaction_id), payment_status = 'Paid', updated_at = NOW()`,
+       transaction_id = VALUES(transaction_id), payment_status = 'Success', gateway = 'Online', payment_mode = VALUES(payment_mode), updated_at = NOW()`,
     [applicationId, userId, txn.amount, gatewayTxnId,
-     txn.payment_method, txn.order_id, 'paytm']
+     txn.payment_method, txn.order_id, 'paytm', txn.payment_method]
   );
+
 
   // 7. Generate and insert official payment receipt
   const receiptNumber = paymentService.generateReceiptNumber(applicationId);
@@ -125,6 +147,14 @@ async function lockApplicationAndGenerateReceipt(conn, txn, gatewayTxnId) {
      txn.payment_method, 'paytm', gatewayTxnId,
      appRow.applicant_name || '', appRow.email || '', appRow.mobile || '',
      verifyCode]
+  );
+
+  // 7a. Propagate receipt number, transaction ID, and submission reference to the applications table
+  await conn.query(
+    `UPDATE applications
+     SET receipt_number = ?, payment_transaction_id = ?, submission_reference = ?, payment_completed_at = NOW()
+     WHERE user_id = ?`,
+    [receiptNumber, gatewayTxnId, txn.order_id, userId]
   );
 
   return { receiptNumber, verifyCode, applicationId };
@@ -183,11 +213,11 @@ async function processWebhook(rawBody, headers) {
       await conn.query(
         `UPDATE payment_transactions
          SET payment_status='SUCCESS', webhook_received=1, webhook_verified=?,
-             gateway_transaction_id=?, completed_at=NOW(), updated_at=NOW()
+             gateway_transaction_id=?, callback_payload=?, completed_at=NOW(), updated_at=NOW()
          WHERE order_id=?`,
-        [sigValid ? 1 : 0, gatewayTxnId, orderId]
+        [sigValid ? 1 : 0, gatewayTxnId, JSON.stringify(body), orderId]
       );
-      await lockApplicationAndGenerateReceipt(conn, txn, gatewayTxnId);
+      await lockApplicationAndGenerateReceipt(conn, txn, gatewayTxnId, body);
       await conn.commit();
     } catch (err) {
       await conn.rollback();

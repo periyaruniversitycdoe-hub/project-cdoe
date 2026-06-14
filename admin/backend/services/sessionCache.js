@@ -29,7 +29,7 @@ async function getActiveSession() {
     }
     const [[row]] = await pool.execute(
         `SELECT id, year, month, is_active,
-                registration_open, application_open, result_published
+                registration_open, application_open, entrance_result_published AS result_published
          FROM sessions WHERE is_active = 1 LIMIT 1`
     );
     _session   = row || null;

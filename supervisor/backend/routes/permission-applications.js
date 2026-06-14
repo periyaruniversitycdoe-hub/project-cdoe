@@ -9,14 +9,21 @@ const { safeError } = require('../../../shared/security/safeError');
 // All routes require a logged-in supervisor user.
 // Supervisor users can only see applications assigned to them.
 
-function getSupervisorId(req) {
-    return req.user?.supervisor_id || null;
+async function getSupervisorId(req) {
+    if (req.user?.supervisor_id) return req.user.supervisor_id;
+    if (!req.user?.id) return null;
+    try {
+        const [rows] = await pool.execute('SELECT supervisor_id FROM supervisor_users WHERE id = ?', [req.user.id]);
+        return rows[0]?.supervisor_id || null;
+    } catch (err) {
+        return null;
+    }
 }
 
 // ── GET /api/permission-applications ─────────────────────────────────────────
 router.get('/', verifyToken, async (req, res) => {
-    const supervisorId = getSupervisorId(req);
-    if (!supervisorId) return res.status(403).json({ success: false, message: 'Supervisor ID not found in token' });
+    const supervisorId = await getSupervisorId(req);
+    if (!supervisorId) return res.status(403).json({ success: false, message: 'Supervisor ID not found' });
 
     try {
         const { workflow_status, search } = req.query;
@@ -68,8 +75,8 @@ router.get('/', verifyToken, async (req, res) => {
 
 // ── GET /api/permission-applications/:id ─────────────────────────────────────
 router.get('/:id', verifyToken, async (req, res) => {
-    const supervisorId = getSupervisorId(req);
-    if (!supervisorId) return res.status(403).json({ success: false, message: 'Supervisor ID not found in token' });
+    const supervisorId = await getSupervisorId(req);
+    if (!supervisorId) return res.status(403).json({ success: false, message: 'Supervisor ID not found' });
 
     try {
         const [[ca]] = await pool.execute(`
@@ -135,7 +142,7 @@ router.get('/:id', verifyToken, async (req, res) => {
 // New format: interview_mark (0–30) + recommendation + interview_remarks.
 // Final score = academic_mark + (entrance_mark + interview_mark) × 50 / 100
 router.post('/:id/evaluate', verifyToken, async (req, res) => {
-    const supervisorId = getSupervisorId(req);
+    const supervisorId = await getSupervisorId(req);
     if (!supervisorId) return res.status(403).json({ success: false, message: 'Supervisor ID not found' });
 
     const { interview_mark, recommendation, interview_remarks } = req.body;
@@ -225,7 +232,7 @@ router.post('/:id/evaluate', verifyToken, async (req, res) => {
 
 // ── POST /api/permission-applications/:id/return-to-admin ────────────────────
 router.post('/:id/return-to-admin', verifyToken, async (req, res) => {
-    const supervisorId = getSupervisorId(req);
+    const supervisorId = await getSupervisorId(req);
     if (!supervisorId) return res.status(403).json({ success: false, message: 'Supervisor ID not found' });
 
     const evaluatorName = req.user?.name || req.user?.email || 'Supervisor';

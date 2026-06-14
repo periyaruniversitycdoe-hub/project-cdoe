@@ -511,9 +511,31 @@ function EduTable({ rows, cols, labels }) {
         <tbody>
           {rows.map((r, i) => (
             <tr key={i} style={{ borderBottom: '1px solid #f3f4f6' }}>
-              {cols.map(c => (
-                <td key={c} style={{ padding: '8px 10px', color: '#374151' }}>{r[c] ?? '—'}</td>
-              ))}
+              {cols.map(c => {
+                if (c === 'passing_year') {
+                  const isUgPgInt = r.level === 'UG' || r.level === 'PG' || r.level === 'Integrated';
+                  const hasStartEnd = r.start_year || r.completion_year;
+                  return (
+                    <td key={c} style={{ padding: '8px 10px', color: '#374151' }}>
+                      {isUgPgInt ? (
+                        <>
+                          <div>{r.passing_month || '—'}</div>
+                          {hasStartEnd && (
+                            <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>
+                              {r.start_year ? `Start: ${r.start_year}` : ''} {r.completion_year ? `| End: ${r.completion_year}` : ''}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div>{r.passing_month ? `${r.passing_month} ` : ''}{r.passing_year ? `Pass: ${r.passing_year}` : '—'}</div>
+                      )}
+                    </td>
+                  );
+                }
+                return (
+                  <td key={c} style={{ padding: '8px 10px', color: '#374151' }}>{r[c] ?? '—'}</td>
+                );
+              })}
             </tr>
           ))}
         </tbody>

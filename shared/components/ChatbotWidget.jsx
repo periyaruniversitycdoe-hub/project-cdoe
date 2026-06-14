@@ -50,8 +50,7 @@ export default function ChatbotWidget({ apiUrl = 'http://localhost:5000', portal
   const messagesEndRef = useRef(null);
   const searchTimer    = useRef(null);
 
-  const headers = token ? { Authorization: `Bearer ${token}`, 'bypass-tunnel-reminder': 'true' }
-                        : { 'bypass-tunnel-reminder': 'true' };
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
   // Fetch config on mount
   useEffect(() => {

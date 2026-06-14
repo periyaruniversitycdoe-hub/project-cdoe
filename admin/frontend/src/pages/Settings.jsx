@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
-import { Trash2, CheckCircle, Globe, Settings as SettingsIcon, MapPin } from 'lucide-react';
+import { Trash2, CheckCircle, Globe, Settings as SettingsIcon, MapPin, CalendarDays } from 'lucide-react';
 import PortalManagement from './PortalManagement';
 const API = (import.meta.env.VITE_ADMIN_API_URL || 'http://localhost:5001') + '/api';
 const token = () => localStorage.getItem('adminToken');
@@ -21,12 +21,31 @@ const Settings = () => {
   const [examConfig, setExamConfig] = useState({ max_preferences: 2, status: 'active', description: '' });
   const [examConfigSaving, setExamConfigSaving] = useState(false);
 
+  // Academic Timeline Rules state
+  const DEFAULT_TRANSITIONS = [
+    { id: 1, transition_key: 'sslc_hsc',  transition_label: '10th → +2',     min_gap_years: 2, max_gap_years: 5,  status: 'active' },
+    { id: 2, transition_key: 'hsc_ug',    transition_label: '+2 → UG',        min_gap_years: 0, max_gap_years: 10, status: 'active' },
+    { id: 3, transition_key: 'ug_pg',     transition_label: 'UG → PG',        min_gap_years: 0, max_gap_years: 10, status: 'active' },
+    { id: 4, transition_key: 'pg_mphil',  transition_label: 'PG → M.Phil',    min_gap_years: 0, max_gap_years: 15, status: 'active' },
+    { id: 5, transition_key: 'mphil_phd', transition_label: 'M.Phil → Ph.D',  min_gap_years: 0, max_gap_years: 15, status: 'active' },
+  ];
+  const DEFAULT_DURATIONS = [
+    { id: 1, course_key: 'ug',         course_label: 'UG',         min_duration: 3, max_duration: 4, status: 'active' },
+    { id: 2, course_key: 'pg',         course_label: 'PG',         min_duration: 2, max_duration: 2, status: 'active' },
+    { id: 3, course_key: 'mphil',      course_label: 'M.Phil',     min_duration: 1, max_duration: 1, status: 'active' },
+    { id: 4, course_key: 'integrated', course_label: 'Integrated', min_duration: 5, max_duration: 5, status: 'active' },
+  ];
+  const [timelineTransitions, setTimelineTransitions] = useState(DEFAULT_TRANSITIONS);
+  const [timelineDurations, setTimelineDurations]     = useState(DEFAULT_DURATIONS);
+  const [timelineSaving, setTimelineSaving]           = useState(false);
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     fetchAll();
     fetchExamConfig();
+    fetchTimelineRules();
   }, []);
 
   const fetchExamConfig = async () => {
@@ -35,6 +54,49 @@ const Settings = () => {
       if (res.data.success) setExamConfig(res.data.data || { max_preferences: 2, status: 'active', description: '' });
     } catch { /* silent — use defaults */ }
   };
+
+  const fetchTimelineRules = async () => {
+    try {
+      const res = await axios.get(`${API}/settings/timeline-rules`);
+      if (res.data.success && res.data.data) {
+        if (res.data.data.transitions?.length) setTimelineTransitions(res.data.data.transitions);
+        if (res.data.data.durations?.length)   setTimelineDurations(res.data.data.durations);
+      }
+    } catch { /* silent — use defaults */ }
+  };
+
+  const handleSaveTimelineRules = async () => {
+    for (const t of timelineTransitions) {
+      const min = parseInt(t.min_gap_years), max = parseInt(t.max_gap_years);
+      if (isNaN(min) || isNaN(max) || min < 0 || max < min) {
+        toast.error(`Invalid gap for "${t.transition_label}": max must be ≥ min and both ≥ 0`);
+        return;
+      }
+    }
+    for (const d of timelineDurations) {
+      const min = parseInt(d.min_duration), max = parseInt(d.max_duration);
+      if (isNaN(min) || isNaN(max) || min < 1 || max < min) {
+        toast.error(`Invalid duration for "${d.course_label}": max must be ≥ min and both ≥ 1`);
+        return;
+      }
+    }
+    setTimelineSaving(true);
+    try {
+      await axios.put(
+        `${API}/settings/timeline-rules`,
+        { transitions: timelineTransitions, durations: timelineDurations },
+        { headers: authHeader() }
+      );
+      toast.success('Academic Timeline Rules saved!', { icon: <CheckCircle size={20} style={{ color: '#10b981' }} /> });
+    } catch { toast.error('Failed to save Academic Timeline Rules'); }
+    setTimelineSaving(false);
+  };
+
+  const setTransition = (id, field, value) =>
+    setTimelineTransitions(prev => prev.map(t => t.id === id ? { ...t, [field]: value } : t));
+
+  const setDuration = (id, field, value) =>
+    setTimelineDurations(prev => prev.map(d => d.id === id ? { ...d, [field]: value } : d));
 
   const handleSaveExamConfig = async () => {
     const maxPref = parseInt(examConfig.max_preferences);
@@ -274,40 +336,210 @@ const Settings = () => {
             {examConfigSaving ? <><span className="spinner-border spinner-border-sm me-2" />Saving...</> : '💾 Save Exam Centre Settings'}
           </button>
         )}
+        {activeTab === 'timeline' && (
+          <button className="btn btn-primary px-4" onClick={handleSaveTimelineRules} disabled={timelineSaving}>
+            {timelineSaving ? <><span className="spinner-border spinner-border-sm me-2" />Saving...</> : '💾 Save Timeline Rules'}
+          </button>
+        )}
       </div>
 
       {/* Dynamic Tab Switcher */}
-      <div className="d-flex gap-2 mb-4 border-bottom pb-2">
-        <button 
-          onClick={() => setActiveTab('admission')} 
-          className={`btn btn-sm d-flex align-items-center gap-1.5 px-3 py-2 border-0 rounded-3 ${
-            activeTab === 'admission' ? 'btn-primary' : 'btn-outline-secondary bg-white'
-          }`}
-          style={activeTab === 'admission' ? { backgroundColor: '#32c5d2' } : {}}
+      <div className="d-flex gap-2 mb-4 border-bottom pb-2 flex-wrap">
+        <button
+          onClick={() => setActiveTab('admission')}
+          className="btn btn-sm d-flex align-items-center gap-1.5 px-3 py-2 rounded-3 border"
+          style={{
+            backgroundColor: activeTab === 'admission' ? '#32c5d2' : '#ffffff',
+            color: activeTab === 'admission' ? '#ffffff' : '#475569',
+            borderColor: activeTab === 'admission' ? '#32c5d2' : '#cbd5e1',
+            fontWeight: '600',
+            transition: 'all 0.2s ease'
+          }}
         >
           <SettingsIcon size={16} /> Admission & Fees Settings
         </button>
         <button
           onClick={() => setActiveTab('portals')}
-          className={`btn btn-sm d-flex align-items-center gap-1.5 px-3 py-2 border-0 rounded-3 ${
-            activeTab === 'portals' ? 'btn-primary' : 'btn-outline-secondary bg-white'
-          }`}
-          style={activeTab === 'portals' ? { backgroundColor: '#32c5d2' } : {}}
+          className="btn btn-sm d-flex align-items-center gap-1.5 px-3 py-2 rounded-3 border"
+          style={{
+            backgroundColor: activeTab === 'portals' ? '#32c5d2' : '#ffffff',
+            color: activeTab === 'portals' ? '#ffffff' : '#475569',
+            borderColor: activeTab === 'portals' ? '#32c5d2' : '#cbd5e1',
+            fontWeight: '600',
+            transition: 'all 0.2s ease'
+          }}
         >
           <Globe size={16} /> Portal Landing Management
         </button>
         <button
           onClick={() => setActiveTab('exam-centre')}
-          className={`btn btn-sm d-flex align-items-center gap-1.5 px-3 py-2 border-0 rounded-3 ${
-            activeTab === 'exam-centre' ? 'btn-primary' : 'btn-outline-secondary bg-white'
-          }`}
-          style={activeTab === 'exam-centre' ? { backgroundColor: '#32c5d2' } : {}}
+          className="btn btn-sm d-flex align-items-center gap-1.5 px-3 py-2 rounded-3 border"
+          style={{
+            backgroundColor: activeTab === 'exam-centre' ? '#32c5d2' : '#ffffff',
+            color: activeTab === 'exam-centre' ? '#ffffff' : '#475569',
+            borderColor: activeTab === 'exam-centre' ? '#32c5d2' : '#cbd5e1',
+            fontWeight: '600',
+            transition: 'all 0.2s ease'
+          }}
         >
           <MapPin size={16} /> Exam Centre Settings
+        </button>
+        <button
+          onClick={() => setActiveTab('timeline')}
+          className="btn btn-sm d-flex align-items-center gap-1.5 px-3 py-2 rounded-3 border"
+          style={{
+            backgroundColor: activeTab === 'timeline' ? '#32c5d2' : '#ffffff',
+            color: activeTab === 'timeline' ? '#ffffff' : '#475569',
+            borderColor: activeTab === 'timeline' ? '#32c5d2' : '#cbd5e1',
+            fontWeight: '600',
+            transition: 'all 0.2s ease'
+          }}
+        >
+          <CalendarDays size={16} /> Academic Timeline
         </button>
       </div>
 
       {activeTab === 'portals' && <PortalManagement />}
+
+      {/* ── Academic Timeline Configuration Tab ──────────────────────────── */}
+      {activeTab === 'timeline' && (
+        <div>
+          <div className="alert alert-info py-2 small mb-4 d-flex align-items-start gap-2">
+            <span style={{ fontSize: 16 }}>ℹ️</span>
+            <div>
+              <strong>How this works:</strong> Define the allowed year-gap between consecutive academic stages and the
+              expected duration for each course. The student registration form will dynamically filter year dropdowns
+              to only show valid options, and submissions that violate these rules will be rejected.
+            </div>
+          </div>
+
+          {/* Transition Gap Rules */}
+          <div className="card mb-4">
+            <div className="card-header fw-bold text-uppercase d-flex align-items-center gap-2" style={{ fontSize: 12, letterSpacing: 1 }}>
+              <CalendarDays size={14} /> Academic Stage Transition Rules
+            </div>
+            <div className="card-body p-0">
+              <div className="table-responsive">
+                <table className="table table-bordered mb-0" style={{ fontSize: 13 }}>
+                  <thead className="table-light">
+                    <tr>
+                      <th style={{ width: '30%' }}>Transition</th>
+                      <th style={{ width: '20%' }}>Min Gap (Years)</th>
+                      <th style={{ width: '20%' }}>Max Gap (Years)</th>
+                      <th style={{ width: '15%' }}>Status</th>
+                      <th style={{ width: '15%' }}>Example</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {timelineTransitions.map(t => (
+                      <tr key={t.id}>
+                        <td className="fw-semibold align-middle">{t.transition_label}</td>
+                        <td>
+                          <input
+                            type="number" min="0" max="20"
+                            className="form-control form-control-sm"
+                            value={t.min_gap_years}
+                            onChange={e => setTransition(t.id, 'min_gap_years', e.target.value)}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="number" min="0" max="50"
+                            className="form-control form-control-sm"
+                            value={t.max_gap_years}
+                            onChange={e => setTransition(t.id, 'max_gap_years', e.target.value)}
+                          />
+                        </td>
+                        <td>
+                          <select
+                            className="form-select form-select-sm"
+                            value={t.status}
+                            onChange={e => setTransition(t.id, 'status', e.target.value)}
+                          >
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                          </select>
+                        </td>
+                        <td className="text-muted small align-middle">
+                          {t.min_gap_years}–{t.max_gap_years} yrs gap
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="px-3 py-2 bg-light border-top small text-muted">
+                <strong>Min Gap</strong> = least number of years between completion of the previous stage and start of the next.
+                &nbsp;<strong>Max Gap</strong> = most years allowed.
+                Set <strong>Max = 0</strong> to disable the upper limit for a rule.
+              </div>
+            </div>
+          </div>
+
+          {/* Course Duration Rules */}
+          <div className="card mb-4">
+            <div className="card-header fw-bold text-uppercase d-flex align-items-center gap-2" style={{ fontSize: 12, letterSpacing: 1 }}>
+              <CalendarDays size={14} /> Course Duration Rules (Start → Completion Year)
+            </div>
+            <div className="card-body p-0">
+              <div className="table-responsive">
+                <table className="table table-bordered mb-0" style={{ fontSize: 13 }}>
+                  <thead className="table-light">
+                    <tr>
+                      <th style={{ width: '30%' }}>Course</th>
+                      <th style={{ width: '20%' }}>Min Duration (Years)</th>
+                      <th style={{ width: '20%' }}>Max Duration (Years)</th>
+                      <th style={{ width: '15%' }}>Status</th>
+                      <th style={{ width: '15%' }}>Example</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {timelineDurations.map(d => (
+                      <tr key={d.id}>
+                        <td className="fw-semibold align-middle">{d.course_label}</td>
+                        <td>
+                          <input
+                            type="number" min="1" max="10"
+                            className="form-control form-control-sm"
+                            value={d.min_duration}
+                            onChange={e => setDuration(d.id, 'min_duration', e.target.value)}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="number" min="1" max="10"
+                            className="form-control form-control-sm"
+                            value={d.max_duration}
+                            onChange={e => setDuration(d.id, 'max_duration', e.target.value)}
+                          />
+                        </td>
+                        <td>
+                          <select
+                            className="form-select form-select-sm"
+                            value={d.status}
+                            onChange={e => setDuration(d.id, 'status', e.target.value)}
+                          >
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                          </select>
+                        </td>
+                        <td className="text-muted small align-middle">
+                          {d.min_duration}–{d.max_duration} yr course
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="px-3 py-2 bg-light border-top small text-muted">
+                <strong>Min Duration</strong> = minimum years from start to completion.&nbsp;
+                <strong>Max Duration</strong> = maximum years allowed.
+                Only applies to courses that capture both a start year and a completion year (UG, PG, M.Phil, Integrated).
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {activeTab === 'exam-centre' && (
         <div>
@@ -593,6 +825,7 @@ const Settings = () => {
                 <DateRange enableField="applicant_login_enabled" openField="applicant_login_open" closeField="applicant_login_close" label="Applicant Login" />
                 <DateRange enableField="hall_ticket_enabled" openField="hall_ticket_open" closeField="hall_ticket_close" label="Hall Ticket" />
                 <DateRange enableField="payment_enabled" openField="payment_open" closeField="payment_close" label="Payment Window" />
+                <DateRange enableField="result_publish_enabled" openField="result_publish_open" closeField="result_publish_close" label="Result Published" />
                 <tr>
                   <td className="fw-semibold ps-3">Last Payment Date</td>
                   <td colSpan="2"><input type="date" className="form-control form-control-sm" value={settings.last_payment_date ? settings.last_payment_date.slice(0,10) : ''} onChange={e => set('last_payment_date', e.target.value)} /></td>
@@ -615,77 +848,7 @@ const Settings = () => {
           {renderRegistrationUrlField('Research Centre Registration URL', 'research_centre_registration_url', 'https://portal.university.edu/research-centre-registration')}
         </div>
       </div>
-
-      {/* ── SECTION 5: EXAM & INTERVIEW ─────────────── */}
-      <div className="card mb-4">
-        <div className="card-header fw-bold text-uppercase" style={{ fontSize: 12, letterSpacing: 1 }}>📅 Exam & Interview Schedule</div>
-        <div className="card-body">
-          <div className="row g-3">
-            <div className="col-md-3"><label className="form-label small fw-semibold">Exam Date</label><input type="date" className="form-control" value={settings.exam_date ? settings.exam_date.slice(0,10) : ''} onChange={e => set('exam_date', e.target.value)} /></div>
-            <div className="col-md-3"><label className="form-label small fw-semibold">Exam Time</label><input type="text" className="form-control" value={settings.exam_time || ''} onChange={e => set('exam_time', e.target.value)} placeholder="10:00 AM - 12:00 PM" /></div>
-            <div className="col-md-3"><label className="form-label small fw-semibold">Interview Date</label><input type="date" className="form-control" value={settings.interview_date ? settings.interview_date.slice(0,10) : ''} onChange={e => set('interview_date', e.target.value)} /></div>
-            <div className="col-md-3"><label className="form-label small fw-semibold">Interview Time</label><input type="text" className="form-control" value={settings.interview_time || ''} onChange={e => set('interview_time', e.target.value)} placeholder="10:00 AM" /></div>
-            <div className="col-md-4"><label className="form-label small fw-semibold">Certificate Validity</label><input className="form-control" value={settings.certificate_validity || ''} onChange={e => set('certificate_validity', e.target.value)} placeholder="This Session only" /></div>
-            <div className="col-md-4"><label className="form-label small fw-semibold">Certificate Date</label><input type="date" className="form-control" value={settings.certificate_date ? settings.certificate_date.slice(0,10) : ''} onChange={e => set('certificate_date', e.target.value)} /></div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── SECTION 6: MARKS CONFIG ──────────────────── */}
-      <div className="card mb-4">
-        <div className="card-header fw-bold text-uppercase" style={{ fontSize: 12, letterSpacing: 1 }}>📊 Marks Configuration</div>
-        <div className="card-body">
-          <div className="row g-3">
-            <div className="col-md-4"><label className="form-label small fw-semibold">Entrance Max Mark</label><input type="number" className="form-control" value={settings.entrance_max_mark || ''} onChange={e => set('entrance_max_mark', e.target.value)} /></div>
-            <div className="col-md-4"><label className="form-label small fw-semibold">Entrance Calculated To</label><input type="number" className="form-control" value={settings.entrance_calculated_to || ''} onChange={e => set('entrance_calculated_to', e.target.value)} /></div>
-            <div className="col-md-4"><label className="form-label small fw-semibold">Entrance Min Mark (Pass)</label><input type="number" className="form-control" value={settings.entrance_min_mark || ''} onChange={e => set('entrance_min_mark', e.target.value)} /></div>
-            <div className="col-md-6"><label className="form-label small fw-semibold">Interview Max Mark</label><input type="number" className="form-control" value={settings.interview_max_mark || ''} onChange={e => set('interview_max_mark', e.target.value)} /></div>
-            <div className="col-md-6"><label className="form-label small fw-semibold">Interview Calculated To</label><input type="number" className="form-control" value={settings.interview_calculated_to || ''} onChange={e => set('interview_calculated_to', e.target.value)} /></div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── SECTION 7: QUICK LINKS ──────────────────── */}
-      <div className="card mb-4">
-        <div className="card-header fw-bold text-uppercase" style={{ fontSize: 12, letterSpacing: 1 }}>🔗 Quick Links & Toggles</div>
-        <div className="card-body">
-          <div className="row g-3">
-            <div className="col-md-6">
-              <label className="form-label small fw-semibold">Online Application Link</label>
-              <div className="input-group">
-                <input className="form-control" value={settings.online_app_link || ''} onChange={e => set('online_app_link', e.target.value)} placeholder="https://..." />
-                <span className="input-group-text"><Toggle field="online_app_enabled" label="" /></span>
-              </div>
-            </div>
-            <div className="col-md-6">
-              <label className="form-label small fw-semibold">Merit List Link</label>
-              <div className="input-group">
-                <input className="form-control" value={settings.merit_list_link || ''} onChange={e => set('merit_list_link', e.target.value)} placeholder="https://..." />
-                <span className="input-group-text"><Toggle field="merit_list_enabled" label="" /></span>
-              </div>
-            </div>
-            <div className="col-md-4 d-flex align-items-center">
-              <Toggle field="eligible_list_enabled" label="Show Eligible List" />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── SECTION 9: CONTACT & FOOTER ─────────────── */}
-      <div className="card mb-4">
-        <div className="card-header fw-bold text-uppercase" style={{ fontSize: 12, letterSpacing: 1 }}>📬 Contact & Footer</div>
-        <div className="card-body">
-          <div className="row g-3">
-            <div className="col-md-4"><label className="form-label small fw-semibold">Email</label><input type="email" className="form-control" value={settings.email || ''} onChange={e => set('email', e.target.value)} /></div>
-            <div className="col-md-4"><label className="form-label small fw-semibold">Phone</label><input className="form-control" value={settings.phone || ''} onChange={e => set('phone', e.target.value)} /></div>
-            <div className="col-md-4"><label className="form-label small fw-semibold">Website</label><input className="form-control" value={settings.website || ''} onChange={e => set('website', e.target.value)} /></div>
-            <div className="col-12"><label className="form-label small fw-semibold">Address</label><textarea className="form-control" rows="2" value={settings.address || ''} onChange={e => set('address', e.target.value)} /></div>
-            <div className="col-md-4"><label className="form-label small fw-semibold">Payment Button Text</label><input className="form-control" value={settings.payment_button_text || ''} onChange={e => set('payment_button_text', e.target.value)} /></div>
-            <div className="col-md-4"><label className="form-label small fw-semibold">Payment Button Link</label><input className="form-control" value={settings.payment_button_link || ''} onChange={e => set('payment_button_link', e.target.value)} /></div>
-            <div className="col-md-4"><label className="form-label small fw-semibold">Footer Text</label><input className="form-control" value={settings.footer_text || ''} onChange={e => set('footer_text', e.target.value)} /></div>
-          </div>
-        </div>
-      </div>
+      
       {/* Sticky Save */}
       <div className="d-flex justify-content-end mb-5">
         <button className="btn btn-primary btn-lg px-5" onClick={handleSave} disabled={saving}>

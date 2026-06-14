@@ -149,6 +149,9 @@ export default function LoginPage() {
             </button>
           </form>
 
+          <div className="text-center mt-4 small">
+            Don't have an account? <Link to="/register" className="text-teal text-decoration-none">Register now</Link>
+          </div>
         </div>
       </motion.div>
 

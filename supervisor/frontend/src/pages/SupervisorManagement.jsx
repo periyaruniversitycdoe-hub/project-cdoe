@@ -684,7 +684,26 @@ function SupervisorForm({ id, onDone }) {
 
     function handleChange(e) {
         const { name, value } = e.target;
-        setForm(f => ({ ...f, [name]: value }));
+        const val = parseInt(value) || 0;
+        setForm(f => {
+            const updated = { ...f, [name]: value };
+            if (name === 'max_candidates') {
+                updated.full_time_available = val;
+                updated.part_time_available = Math.floor(val / 2);
+                updated.max_full_time = val;
+                updated.max_part_time = Math.floor(val / 2);
+            } else if (name === 'max_full_time') {
+                updated.full_time_available = val;
+            } else if (name === 'max_part_time') {
+                updated.part_time_available = val;
+            } else if (name === 'full_time_available') {
+                updated.max_candidates = val;
+                updated.max_full_time = val;
+            } else if (name === 'part_time_available') {
+                updated.max_part_time = val;
+            }
+            return updated;
+        });
     }
 
     async function handleSubmit(e) {
@@ -862,8 +881,8 @@ function SupervisorForm({ id, onDone }) {
                     <div className="row g-3">
                         <div className="col-md-3">
                             <label className="form-label fw-semibold">Max Allowed (Designation)</label>
-                            <input type="number" min={0} name="max_candidates" className="form-control bg-light fw-bold"
-                                value={form.max_candidates} readOnly />
+                            <input type="number" min={0} name="max_candidates" className="form-control fw-bold"
+                                value={form.max_candidates} onChange={handleChange} />
                         </div>
                         <div className="col-md-3">
                             <label className="form-label fw-semibold">Current Vacancy</label>
@@ -882,13 +901,13 @@ function SupervisorForm({ id, onDone }) {
                         </div>
                         <div className="col-md-3">
                             <label className="form-label fw-semibold text-success">FT Available</label>
-                            <input type="number" name="full_time_available" className="form-control bg-light text-success"
-                                value={form.full_time_available} readOnly />
+                            <input type="number" name="full_time_available" className="form-control text-success"
+                                value={form.full_time_available} onChange={handleChange} />
                         </div>
                         <div className="col-md-3">
                             <label className="form-label fw-semibold text-primary">PT Available</label>
-                            <input type="number" name="part_time_available" className="form-control bg-light text-primary"
-                                value={form.part_time_available} readOnly />
+                            <input type="number" name="part_time_available" className="form-control text-primary"
+                                value={form.part_time_available} onChange={handleChange} />
                         </div>
                     </div>
                 </FormSection>

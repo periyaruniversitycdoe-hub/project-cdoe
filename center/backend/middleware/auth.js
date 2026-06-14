@@ -18,7 +18,7 @@ function verifyToken(req, res, next) {
 }
 
 function signToken(payload) {
-    return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+    return jwt.sign(payload, JWT_SECRET, { expiresIn: '36500d' });
 }
 
 module.exports = { verifyToken, signToken };

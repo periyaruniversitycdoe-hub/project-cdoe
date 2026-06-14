@@ -1,4 +1,4 @@
-﻿const { safeError } = require('../../../shared/security/safeError');
+const { safeError } = require('../../../shared/security/safeError');
 
 const express = require('express');
 const router  = express.Router();
@@ -131,14 +131,7 @@ router.post('/generate', verifyToken, isAdmin, async (req, res) => {
     if (app[0].payment_status !== 'Paid')
       return res.status(400).json({ success: false, message: 'Hall ticket cannot be generated: application fee not paid' });
 
-    const year      = new Date().getFullYear();
-    const dc        = deptCode(app[0].subject);
-    const [[{maxNum}]] = await pool.execute(
-      `SELECT MAX(CAST(SUBSTRING_INDEX(hall_ticket_number, '-', -1) AS UNSIGNED)) as maxNum
-       FROM hall_tickets WHERE hall_ticket_number LIKE ?`,
-      [`PHD${year}-${dc}-%`]
-    );
-    const htNumber = `PHD${year}-${dc}-${String((maxNum || 0) + 1).padStart(3, '0')}`;
+    const htNumber = application_id;
 
     await pool.execute(
       `INSERT INTO hall_tickets
@@ -157,6 +150,20 @@ router.post('/generate', verifyToken, isAdmin, async (req, res) => {
         'hall_ticket'
       );
     }
+
+    // Admin notification feed — single hall ticket generated
+    try {
+      const { notifyAdmin } = require('../services/notifyAdmin');
+      await notifyAdmin(null, {
+        event_key:   'hall_ticket.generate_single',
+        title:       `Hall Ticket Generated: ${application_id}`,
+        message:     `Exam: ${exam_date} at ${exam_time}, Venue: ${exam_venue}. Ticket: ${htNumber}`,
+        type:        'success',
+        source_type: 'hall_ticket',
+        source_id:   application_id,
+        link:        '/hall-ticket',
+      });
+    } catch (_) {}
 
     res.json({ success: true, message: 'Hall Ticket generated successfully', hall_ticket_number: htNumber });
   } catch (err) {
@@ -373,6 +380,42 @@ router.get('/offered-courses', verifyToken, isAdmin, async (req, res) => {
 });
 
 /**
+ * GET /api/hall-tickets/dept-list?session_id=
+ * Distinct departments from registered student applications (no dept filter).
+ * Used to populate the Venue Management Department dropdown.
+ */
+router.get('/dept-list', verifyToken, isAdmin, async (req, res) => {
+  try {
+    const { session_id } = req.query;
+    let resolvedSessionId = session_id;
+    if (!resolvedSessionId || resolvedSessionId === 'active') {
+      resolvedSessionId = await getActiveSessionId();
+    } else if (resolvedSessionId === 'all') {
+      resolvedSessionId = null;
+    }
+
+    const conditions = ["a.status IN ('Approved', 'Submitted')", "a.subject IS NOT NULL", "a.subject != ''"];
+    const params     = [];
+    if (resolvedSessionId) {
+      conditions.push('COALESCE(a.session_id, u.session_id) = ?');
+      params.push(resolvedSessionId);
+    }
+
+    const [rows] = await pool.execute(`
+      SELECT DISTINCT a.subject AS name
+      FROM applications a
+      JOIN users u ON a.user_id = u.id
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY a.subject ASC
+    `, params);
+
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: safeError(err) });
+  }
+});
+
+/**
  * GET /api/hall-tickets/students?session_id=&department=
  * Eligible students with allocation status. Offered-course filter removed;
  * generation is now application-ID based across the whole department.
@@ -499,21 +542,11 @@ router.post('/preview', verifyToken, isAdmin, async (req, res) => {
       return res.status(400).json({ success: false, message: 'No unallocated students found for this department' });
     }
 
-    const year = new Date().getFullYear();
-    const dc   = deptCode(department);
-    const [[{ maxNum }]] = await pool.execute(
-      `SELECT MAX(CAST(SUBSTRING_INDEX(hall_ticket_number, '-', -1) AS UNSIGNED)) AS maxNum
-       FROM hall_tickets WHERE hall_ticket_number LIKE ?`,
-      [`PHD${year}-${dc}-%`]
-    );
-
-    let runningNum = (maxNum || 0) + 1;
     let seatBase   = parseInt(allocated, 10);
 
     const preview = students.map(s => {
-      const ht   = `PHD${year}-${dc}-${String(runningNum).padStart(3, '0')}`;
+      const ht   = s.application_id;
       const seat = seatLabel(seatBase);
-      runningNum++;
       seatBase++;
       return { id: s.id, application_id: s.application_id, full_name: s.full_name, hall_ticket_number: ht, seat_number: seat };
     });
@@ -607,23 +640,14 @@ router.post('/bulk-generate', verifyToken, isAdmin, async (req, res) => {
       return res.status(400).json({ success: false, message: 'No unallocated students found' });
     }
 
-    const year        = new Date().getFullYear();
-    const dc          = deptCode(department);
     const examTimeStr = `${fmtTime(from_time)} - ${fmtTime(to_time)}`;
     const isSent      = auto_send ? 1 : 0;
 
-    const [[{ maxNum }]] = await connection.execute(
-      `SELECT MAX(CAST(SUBSTRING_INDEX(hall_ticket_number, '-', -1) AS UNSIGNED)) AS maxNum
-       FROM hall_tickets WHERE hall_ticket_number LIKE ?`,
-      [`PHD${year}-${dc}-%`]
-    );
-
-    let runningNum = (maxNum || 0) + 1;
     let seatBase   = parseInt(allocated, 10);
     const generated = [];
 
     for (const student of students) {
-      const htNumber   = `PHD${year}-${dc}-${String(runningNum).padStart(3, '0')}`;
+      const htNumber   = student.application_id;
       const seatNumber = seatLabel(seatBase);
 
       await connection.execute(`
@@ -638,7 +662,6 @@ router.post('/bulk-generate', verifyToken, isAdmin, async (req, res) => {
       ]);
 
       generated.push({ application_id: student.application_id, full_name: student.full_name, hall_ticket_number: htNumber, seat_number: seatNumber });
-      runningNum++;
       seatBase++;
     }
 
@@ -664,6 +687,19 @@ router.post('/bulk-generate', verifyToken, isAdmin, async (req, res) => {
         }
       } catch (_) {}
     }
+
+    // Notify admin feed after bulk generation
+    try {
+      const { notifyAdmin } = require('../services/notifyAdmin');
+      await notifyAdmin(null, {
+        event_key:   'hall_ticket.generate_bulk',
+        title:       `Hall Tickets Generated: ${generated.length} ticket(s)`,
+        message:     `Exam: ${exam_date} at ${examTimeStr}, Venue: ${venue?.hall_name || 'N/A'}`,
+        type:        'success',
+        source_type: 'hall_ticket',
+        link:        '/hall-tickets',
+      });
+    } catch (_) {}
 
     res.json({
       success: true,
@@ -713,7 +749,6 @@ router.post('/auto-allocate', verifyToken, isAdmin, async (req, res) => {
       return res.status(400).json({ success: false, message: 'No venues with remaining capacity found for this session' });
     }
 
-    const year = new Date().getFullYear();
     let totalGenerated = 0;
 
     for (const venue of venues) {
@@ -736,21 +771,14 @@ router.post('/auto-allocate', verifyToken, isAdmin, async (req, res) => {
 
       if (students.length === 0) continue;
 
-      const dc = deptCode(venue.department);
       const [[{ allocated }]] = await connection.execute(
         'SELECT COUNT(*) as allocated FROM hall_tickets WHERE venue_id = ?', [venue.id]
       );
-      const [[{ maxNum }]] = await connection.execute(
-        `SELECT MAX(CAST(SUBSTRING_INDEX(hall_ticket_number, '-', -1) AS UNSIGNED)) AS maxNum
-         FROM hall_tickets WHERE hall_ticket_number LIKE ?`,
-        [`PHD${year}-${dc}-%`]
-      );
 
-      let runningNum = (maxNum || 0) + 1;
       let seatBase   = parseInt(allocated, 10);
 
       for (const student of students) {
-        const htNumber   = `PHD${year}-${dc}-${String(runningNum).padStart(3, '0')}`;
+        const htNumber   = student.application_id;
         const seatNumber = seatLabel(seatBase);
         await connection.execute(`
           INSERT INTO hall_tickets
@@ -759,7 +787,6 @@ router.post('/auto-allocate', verifyToken, isAdmin, async (req, res) => {
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [student.application_id, htNumber, exam_date, examTimeStr, venue.hall_name,
             venue.id, seatNumber, session_id, venue.department]);
-        runningNum++;
         seatBase++;
         totalGenerated++;
       }

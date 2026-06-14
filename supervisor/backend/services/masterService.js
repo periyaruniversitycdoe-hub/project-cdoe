@@ -11,39 +11,52 @@ async function get(type, id) {
 }
 
 async function create(type, payload, adminUser) {
-    const { name, abbreviation, max_capacity } = payload;
+    const { name, abbreviation, max_capacity, full_time_max_capacity, part_time_max_capacity, full_time_required, part_time_required } = payload;
     if (!name || !name.trim()) throw Object.assign(new Error('Name is required'), { status: 400 });
 
-    // Prevent duplicate designation names / master names
     const items = await repo.findAll(type, false);
     if (items.some(item => item.name.toLowerCase() === name.trim().toLowerCase())) {
         throw Object.assign(new Error(`Duplicate name not allowed: ${name.trim()}`), { status: 400 });
     }
 
-    let parsedCapacity = 0;
+    let parsedCapacity = 0, parsedFt = 0, parsedPt = 0;
     if (type === 'designations') {
         parsedCapacity = parseInt(max_capacity);
-        if (isNaN(parsedCapacity) || parsedCapacity < 0) {
+        if (isNaN(parsedCapacity) || parsedCapacity < 0)
             throw Object.assign(new Error('Maximum scholar capacity must be a non-negative integer'), { status: 400 });
-        }
+
+        parsedFt = parseInt(full_time_max_capacity) || 0;
+        parsedPt = parseInt(part_time_max_capacity) || 0;
+        if (parsedFt < 0 || parsedPt < 0)
+            throw Object.assign(new Error('Full-Time and Part-Time capacities must be non-negative'), { status: 400 });
+        if (parsedFt + parsedPt > parsedCapacity)
+            throw Object.assign(new Error('Combined Full-Time and Part-Time Capacity cannot exceed Max Capacity'), { status: 400 });
     }
 
-    const id = await repo.create(type, { 
-        name: name.trim(), 
-        abbreviation: abbreviation?.trim(), 
-        max_capacity: parsedCapacity 
+    const id = await repo.create(type, {
+        name: name.trim(),
+        abbreviation: abbreviation?.trim(),
+        max_capacity: parsedCapacity,
+        full_time_max_capacity: parsedFt,
+        part_time_max_capacity: parsedPt,
+        full_time_required:  full_time_required  ? 1 : 0,
+        part_time_required:  part_time_required  ? 1 : 0,
     });
 
     const created = await repo.findById(type, id);
 
     if (type === 'designations') {
         await repo.logDesignationAudit(
-            id,
-            created.name,
-            'CREATE',
-            null,
-            null,
-            JSON.stringify({ name: created.name, max_capacity: created.max_capacity, is_active: 1 }),
+            id, created.name, 'CREATE', null, null,
+            JSON.stringify({
+                name: created.name,
+                max_capacity: created.max_capacity,
+                full_time_max_capacity: created.full_time_max_capacity,
+                part_time_max_capacity: created.part_time_max_capacity,
+                full_time_required: created.full_time_required,
+                part_time_required: created.part_time_required,
+                is_active: 1,
+            }),
             adminUser
         );
     }
@@ -52,46 +65,60 @@ async function create(type, payload, adminUser) {
 }
 
 async function update(type, id, payload, adminUser) {
-    const { name, abbreviation, max_capacity, is_active } = payload;
+    const { name, abbreviation, max_capacity, full_time_max_capacity, part_time_max_capacity, full_time_required, part_time_required, is_active } = payload;
     if (!name || !name.trim()) throw Object.assign(new Error('Name is required'), { status: 400 });
 
     const existing = await repo.findById(type, id);
     if (!existing) throw Object.assign(new Error('Not found'), { status: 404 });
 
-    // Prevent duplicate designation names / master names
     const items = await repo.findAll(type, false);
     if (items.some(item => item.name.toLowerCase() === name.trim().toLowerCase() && item.id !== parseInt(id))) {
         throw Object.assign(new Error(`Duplicate name not allowed: ${name.trim()}`), { status: 400 });
     }
 
-    let parsedCapacity = 0;
+    let parsedCapacity = 0, parsedFt = 0, parsedPt = 0;
     if (type === 'designations') {
         parsedCapacity = parseInt(max_capacity);
-        if (isNaN(parsedCapacity) || parsedCapacity < 0) {
+        if (isNaN(parsedCapacity) || parsedCapacity < 0)
             throw Object.assign(new Error('Maximum scholar capacity must be a non-negative integer'), { status: 400 });
-        }
+
+        parsedFt = parseInt(full_time_max_capacity) || 0;
+        parsedPt = parseInt(part_time_max_capacity) || 0;
+        if (parsedFt < 0 || parsedPt < 0)
+            throw Object.assign(new Error('Full-Time and Part-Time capacities must be non-negative'), { status: 400 });
+        if (parsedFt + parsedPt > parsedCapacity)
+            throw Object.assign(new Error('Combined Full-Time and Part-Time Capacity cannot exceed Max Capacity'), { status: 400 });
     }
 
     const updatedActive = is_active !== undefined ? (is_active ? 1 : 0) : existing.is_active;
 
-    await repo.update(type, id, { 
-        name: name.trim(), 
-        abbreviation: abbreviation?.trim(), 
+    await repo.update(type, id, {
+        name: name.trim(),
+        abbreviation: abbreviation?.trim(),
         max_capacity: parsedCapacity,
-        is_active: updatedActive
+        full_time_max_capacity: parsedFt,
+        part_time_max_capacity: parsedPt,
+        full_time_required:  full_time_required  ? 1 : 0,
+        part_time_required:  part_time_required  ? 1 : 0,
+        is_active: updatedActive,
     });
 
     const updated = await repo.findById(type, id);
 
     if (type === 'designations') {
-        if (existing.name !== updated.name) {
-            await repo.logDesignationAudit(id, updated.name, 'UPDATE', 'name', existing.name, updated.name, adminUser);
-        }
-        if (existing.max_capacity !== updated.max_capacity) {
-            await repo.logDesignationAudit(id, updated.name, 'UPDATE', 'max_capacity', existing.max_capacity, updated.max_capacity, adminUser);
-        }
-        if (existing.is_active !== updated.is_active) {
-            await repo.logDesignationAudit(id, updated.name, 'UPDATE', 'is_active', existing.is_active, updated.is_active, adminUser);
+        const auditFields = [
+            ['name',                  existing.name,                  updated.name],
+            ['max_capacity',          existing.max_capacity,          updated.max_capacity],
+            ['full_time_max_capacity',existing.full_time_max_capacity,updated.full_time_max_capacity],
+            ['part_time_max_capacity',existing.part_time_max_capacity,updated.part_time_max_capacity],
+            ['full_time_required',    existing.full_time_required,    updated.full_time_required],
+            ['part_time_required',    existing.part_time_required,    updated.part_time_required],
+            ['is_active',             existing.is_active,             updated.is_active],
+        ];
+        for (const [field, oldVal, newVal] of auditFields) {
+            if (String(oldVal) !== String(newVal)) {
+                await repo.logDesignationAudit(id, updated.name, 'UPDATE', field, oldVal, newVal, adminUser);
+            }
         }
     }
 
@@ -121,13 +148,15 @@ async function remove(type, id, adminUser) {
 
     if (type === 'designations') {
         await repo.logDesignationAudit(
-            id,
-            existing.name,
-            'DELETE',
-            null,
-            JSON.stringify({ name: existing.name, max_capacity: existing.max_capacity, is_active: existing.is_active }),
-            null,
-            adminUser
+            id, existing.name, 'DELETE', null,
+            JSON.stringify({
+                name: existing.name,
+                max_capacity: existing.max_capacity,
+                full_time_max_capacity: existing.full_time_max_capacity,
+                part_time_max_capacity: existing.part_time_max_capacity,
+                is_active: existing.is_active,
+            }),
+            null, adminUser
         );
     }
 }

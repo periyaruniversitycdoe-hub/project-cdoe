@@ -65,7 +65,7 @@ const HallTickets = () => {
   const [genToTime,   setGenToTime]   = useState('');
   const [deptCounts,  setDeptCounts]  = useState([]);
   const [venues,      setVenues]      = useState([]);
-  const [departmentsMaster, setDepartmentsMaster] = useState([]);
+  const [deptList, setDeptList] = useState([]);
   const [previewData, setPreviewData] = useState(null);
   const [previewing,  setPreviewing]  = useState(false);
   const [generating,  setGenerating]  = useState(false);
@@ -96,7 +96,7 @@ const HallTickets = () => {
     return parseInt(genSession, 10) || null;
   }, [genSession, activeSession]);
 
-  // ── fetch dept counts, venues and departments master ──
+  // ── fetch dept counts, venues, and registered-student dept list ──
   const fetchGenData = useCallback(async () => {
     try {
       const sid  = resolvedGenSession();
@@ -111,11 +111,11 @@ const HallTickets = () => {
           `${API_URL}/venues?session_id=${qSid}${genDept ? `&department=${encodeURIComponent(genDept)}` : ''}`,
           { headers: headers() }
         ),
-        axios.get(`${API_URL}/settings/master-data/dropdown_departments`, { headers: headers() }),
+        axios.get(`${API_URL}/hall-tickets/dept-list?session_id=${qSid}`, { headers: headers() }),
       ]);
       setDeptCounts(stuRes.data.deptCounts || []);
       setVenues(venRes.data.data || []);
-      setDepartmentsMaster(deptRes.data.data || []);
+      setDeptList(deptRes.data.data || []);
     } catch { /* silent */ }
   }, [resolvedGenSession, genDept]);
 
@@ -311,32 +311,7 @@ const HallTickets = () => {
     }
   };
 
-  // ── Master Department CRUD ──
-  const handleAddMasterDept = async () => {
-    const name = window.prompt('Enter new Department name:');
-    if (!name || !name.trim()) return;
-    try {
-      await axios.post(`${API_URL}/settings/master-data/dropdown_departments`, { name: name.trim() }, { headers: headers() });
-      toast.success('Department added');
-      fetchGenData();
-    } catch { toast.error('Failed to add department'); }
-  };
-
-  const handleEditMasterDept = async (deptName) => {
-    if (!deptName) return;
-    const deptObj = departmentsMaster.find(d => d.name === deptName);
-    if (!deptObj) return;
-    const newName = window.prompt('Edit Department name:', deptName);
-    if (!newName || !newName.trim() || newName === deptName) return;
-    try {
-      await axios.put(`${API_URL}/settings/master-data/dropdown_departments/${deptObj.id}`, { name: newName.trim() }, { headers: headers() });
-      toast.success('Department updated');
-      setVenueForm(f => ({ ...f, department: newName.trim() }));
-      fetchGenData();
-    } catch { toast.error('Failed to update department'); }
-  };
-
-  const handleVenueDelete = async (id) => {
+const handleVenueDelete = async (id) => {
     if (!window.confirm('Delete this venue?')) return;
     try {
       await axios.delete(`${API_URL}/venues/${id}`, { headers: headers() });
@@ -602,20 +577,17 @@ const HallTickets = () => {
                         </div>
                         <div className="col-12">
                           <label className="form-label small fw-semibold mb-0">Department</label>
-                          <div className="input-group input-group-sm">
-                            <select className="form-select" required value={venueForm.department} onChange={e => setVenueForm(f => ({ ...f, department: e.target.value }))}>
-                              <option value="">— Select Department —</option>
-                              {departmentsMaster.map(d => (
-                                <option key={d.id} value={d.name}>{d.name}</option>
-                              ))}
-                            </select>
-                            <button type="button" className="btn btn-outline-secondary" onClick={() => handleEditMasterDept(venueForm.department)} disabled={!venueForm.department} title="Edit selected department">
-                              <Edit2 size={13} />
-                            </button>
-                            <button type="button" className="btn btn-primary" onClick={handleAddMasterDept} title="Add new department">
-                              <Plus size={13} />
-                            </button>
-                          </div>
+                          <select className="form-select form-select-sm" required value={venueForm.department} onChange={e => setVenueForm(f => ({ ...f, department: e.target.value }))}>
+                            <option value="">— Select Department —</option>
+                            {deptList.map(d => (
+                              <option key={d.name} value={d.name}>{d.name}</option>
+                            ))}
+                          </select>
+                          {deptList.length === 0 && (
+                            <div className="text-muted" style={{ fontSize: 11, marginTop: 3 }}>
+                              No registered student departments found for this session.
+                            </div>
+                          )}
                         </div>
                         <div className="col-12">
                           <label className="form-label small fw-semibold mb-0">Hall / Venue Name</label>
